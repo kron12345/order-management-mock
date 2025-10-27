@@ -1,0 +1,13 @@
+<app-filter-bar />
+
+<div class="grid">
+  @if (orders().length === 0) {
+    <mat-card appearance="outlined">
+      <mat-card-content>Keine Aufträge gefunden.</mat-card-content>
+    </mat-card>
+  } @else {
+    @for (o of orders(); track o.id) {
+      <app-order-card [order]="o" />
+    }
+  }
+</div>

@@ -1,0 +1,53 @@
+<mat-card appearance="outlined" class="order-card">
+  <div class="order-header" (click)="expanded.set(!expanded())" tabindex="0">
+    <div class="left">
+      <div class="title">
+        <span class="id">{{ order.id }}</span>
+        <span class="name">{{ order.name }}</span>
+      </div>
+      <div class="meta">
+        <app-status-chip [status]="order.status" />
+        @if (order.customer) {
+          <span class="sep">•</span> <span>{{ order.customer }}</span>
+        }
+        @if (order.tags?.length) {
+          <span class="sep">•</span>
+          <mat-chip-set aria-label="Tags">
+            @for (t of order.tags; track t) {
+              <mat-chip>{{ t }}</mat-chip>
+            }
+          </mat-chip-set>
+        }
+      </div>
+    </div>
+
+    <div class="right">
+      @if (order.linkedBusinessId) {
+        <button mat-stroked-button>
+          <mat-icon>work_outline</mat-icon> Geschäft
+          {{ order.linkedBusinessId }}
+        </button>
+      }
+      @if (order.linkedTemplateId) {
+        <button mat-stroked-button>
+          <mat-icon>schema</mat-icon> Vorlage {{ order.linkedTemplateId }}
+        </button>
+      }
+      <button mat-icon-button matTooltip="Mehr">
+        <mat-icon>more_vert</mat-icon>
+      </button>
+    </div>
+  </div>
+
+  @if (expanded()) {
+    <mat-divider></mat-divider>
+    <app-order-item-list [items]="order.items" />
+    @if (order.comment) {
+      <mat-divider></mat-divider>
+      <div class="comment">
+        <mat-icon>info</mat-icon>
+        <span>{{ order.comment }}</span>
+      </div>
+    }
+  }
+</mat-card>

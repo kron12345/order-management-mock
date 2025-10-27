@@ -1,0 +1,57 @@
+.order-card {
+  .order-header {
+    background: #111;
+    color: #fff;
+    padding: 12px;
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    justify-content: space-between;
+    cursor: pointer;
+
+    .left {
+      .title {
+        display: flex;
+        gap: 8px;
+        align-items: baseline;
+      }
+      .title .id {
+        font-weight: 700;
+      }
+      .title .name {
+        opacity: 0.9;
+      }
+      .meta {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        margin-top: 4px;
+      }
+      .meta .sep {
+        opacity: 0.6;
+      }
+      .meta mat-chip-set {
+        transform: translateY(-1px);
+      }
+    }
+
+    .right {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      button[mat-stroked-button] mat-icon {
+        margin-right: 0.25rem;
+      }
+    }
+  }
+
+  .comment {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px;
+    mat-icon {
+      color: #666;
+    }
+  }
+}

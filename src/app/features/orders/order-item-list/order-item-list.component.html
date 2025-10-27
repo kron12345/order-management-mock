@@ -1,0 +1,42 @@
+<div class="items">
+  @if (!items || items.length === 0) {
+    <div class="empty">
+      <mat-icon>inbox</mat-icon>
+      <span>Keine Auftragspositionen vorhanden.</span>
+    </div>
+  } @else {
+    @for (it of items; track it.id) {
+      <div class="item">
+        <div class="left">
+          <div class="name">{{ it.name }}</div>
+          <div class="meta">
+            <span class="type">{{ it.type }}</span>
+            <span class="sep">•</span>
+            <span class="time"
+              >{{ it.start | date: "shortTime" }}–{{
+                it.end | date: "shortTime"
+              }}</span
+            >
+            @if (it.responsible) {
+              <span class="sep">•</span> <span>{{ it.responsible }}</span>
+            }
+          </div>
+        </div>
+        <div class="right">
+          @if (it.deviation) {
+            <span class="deviation" matTooltip="Abweichung">{{
+              it.deviation
+            }}</span>
+          }
+          <button mat-icon-button matTooltip="Öffnen">
+            <mat-icon>open_in_new</mat-icon>
+          </button>
+          <button mat-icon-button matTooltip="Optionen">
+            <mat-icon>more_horiz</mat-icon>
+          </button>
+        </div>
+      </div>
+      <mat-divider />
+    }
+  }
+</div>
