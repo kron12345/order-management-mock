@@ -6,4 +6,11 @@ export interface OrderItem {
   end: string; // ISO
   responsible?: string;
   deviation?: string;
+  linkedBusinessIds?: string[];
+  linkedTemplateId?: string;
+  linkedTrainPlanId?: string;
+  trafficPeriodId?: string;
+  serviceType?: string;
+  fromLocation?: string;
+  toLocation?: string;
 }

@@ -1,0 +1,29 @@
+.mode-toggle {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 16px;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: min(680px, 95vw);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 16px;
+}
+
+.error {
+  margin-top: 12px;
+  color: #d93025;
+}

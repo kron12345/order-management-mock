@@ -1,0 +1,224 @@
+<div class="business-page">
+  <header class="page-header">
+    <div class="page-header__titles">
+      <h1>Geschäfte</h1>
+      <p>Behalte offene Aufgaben, Zuständigkeiten und Fristen im Blick.</p>
+    </div>
+    <div class="page-header__actions">
+      <button mat-flat-button color="primary" (click)="openCreateDialog()">
+        <mat-icon>add</mat-icon>
+        Neues Geschäft
+      </button>
+    </div>
+  </header>
+
+  <section class="filters">
+    <mat-form-field appearance="outline" class="filters__search">
+      <mat-label>Suchen</mat-label>
+      <mat-icon matPrefix>search</mat-icon>
+      <input
+        matInput
+        [formControl]="searchControl"
+        placeholder="Titel oder Beschreibung"
+      />
+    </mat-form-field>
+
+    <mat-form-field appearance="outline">
+      <mat-label>Status</mat-label>
+      <mat-select
+        [value]="filters().status"
+        (valueChange)="onStatusFilterChange($event)"
+      >
+        @for (option of statusOptions; track option.value) {
+          <mat-option [value]="option.value">{{ option.label }}</mat-option>
+        }
+      </mat-select>
+    </mat-form-field>
+
+    <mat-form-field appearance="outline">
+      <mat-label>Zuständig</mat-label>
+      <mat-select
+        [value]="filters().assignment"
+        (valueChange)="onAssignmentFilterChange($event)"
+      >
+        <mat-option value="all">Alle</mat-option>
+        @for (assignment of assignments(); track assignment.name) {
+          <mat-option [value]="assignment.name">
+            {{ assignment.type === 'group' ? 'Gruppe ' : '' }}
+            {{ assignment.name }}
+          </mat-option>
+        }
+      </mat-select>
+    </mat-form-field>
+
+    <mat-form-field appearance="outline">
+      <mat-label>Sortierung</mat-label>
+      <mat-select
+        [value]="sort().field + ':' + sort().direction"
+        (valueChange)="onSortChange($event)"
+      >
+        @for (option of sortOptions; track option.value) {
+          <mat-option [value]="option.value">{{ option.label }}</mat-option>
+        }
+      </mat-select>
+    </mat-form-field>
+  </section>
+
+  <section class="filters filters--condensed">
+    <span class="filters__label">Fälligkeit</span>
+    <mat-button-toggle-group
+      [value]="filters().dueDate"
+      (valueChange)="onDueDatePresetChange($event)"
+      appearance="legacy"
+      class="filters__toggle-group"
+    >
+      @for (preset of dueDatePresetOptions; track preset.value) {
+        <mat-button-toggle [value]="preset.value">
+          <mat-icon>{{ preset.icon }}</mat-icon>
+          {{ preset.label }}
+        </mat-button-toggle>
+      }
+    </mat-button-toggle-group>
+  </section>
+
+  @if (!businesses().length) {
+    <mat-card appearance="outlined" class="empty-state">
+      <mat-card-content>
+        <mat-icon>work_outline</mat-icon>
+        <div>
+          <h3>Keine Geschäfte gefunden</h3>
+          <p>
+            Passe deine Filter an oder erstelle ein neues Geschäft, um loszulegen.
+          </p>
+          <button mat-stroked-button color="primary" (click)="openCreateDialog()">
+            <mat-icon>add</mat-icon>
+            Neues Geschäft erstellen
+          </button>
+        </div>
+      </mat-card-content>
+    </mat-card>
+  } @else {
+    <section class="business-grid">
+      @for (business of businesses(); track trackByBusinessId($index, business)) {
+        <mat-card class="business-card" appearance="outlined">
+          <mat-card-header>
+            <div
+              mat-card-avatar
+              [ngClass]="['due-date', dueDateState(business)]"
+            >
+              <mat-icon>
+                @switch (dueDateState(business)) {
+                  @case ('overdue') { report }
+                  @case ('today') { today }
+                  @default { calendar_today }
+                }
+              </mat-icon>
+            </div>
+            <mat-card-title>{{ business.title }}</mat-card-title>
+            <mat-card-subtitle>
+              <mat-chip-set>
+                <mat-chip
+                  [color]="business.status === 'erledigt' ? 'primary' : undefined"
+                >
+                  {{ statusLabel(business.status) }}
+                </mat-chip>
+                @if (business.dueDate) {
+                  <mat-chip
+                    [ngClass]="['due-chip', 'due-' + dueDateState(business)]"
+                  >
+                    {{ business.dueDate | date: 'fullDate' }}
+                  </mat-chip>
+                }
+              </mat-chip-set>
+            </mat-card-subtitle>
+            <div class="card-meta">
+              <span>
+                <mat-icon>event_available</mat-icon>
+                Erstellt {{ business.createdAt | date: 'short' }}
+              </span>
+              <span>
+                <mat-icon>{{ assignmentIcon(business) }}</mat-icon>
+                {{ assignmentLabel(business) }}
+              </span>
+            </div>
+          </mat-card-header>
+
+          <mat-card-content>
+            <p class="description">{{ business.description }}</p>
+
+            <div class="status-control">
+              <mat-form-field appearance="outline">
+                <mat-label>Status aktualisieren</mat-label>
+                <mat-select
+                  [value]="business.status"
+                  (valueChange)="onStatusChange(business.id, $event)"
+                >
+                  @for (option of statusOptions; track option.value) {
+                    @if (option.value !== 'all') {
+                      <mat-option [value]="option.value">
+                        {{ option.label }}
+                      </mat-option>
+                    }
+                  }
+                </mat-select>
+              </mat-form-field>
+            </div>
+
+            <div class="linked-items">
+              <mat-form-field appearance="outline">
+                <mat-label>Auftragspositionen</mat-label>
+                <mat-select
+                  [value]="business.linkedOrderItemIds || []"
+                  multiple
+                  (valueChange)="onLinkedItemsChange(business.id, $event)"
+                >
+                  @if (!orderItemOptions().length) {
+                    <mat-option disabled>Keine Positionen vorhanden</mat-option>
+                  } @else {
+                    @for (option of orderItemOptions(); track option.itemId) {
+                      <mat-option [value]="option.itemId">
+                        {{ option.orderName }} · {{ option.itemName }}
+                      </mat-option>
+                    }
+                  }
+                </mat-select>
+              </mat-form-field>
+
+              @if (business.linkedOrderItemIds?.length) {
+                <mat-chip-set>
+                  @for (itemId of business.linkedOrderItemIds; track itemId) {
+                    <mat-chip [removable]="true" (removed)="removeLinkedItem(business.id, itemId)">
+                      {{ itemLabel(itemId) }}
+                      <mat-icon matChipRemove>close</mat-icon>
+                    </mat-chip>
+                  }
+                </mat-chip-set>
+              }
+            </div>
+
+            @if (business.documents?.length) {
+              <div class="documents">
+                <span class="documents__title">
+                  <mat-icon>attach_file</mat-icon> Dokumente
+                </span>
+                <div class="documents__list">
+                  @for (doc of business.documents; track doc.id) {
+                    <a
+                      mat-stroked-button
+                      [href]="doc.url || '#'"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      <mat-icon>insert_drive_file</mat-icon>
+                      {{ doc.name }}
+                    </a>
+                  }
+                </div>
+              </div>
+            }
+          </mat-card-content>
+        </mat-card>
+      }
+    </section>
+  }
+</div>

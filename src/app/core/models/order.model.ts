@@ -9,6 +9,4 @@ export interface Order {
   tags?: string[];
   items: OrderItem[];
   comment?: string;
-  linkedBusinessId?: string;
-  linkedTemplateId?: string;
 }

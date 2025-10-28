@@ -31,6 +31,162 @@
       .sep {
         opacity: 0.5;
       }
+      .route {
+        margin-top: 4px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        color: #444;
+
+        .segment {
+          display: inline-flex;
+          align-items: center;
+          gap: 4px;
+
+          mat-icon {
+            font-size: 16px;
+            height: 16px;
+            width: 16px;
+          }
+        }
+
+        .tag {
+          background: rgba(0, 0, 0, 0.08);
+          border-radius: 999px;
+          padding: 2px 8px;
+          font-size: 0.75rem;
+          text-transform: uppercase;
+          letter-spacing: 0.08em;
+          color: rgba(0, 0, 0, 0.65);
+        }
+      }
+
+      .chips {
+        margin-top: 6px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+
+        mat-chip {
+          display: inline-flex;
+          align-items: center;
+          gap: 4px;
+        }
+      }
+      .businesses {
+        margin-top: 8px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+
+        .business-card {
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+          padding: 12px;
+          border: 1px solid #ddd;
+          border-radius: 6px;
+          background: #fff;
+        }
+
+        .business-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          gap: 8px;
+        }
+
+        .business-title {
+          font-weight: 600;
+        }
+
+        .business-status {
+          font-size: 0.75rem;
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
+          padding: 2px 8px;
+          border-radius: 999px;
+          background: #e0e0e0;
+          color: #333;
+          white-space: nowrap;
+        }
+
+        .business-status.status-neu {
+          background: #e8f0fe;
+          color: #1a73e8;
+        }
+
+        .business-status.status-pausiert {
+          background: #fff4e5;
+          color: #f57c00;
+        }
+
+        .business-status.status-in_arbeit {
+          background: #e0f2f1;
+          color: #00796b;
+        }
+
+        .business-status.status-erledigt {
+          background: #e6f4ea;
+          color: #1e8e3e;
+        }
+
+        .business-meta {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 12px;
+          font-size: 0.85rem;
+          color: #555;
+
+          .meta-item {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+
+            mat-icon {
+              font-size: 18px;
+              height: 18px;
+              width: 18px;
+            }
+          }
+
+          .meta-item.due mat-icon {
+            color: #f57c00;
+          }
+        }
+
+        .business-description {
+          color: #444;
+          line-height: 1.4;
+        }
+
+        .business-documents {
+          display: flex;
+          flex-direction: column;
+          gap: 6px;
+
+          .documents-label {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 0.85rem;
+            color: #555;
+          }
+
+          .documents-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+
+            a[mat-stroked-button] {
+              display: inline-flex;
+              align-items: center;
+              gap: 4px;
+              text-decoration: none;
+            }
+          }
+        }
+      }
     }
 
     .right {

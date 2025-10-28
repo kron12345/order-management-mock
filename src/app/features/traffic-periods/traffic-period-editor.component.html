@@ -1,0 +1,118 @@
+<h2 mat-dialog-title>
+  {{ isEditMode ? 'Verkehrsperiode bearbeiten' : 'Neue Verkehrsperiode' }}
+</h2>
+
+<mat-dialog-content>
+  <form [formGroup]="form" class="editor-form">
+    <section class="form-section">
+      <div class="grid grid--two">
+        <mat-form-field appearance="outline">
+          <mat-label>Name</mat-label>
+          <input matInput formControlName="name" />
+          @if (form.controls.name.invalid && form.controls.name.touched) {
+            <mat-error>Name ist erforderlich.</mat-error>
+          }
+        </mat-form-field>
+
+        <mat-form-field appearance="outline">
+          <mat-label>Typ</mat-label>
+          <mat-select formControlName="type">
+            @for (option of typeOptions; track option.value) {
+              <mat-option [value]="option.value">{{ option.label }}</mat-option>
+            }
+          </mat-select>
+        </mat-form-field>
+      </div>
+
+      <mat-form-field appearance="outline">
+        <mat-label>Beschreibung</mat-label>
+        <textarea matInput rows="2" formControlName="description"></textarea>
+      </mat-form-field>
+
+      <div class="grid grid--two">
+        <mat-form-field appearance="outline">
+          <mat-label>Verantwortlich</mat-label>
+          <input matInput formControlName="responsible" placeholder="z. B. Fahrplanplanung" />
+        </mat-form-field>
+
+        <mat-form-field appearance="outline">
+          <mat-label>Jahr</mat-label>
+          <input
+            matInput
+            type="number"
+            formControlName="year"
+            (input)="onYearChange(form.controls.year)"
+          />
+        </mat-form-field>
+      </div>
+
+      <mat-form-field appearance="outline">
+        <mat-label>Tags (kommagetrennt)</mat-label>
+        <input matInput formControlName="tags" placeholder="Werktage, Baustelle" />
+      </mat-form-field>
+    </section>
+
+    <section class="selection-section">
+      <header>
+        <h3>Kalender {{ form.controls.year.value }}</h3>
+        <div class="selection-actions">
+          <span>{{ selectedCount() }} Tage markiert</span>
+          <button mat-button type="button" (click)="clearSelection()">Zurücksetzen</button>
+          <button mat-button type="button" (click)="selectWorkdays()">Mo–Fr</button>
+          <button mat-button type="button" (click)="selectWeekends()">Sa/So</button>
+          @for (weekday of weekdayNames; track weekday; let idx = $index) {
+            <button mat-stroked-button type="button" (click)="selectWeekday(idx)">{{ weekday }}</button>
+          }
+        </div>
+      </header>
+
+      <div class="calendar-table">
+        <table>
+          <thead>
+            <tr>
+              <th class="month-col">Monat</th>
+              @for (label of headerLabels(); track $index) {
+                <th>{{ label }}</th>
+              }
+            </tr>
+          </thead>
+          <tbody>
+            @for (month of weekGroups(); track monthIndex; let monthIndex = $index) {
+              <tr>
+                <td class="month-col">{{ monthNames[monthIndex] }}</td>
+                @for (cell of month.cells; track colIndex; let colIndex = $index) {
+                  <td
+                    [class.leading]="cell.kind === 'leading'"
+                    [class.trailing-cell]="cell.kind === 'trailing'"
+                    [class.empty]="!cell.date"
+                    [class.weekend]="cell.weekday !== null && cell.weekday >= 5"
+                    [class.selected]="isSelected(cell.date)"
+                    (click)="toggleCell(cell, $event)"
+                  >
+                    {{ cell.label }}
+                  </td>
+                }
+                @if (month.cells.length < headerLabels().length) {
+                  @for (extra of extraColumns(headerLabels().length - month.cells.length); track extra) {
+                    <td class="empty trailing-cell"></td>
+                  }
+                }
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+
+      <p class="hint">
+        Tipp: Shift + Klick für Bereichsauswahl, Strg/Cmd + Klick um bestehende Auswahl zu erweitern.
+      </p>
+    </section>
+  </form>
+</mat-dialog-content>
+
+<mat-dialog-actions align="end">
+  <button mat-button (click)="cancel()">Abbrechen</button>
+  <button mat-flat-button color="primary" (click)="save()">
+    {{ isEditMode ? 'Aktualisieren' : 'Speichern' }}
+  </button>
+</mat-dialog-actions>

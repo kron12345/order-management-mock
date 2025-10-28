@@ -11,15 +11,20 @@
         <span matListItemTitle>Aufträge</span>
         <span matListItemLine>Übersicht & Bearbeitung</span>
       </a>
-      <a mat-list-item disabled>
+      <a mat-list-item routerLink="/businesses" routerLinkActive="active">
         <mat-icon matListItemIcon>work_outline</mat-icon>
         <span matListItemTitle>Geschäfte</span>
-        <span matListItemLine>Bald verfügbar</span>
+        <span matListItemLine>Aufgaben & Fälligkeiten</span>
       </a>
-      <a mat-list-item disabled>
+      <a mat-list-item routerLink="/templates" routerLinkActive="active">
         <mat-icon matListItemIcon>schema</mat-icon>
-        <span matListItemTitle>Fahrplanvorlagen</span>
-        <span matListItemLine>Bald verfügbar</span>
+        <span matListItemTitle>Vorlagen</span>
+        <span matListItemLine>Fahrpläne & Kalender</span>
+      </a>
+      <a mat-list-item routerLink="/plans" routerLinkActive="active">
+        <mat-icon matListItemIcon>train</mat-icon>
+        <span matListItemTitle>Fahrpläne</span>
+        <span matListItemLine>Züge & Path Requests</span>
       </a>
     </mat-nav-list>
   </mat-sidenav>
@@ -29,7 +34,7 @@
       <button mat-icon-button [matMenuTriggerFor]="menu">
         <mat-icon>menu</mat-icon>
       </button>
-      <span class="title">Aufträge</span>
+      <span class="title">{{ pageTitle() }}</span>
       <span class="spacer"></span>
       <button mat-icon-button matTooltip="Benachrichtigungen">
         <mat-icon>notifications</mat-icon>

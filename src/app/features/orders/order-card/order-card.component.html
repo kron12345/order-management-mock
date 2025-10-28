@@ -22,18 +22,16 @@
     </div>
 
     <div class="right">
-      @if (order.linkedBusinessId) {
-        <button mat-stroked-button>
-          <mat-icon>work_outline</mat-icon> Geschäft
-          {{ order.linkedBusinessId }}
-        </button>
-      }
-      @if (order.linkedTemplateId) {
-        <button mat-stroked-button>
-          <mat-icon>schema</mat-icon> Vorlage {{ order.linkedTemplateId }}
-        </button>
-      }
-      <button mat-icon-button matTooltip="Mehr">
+      <button
+        mat-stroked-button
+        color="primary"
+        (click)="openPositionDialog($event)"
+        matTooltip="Auftragsposition hinzufügen"
+      >
+        <mat-icon>add</mat-icon>
+        Position
+      </button>
+      <button mat-icon-button matTooltip="Optionen" (click)="$event.stopPropagation()">
         <mat-icon>more_vert</mat-icon>
       </button>
     </div>

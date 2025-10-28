@@ -1,0 +1,49 @@
+<h2 mat-dialog-title>Neuer Auftrag</h2>
+
+<mat-dialog-content>
+  <form [formGroup]="form" class="order-form">
+    <div class="grid">
+      <mat-form-field appearance="outline">
+        <mat-label>Auftrags-ID</mat-label>
+        <input matInput formControlName="id" placeholder="A-2025-0003" />
+      </mat-form-field>
+
+      <mat-form-field appearance="outline">
+        <mat-label>Status</mat-label>
+        <mat-select formControlName="status">
+          @for (option of statusOptions; track option.value) {
+            <mat-option [value]="option.value">{{ option.label }}</mat-option>
+          }
+        </mat-select>
+      </mat-form-field>
+    </div>
+
+    <mat-form-field appearance="outline">
+      <mat-label>Name</mat-label>
+      <input matInput formControlName="name" />
+      @if (form.controls.name.invalid && form.controls.name.touched) {
+        <mat-error>Bitte einen Namen erfassen.</mat-error>
+      }
+    </mat-form-field>
+
+    <mat-form-field appearance="outline">
+      <mat-label>Kunde</mat-label>
+      <input matInput formControlName="customer" />
+    </mat-form-field>
+
+    <mat-form-field appearance="outline">
+      <mat-label>Tags (kommagetrennt)</mat-label>
+      <input matInput formControlName="tags" placeholder="S-Bahn, Q4" />
+    </mat-form-field>
+
+    <mat-form-field appearance="outline">
+      <mat-label>Kommentar</mat-label>
+      <textarea matInput rows="3" formControlName="comment"></textarea>
+    </mat-form-field>
+  </form>
+</mat-dialog-content>
+
+<mat-dialog-actions align="end">
+  <button mat-button (click)="cancel()">Abbrechen</button>
+  <button mat-flat-button color="primary" (click)="save()">Anlegen</button>
+</mat-dialog-actions>

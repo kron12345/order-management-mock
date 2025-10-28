@@ -21,6 +21,91 @@
               <span class="sep">•</span> <span>{{ it.responsible }}</span>
             }
           </div>
+          @if (it.fromLocation || it.toLocation || it.serviceType) {
+            <div class="route">
+              @if (it.fromLocation || it.toLocation) {
+                <span class="segment">
+                  {{ it.fromLocation || '—' }}
+                  <mat-icon inline>arrow_forward</mat-icon>
+                  {{ it.toLocation || '—' }}
+                </span>
+              }
+              @if (it.serviceType) {
+                <span class="tag">{{ it.serviceType }}</span>
+              }
+            </div>
+          }
+          <div class="chips">
+            @if (trafficPeriodName(it.trafficPeriodId)) {
+              <mat-chip>
+                <mat-icon>calendar_today</mat-icon>
+                {{ trafficPeriodName(it.trafficPeriodId) }}
+              </mat-chip>
+            }
+            @if (templateName(it.linkedTemplateId)) {
+              <mat-chip>
+                <mat-icon>schema</mat-icon>
+                {{ templateName(it.linkedTemplateId) }}
+              </mat-chip>
+            }
+            @if (trainPlanLabel(it.linkedTrainPlanId)) {
+              <mat-chip>
+                <mat-icon>train</mat-icon>
+                {{ trainPlanLabel(it.linkedTrainPlanId) }}
+              </mat-chip>
+            }
+          </div>
+          @let businesses = businessesForItem(it);
+          @if (businesses.length) {
+            <div class="businesses">
+              @for (biz of businesses; track biz.id) {
+                <div class="business-card">
+                  <div class="business-header">
+                    <span class="business-title">{{ biz.title }}</span>
+                    <span class="business-status" [class]="'status-' + biz.status">
+                      {{ statusLabel(biz.status) }}
+                    </span>
+                  </div>
+                  <div class="business-meta">
+                    <span class="meta-item">
+                      <mat-icon>calendar_today</mat-icon>
+                      <span>Erstellt {{ biz.createdAt | date: 'shortDate' }}</span>
+                    </span>
+                    @if (biz.dueDate) {
+                      <span class="meta-item due">
+                        <mat-icon>alarm</mat-icon>
+                        <span>Fällig {{ biz.dueDate | date: 'short' }}</span>
+                      </span>
+                    }
+                    <span class="meta-item assignment">
+                      <mat-icon>{{ assignmentIcon(biz) }}</mat-icon>
+                      <span>{{ assignmentLabel(biz) }}</span>
+                    </span>
+                  </div>
+                  <div class="business-description">{{ biz.description }}</div>
+                  @if (biz.documents?.length) {
+                    <div class="business-documents">
+                      <span class="documents-label">
+                        <mat-icon>attach_file</mat-icon> Dokumente
+                      </span>
+                      <div class="documents-list">
+                        @for (doc of biz.documents; track doc.id) {
+                          <a
+                            mat-stroked-button
+                            [href]="doc.url || '#'"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            <mat-icon>insert_drive_file</mat-icon> {{ doc.name }}
+                          </a>
+                        }
+                      </div>
+                    </div>
+                  }
+                </div>
+              }
+            </div>
+          }
         </div>
         <div class="right">
           @if (it.deviation) {
@@ -28,12 +113,6 @@
               it.deviation
             }}</span>
           }
-          <button mat-icon-button matTooltip="Öffnen">
-            <mat-icon>open_in_new</mat-icon>
-          </button>
-          <button mat-icon-button matTooltip="Optionen">
-            <mat-icon>more_horiz</mat-icon>
-          </button>
         </div>
       </div>
       <mat-divider />

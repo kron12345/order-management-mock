@@ -1,4 +1,6 @@
 .order-card {
+  width: 100%;
+
   .order-header {
     background: #111;
     color: #fff;
@@ -39,9 +41,6 @@
       display: flex;
       gap: 8px;
       align-items: center;
-      button[mat-stroked-button] mat-icon {
-        margin-right: 0.25rem;
-      }
     }
   }
 

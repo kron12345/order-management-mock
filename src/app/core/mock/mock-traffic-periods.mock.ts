@@ -1,0 +1,100 @@
+import { TrafficPeriod } from '../models/traffic-period.model';
+
+export const MOCK_TRAFFIC_PERIODS: TrafficPeriod[] = [
+  {
+    id: 'TPER-001',
+    name: 'Frühjahrs-Baupause 2025',
+    type: 'construction',
+    description:
+      'Blockierte Verkehrstage für Bauarbeiten im März und April 2025.',
+    responsible: 'Infrastruktur',
+    createdAt: '2025-10-10T08:00:00',
+    updatedAt: '2025-10-21T14:15:00',
+    tags: ['Bauphase', 'Basel'],
+    rules: [
+      {
+        id: 'TPER-001-R1',
+        name: 'Kalender 2025',
+        daysBitmap: '1111111',
+        validityStart: '2025-01-01',
+        validityEnd: '2025-12-31',
+        includesDates: [
+          '2025-03-03',
+          '2025-03-04',
+          '2025-03-05',
+          '2025-03-06',
+          '2025-03-07',
+          '2025-04-14',
+          '2025-04-15',
+          '2025-04-16',
+          '2025-04-17',
+          '2025-04-18',
+        ],
+      },
+    ],
+  },
+  {
+    id: 'TPER-002',
+    name: 'Feiertage Schweiz 2025',
+    type: 'special',
+    description:
+      'Feiertage mit reduziertem Regelverkehr und Sonderfahrplänen.',
+    responsible: 'Fahrplanplanung',
+    createdAt: '2025-09-12T09:20:00',
+    updatedAt: '2025-10-18T11:05:00',
+    tags: ['Feiertage'],
+    rules: [
+      {
+        id: 'TPER-002-R1',
+        name: 'Kalender 2025',
+        daysBitmap: '1111111',
+        validityStart: '2025-01-01',
+        validityEnd: '2025-12-31',
+        includesDates: [
+          '2025-01-01',
+          '2025-04-18',
+          '2025-04-21',
+          '2025-05-01',
+          '2025-05-29',
+          '2025-06-09',
+          '2025-08-01',
+          '2025-12-24',
+          '2025-12-25',
+          '2025-12-26',
+        ],
+      },
+    ],
+  },
+  {
+    id: 'TPER-003',
+    name: 'Sommer-Samstage Zusatzverkehr 2025',
+    type: 'special',
+    description:
+      'Zusätzliche Verkehrstage für Ausflugszüge an ausgewählten Sommerwochenenden.',
+    responsible: 'Vertrieb',
+    createdAt: '2025-10-01T13:00:00',
+    updatedAt: '2025-10-21T14:10:00',
+    tags: ['Sommer', 'Tourismus'],
+    rules: [
+      {
+        id: 'TPER-003-R1',
+        name: 'Kalender 2025',
+        daysBitmap: '1111111',
+        validityStart: '2025-01-01',
+        validityEnd: '2025-12-31',
+        includesDates: [
+          '2025-07-05',
+          '2025-07-06',
+          '2025-07-12',
+          '2025-07-13',
+          '2025-07-19',
+          '2025-07-20',
+          '2025-07-26',
+          '2025-07-27',
+          '2025-08-02',
+          '2025-08-03',
+        ],
+      },
+    ],
+  },
+];

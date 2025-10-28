@@ -1,0 +1,268 @@
+<h2 mat-dialog-title>Neue Fahrplanvorlage</h2>
+
+<mat-dialog-content class="dialog-content">
+  <form class="template-form" [formGroup]="form">
+    <section class="section">
+      <h3>Stammdaten</h3>
+      <div class="grid grid--two">
+        <mat-form-field appearance="outline">
+          <mat-label>Titel</mat-label>
+          <input matInput formControlName="title" placeholder="z. B. S3 Basel → Olten" />
+          @if (form.controls.title.invalid && form.controls.title.touched) {
+            <mat-error>Titel ist erforderlich.</mat-error>
+          }
+        </mat-form-field>
+
+        <mat-form-field appearance="outline">
+          <mat-label>Zugnummer / OTN</mat-label>
+          <input matInput formControlName="trainNumber" placeholder="z. B. S3" />
+          @if (
+            form.controls.trainNumber.invalid && form.controls.trainNumber.touched
+          ) {
+            <mat-error>Zugnummer ist erforderlich.</mat-error>
+          }
+        </mat-form-field>
+      </div>
+
+      <mat-form-field appearance="outline">
+        <mat-label>Beschreibung</mat-label>
+        <textarea
+          matInput
+          formControlName="description"
+          rows="3"
+          placeholder="Worum geht es bei dieser Vorlage?"
+        ></textarea>
+      </mat-form-field>
+
+      <div class="grid grid--three">
+        <mat-form-field appearance="outline">
+          <mat-label>Verantwortliche RU</mat-label>
+          <input matInput formControlName="responsibleRu" placeholder="z. B. Qnamic Rail GmbH" />
+        </mat-form-field>
+
+        <mat-form-field appearance="outline">
+          <mat-label>Status</mat-label>
+          <mat-select formControlName="status">
+            @for (option of statusOptions; track option) {
+              <mat-option [value]="option">{{ option | titlecase }}</mat-option>
+            }
+          </mat-select>
+        </mat-form-field>
+
+        <mat-form-field appearance="outline">
+          <mat-label>Kategorie</mat-label>
+          <mat-select formControlName="category">
+            @for (option of categoryOptions; track option) {
+              <mat-option [value]="option">{{ option }}</mat-option>
+            }
+          </mat-select>
+        </mat-form-field>
+      </div>
+
+      <div class="grid grid--two">
+        <mat-form-field appearance="outline">
+          <mat-label>Gültig ab</mat-label>
+          <input matInput [matDatepicker]="startPicker" formControlName="startDate" />
+          <mat-datepicker-toggle matIconSuffix [for]="startPicker" />
+          <mat-datepicker #startPicker></mat-datepicker>
+        </mat-form-field>
+
+        <mat-form-field appearance="outline">
+          <mat-label>Gültig bis (optional)</mat-label>
+          <input matInput [matDatepicker]="endPicker" formControlName="endDate" />
+          <mat-datepicker-toggle matIconSuffix [for]="endPicker" />
+          <mat-datepicker #endPicker></mat-datepicker>
+        </mat-form-field>
+      </div>
+
+      <mat-form-field appearance="outline">
+        <mat-label>Tags (kommagetrennt)</mat-label>
+        <input matInput formControlName="tags" placeholder="S-Bahn, Basel, Nachtverkehr" />
+      </mat-form-field>
+    </section>
+
+    <section class="section">
+      <header>
+        <h3>Rollout-Einstellungen</h3>
+        <mat-slide-toggle formControlName="recurrenceEnabled">
+          Serienfahrten aktiv
+        </mat-slide-toggle>
+      </header>
+
+      <div class="grid grid--three" [class.disabled]="!form.value.recurrenceEnabled">
+        <mat-form-field appearance="outline">
+          <mat-label>Startzeit</mat-label>
+          <input matInput formControlName="recurrenceStart" placeholder="HH:MM" />
+        </mat-form-field>
+        <mat-form-field appearance="outline">
+          <mat-label>Endzeit</mat-label>
+          <input matInput formControlName="recurrenceEnd" placeholder="HH:MM" />
+        </mat-form-field>
+        <mat-form-field appearance="outline">
+          <mat-label>Intervall (Minuten)</mat-label>
+          <input
+            matInput
+            type="number"
+            min="1"
+            max="720"
+            formControlName="recurrenceInterval"
+          />
+        </mat-form-field>
+      </div>
+
+      <div class="day-toggle" [class.disabled]="!form.value.recurrenceEnabled">
+        @for (day of dayOptions; track day.value) {
+          <button
+            type="button"
+            mat-stroked-button
+            [class.active]="form.controls.recurrenceDays.value.includes(day.value)"
+            (click)="toggleRecurrenceDay(day.value)"
+          >
+            {{ day.label }}
+          </button>
+        }
+      </div>
+    </section>
+
+    <section class="section">
+      <header>
+        <h3>Fahrweg & Halte</h3>
+        <button
+          mat-stroked-button
+          type="button"
+          (click)="
+            addIntermediateStop(stops.length - 2 >= 0 ? stops.length - 2 : 0)
+          "
+        >
+          <mat-icon>add</mat-icon>
+          Zwischenhalt hinzufügen
+        </button>
+      </header>
+
+      <div class="stops">
+        @for (stopControl of stops.controls; track stopControl; let i = $index) {
+          <mat-card class="stop-card">
+            <mat-card-header>
+              <mat-card-title>
+                @switch (stopAt(i).controls.type.value) {
+                  @case ('origin') { Startpunkt }
+                  @case ('destination') { Ziel }
+                  @default { Zwischenhalt }
+                }
+                {{ i + 1 }}
+              </mat-card-title>
+              <mat-card-subtitle>
+                OTN-Referenzpunkt &
+                @if (stopAt(i).controls.type.value === 'intermediate') {
+                  Haltezweck
+                } @else {
+                  Abfahrts-/Ankunftsfenster
+                }
+              </mat-card-subtitle>
+              <span class="stop-card__badge">{{ stopAt(i).controls.type.value }}</span>
+            </mat-card-header>
+
+            <mat-card-content [formGroup]="stopAt(i)">
+              <div class="grid grid--two">
+                <mat-form-field appearance="outline">
+                  <mat-label>Stationsname</mat-label>
+                  <input matInput formControlName="locationName" />
+                  @if (
+                    stopAt(i).controls.locationName.invalid &&
+                    stopAt(i).controls.locationName.touched
+                  ) {
+                    <mat-error>Stationsname ist erforderlich.</mat-error>
+                  }
+                </mat-form-field>
+
+                <mat-form-field appearance="outline">
+                  <mat-label>Betriebspunkt-Code (RCS)</mat-label>
+                  <input matInput formControlName="locationCode" />
+                  @if (
+                    stopAt(i).controls.locationCode.invalid &&
+                    stopAt(i).controls.locationCode.touched
+                  ) {
+                    <mat-error>Bitte Code angeben.</mat-error>
+                  }
+                </mat-form-field>
+              </div>
+
+              <div class="grid grid--four">
+                <mat-form-field appearance="outline">
+                  <mat-label>Früheste Ankunft</mat-label>
+                  <input matInput formControlName="arrivalEarliest" placeholder="HH:MM" />
+                </mat-form-field>
+                <mat-form-field appearance="outline">
+                  <mat-label>Späteste Ankunft</mat-label>
+                  <input matInput formControlName="arrivalLatest" placeholder="HH:MM" />
+                </mat-form-field>
+                <mat-form-field appearance="outline">
+                  <mat-label>Früheste Abfahrt</mat-label>
+                  <input matInput formControlName="departureEarliest" placeholder="HH:MM" />
+                </mat-form-field>
+                <mat-form-field appearance="outline">
+                  <mat-label>Späteste Abfahrt</mat-label>
+                  <input matInput formControlName="departureLatest" placeholder="HH:MM" />
+                </mat-form-field>
+              </div>
+
+              <div class="grid grid--three">
+                <mat-form-field appearance="outline">
+                  <mat-label>Land</mat-label>
+                  <input matInput maxlength="2" formControlName="countryCode" />
+                </mat-form-field>
+                <mat-form-field appearance="outline">
+                  <mat-label>Dwell (Min)</mat-label>
+                  <input matInput type="number" formControlName="dwellMinutes" />
+                </mat-form-field>
+                <mat-form-field appearance="outline">
+                  <mat-label>Offset (Tage)</mat-label>
+                  <input matInput type="number" formControlName="offsetDays" />
+                </mat-form-field>
+              </div>
+
+              <mat-form-field appearance="outline">
+                <mat-label>Gleisanschluss</mat-label>
+                <input matInput formControlName="platformWish" placeholder="z. B. 11" />
+              </mat-form-field>
+
+              <div class="activities">
+                <span>Haltezwecke</span>
+                <div class="activities__chips">
+                  @for (activity of activityOptions; track activity.code) {
+                    <button
+                      mat-stroked-button
+                      type="button"
+                      [class.active]="stopAt(i).controls.activities.value.includes(activity.code)"
+                      (click)="toggleActivity(i, activity.code)"
+                    >
+                      {{ activity.label }}
+                    </button>
+                  }
+                </div>
+              </div>
+
+              <mat-form-field appearance="outline">
+                <mat-label>Hinweis (optional)</mat-label>
+                <textarea matInput rows="2" formControlName="notes"></textarea>
+              </mat-form-field>
+            </mat-card-content>
+
+            <mat-card-actions align="end">
+              @if (stopAt(i).controls.type.value === 'intermediate') {
+                <button mat-button color="warn" (click)="removeStop(i)">
+                  Entfernen
+                </button>
+              }
+            </mat-card-actions>
+          </mat-card>
+        }
+      </div>
+    </section>
+  </form>
+</mat-dialog-content>
+
+<mat-dialog-actions align="end" class="dialog-actions">
+  <button mat-button (click)="cancel()">Abbrechen</button>
+  <button mat-flat-button color="primary" (click)="save()">Vorlage speichern</button>
+</mat-dialog-actions>
