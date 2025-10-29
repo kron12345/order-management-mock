@@ -10,6 +10,8 @@ import { BusinessService } from '../../../core/services/business.service';
 import { TrafficPeriodService } from '../../../core/services/traffic-period.service';
 import { ScheduleTemplateService } from '../../../core/services/schedule-template.service';
 import { TrainPlanService } from '../../../core/services/train-plan.service';
+import { Router } from '@angular/router';
+import { TrainPlanStatus } from '../../../core/models/train-plan.model';
 
 @Component({
   selector: 'app-order-item-list',
@@ -27,16 +29,34 @@ export class OrderItemListComponent {
     in_arbeit: 'In Arbeit',
     erledigt: 'Erledigt',
   };
+  private readonly itemTypeLabels: Record<OrderItem['type'], string> = {
+    Leistung: 'Leistung',
+    Fahrplan: 'Fahrplan',
+  };
+  private readonly trainPlanStatusLabels: Partial<Record<TrainPlanStatus, string>> =
+    {
+      requested: 'Angefragt',
+      offered: 'Angeboten',
+      confirmed: 'Bestätigt',
+      operating: 'In Betrieb',
+      canceled: 'Storniert',
+      not_ordered: 'Nicht bestellt',
+    };
 
   constructor(
     private readonly businessService: BusinessService,
     private readonly trafficPeriodService: TrafficPeriodService,
     private readonly templateService: ScheduleTemplateService,
     private readonly trainPlanService: TrainPlanService,
+    private readonly router: Router,
   ) {}
 
   businessesForItem(item: OrderItem): Business[] {
     return this.businessService.getByIds(item.linkedBusinessIds ?? []);
+  }
+
+  typeLabel(item: OrderItem): string {
+    return this.itemTypeLabels[item.type] ?? item.type;
   }
 
   statusLabel(status: BusinessStatus): string {
@@ -73,5 +93,60 @@ export class OrderItemListComponent {
     }
     const plan = this.trainPlanService.getById(id);
     return plan ? `${plan.trainNumber} · ${plan.calendar.validFrom}` : undefined;
+  }
+
+  trainPlanStatus(
+    item: OrderItem,
+  ): { label: string; cssClass: string } | undefined {
+    if (!item.linkedTrainPlanId) {
+      return undefined;
+    }
+    const plan = this.trainPlanService.getById(item.linkedTrainPlanId);
+    const status = plan?.status;
+    if (!status) {
+      return undefined;
+    }
+    const label =
+      this.trainPlanStatusLabels[status] ?? this.fallbackStatusLabel(status);
+    return {
+      label,
+      cssClass: `status-${this.normalizeStatusValue(status)}`,
+    };
+  }
+
+  private fallbackStatusLabel(value: string): string {
+    return value
+      .replace(/[_-]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .toLowerCase()
+      .replace(/(^|\s)\S/g, (match) => match.toUpperCase());
+  }
+
+  private normalizeStatusValue(value: string): string {
+    return value.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+  }
+
+  hasSchedule(item: OrderItem): boolean {
+    return Boolean(item.start && item.end);
+  }
+
+  onBusinessCardClick(event: MouseEvent, businessId: string): void {
+    const target = event.target as HTMLElement;
+    if (target.closest('a, button')) {
+      return;
+    }
+    this.navigateToBusiness(businessId);
+  }
+
+  onBusinessCardKeydown(event: KeyboardEvent, businessId: string): void {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      this.navigateToBusiness(businessId);
+    }
+  }
+
+  private navigateToBusiness(businessId: string): void {
+    this.router.navigate(['/businesses'], { fragment: businessId });
   }
 }

@@ -27,6 +27,68 @@
         display: flex;
         gap: 8px;
         align-items: center;
+        flex-wrap: wrap;
+
+        .type {
+          font-size: 0.75rem;
+          text-transform: uppercase;
+          letter-spacing: 0.08em;
+          font-weight: 600;
+          padding: 2px 10px;
+          border-radius: 999px;
+          background: #e8eefc;
+          color: #213547;
+        }
+
+        .ttt-status-chip {
+          font-size: 0.7rem;
+          text-transform: uppercase;
+          letter-spacing: 0.08em;
+          font-weight: 600;
+          height: 22px;
+          border-radius: 999px;
+          border-width: 1px;
+          border-style: solid;
+          background: #f0f4ff;
+          color: #1a73e8;
+          padding: 0 8px;
+        }
+
+        .ttt-status-chip.status-requested {
+          background: #e8f0fe;
+          border-color: #1a73e8;
+          color: #1a73e8;
+        }
+
+        .ttt-status-chip.status-offered {
+          background: #ede7f6;
+          border-color: #5e35b1;
+          color: #512da8;
+        }
+
+        .ttt-status-chip.status-confirmed {
+          background: #e6f4ea;
+          border-color: #1e8e3e;
+          color: #1e8e3e;
+        }
+
+        .ttt-status-chip.status-operating {
+          background: #e0f2f1;
+          border-color: #00796b;
+          color: #00695c;
+        }
+
+        .ttt-status-chip.status-canceled {
+          background: #fde8e8;
+          border-color: #d32f2f;
+          color: #c62828;
+        }
+
+        .ttt-status-chip.status-not-ordered {
+          background: #f3f4f6;
+          border-color: #9ca3af;
+          color: #374151;
+        }
       }
       .sep {
         opacity: 0.5;
@@ -75,9 +137,9 @@
       }
       .businesses {
         margin-top: 8px;
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+        gap: 12px;
 
         .business-card {
           display: flex;
@@ -85,8 +147,26 @@
           gap: 8px;
           padding: 12px;
           border: 1px solid #ddd;
-          border-radius: 6px;
+          border-radius: 8px;
           background: #fff;
+          cursor: pointer;
+          transition:
+            border-color 0.2s ease,
+            box-shadow 0.2s ease,
+            transform 0.2s ease;
+
+          &:hover,
+          &:focus-visible {
+            border-color: #1a73e8;
+            box-shadow: 0 2px 8px rgba(26, 115, 232, 0.15);
+            transform: translateY(-1px);
+            outline: none;
+          }
+
+          &.business-card--highlight {
+            border-color: #1a73e8;
+            box-shadow: 0 0 0 3px rgba(26, 115, 232, 0.2);
+          }
         }
 
         .business-header {
@@ -101,41 +181,49 @@
         }
 
         .business-status {
-          font-size: 0.75rem;
+          font-size: 0.7rem;
           text-transform: uppercase;
-          letter-spacing: 0.05em;
-          padding: 2px 8px;
+          letter-spacing: 0.08em;
+          font-weight: 600;
+          padding: 0 8px;
+          height: 22px;
           border-radius: 999px;
-          background: #e0e0e0;
+          border-width: 1px;
+          border-style: solid;
+          background: #f0f0f0;
           color: #333;
           white-space: nowrap;
         }
 
         .business-status.status-neu {
           background: #e8f0fe;
+          border-color: #1a73e8;
           color: #1a73e8;
         }
 
         .business-status.status-pausiert {
           background: #fff4e5;
+          border-color: #f57c00;
           color: #f57c00;
         }
 
         .business-status.status-in_arbeit {
           background: #e0f2f1;
+          border-color: #00796b;
           color: #00796b;
         }
 
         .business-status.status-erledigt {
           background: #e6f4ea;
+          border-color: #1e8e3e;
           color: #1e8e3e;
         }
 
         .business-meta {
-          display: flex;
-          flex-wrap: wrap;
-          gap: 12px;
-          font-size: 0.85rem;
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+          gap: 8px;
+          font-size: 0.8rem;
           color: #555;
 
           .meta-item {

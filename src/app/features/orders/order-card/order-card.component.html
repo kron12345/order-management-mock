@@ -2,23 +2,90 @@
   <div class="order-header" (click)="expanded.set(!expanded())" tabindex="0">
     <div class="left">
       <div class="title">
-        <span class="id">{{ order.id }}</span>
+        <span class="id-pill">
+          <mat-icon inline class="id-icon">assignment</mat-icon>
+          {{ order.id }}
+        </span>
         <span class="name">{{ order.name }}</span>
       </div>
-      <div class="meta">
-        <app-status-chip [status]="order.status" />
-        @if (order.customer) {
-          <span class="sep">•</span> <span>{{ order.customer }}</span>
-        }
-        @if (order.tags?.length) {
-          <span class="sep">•</span>
-          <mat-chip-set aria-label="Tags">
-            @for (t of order.tags; track t) {
-              <mat-chip>{{ t }}</mat-chip>
-            }
-          </mat-chip-set>
-        }
-      </div>
+      @if (order.customer || order.tags?.length) {
+        <div class="meta">
+          @if (order.customer) {
+            <span class="meta-pill">
+              <mat-icon inline>business</mat-icon>
+              {{ order.customer }}
+            </span>
+          }
+          @if (order.tags?.length) {
+            <mat-chip-set aria-label="Tags">
+              @for (t of order.tags; track t) {
+                <mat-chip class="tag-chip" appearance="outlined">
+                  <mat-icon>label</mat-icon>
+                  {{ t }}
+                </mat-chip>
+              }
+            </mat-chip-set>
+          }
+        </div>
+      }
+      @if (trainStatusSummaries().length || businessStatusSummaries().length) {
+        <div class="status-aggregates">
+          @if (trainStatusSummaries().length) {
+            <div class="status-group status-group--train">
+              <span class="group-label">
+                <mat-icon inline>train</mat-icon>
+                Züge
+              </span>
+              <mat-chip-set aria-label="Status der Züge">
+                <mat-chip
+                  class="status-chip status-chip--train"
+                  [class.status-chip--active]="isTrainStatusActive('all')"
+                  (click)="clearTrainStatus($event)"
+                >
+                  Alle
+                </mat-chip>
+                @for (summary of trainStatusSummaries(); track summary.key) {
+                  <mat-chip
+                    class="status-chip status-chip--train"
+                    [ngClass]="summary.key"
+                    [class.status-chip--active]="isTrainStatusActive(summary.value)"
+                    (click)="toggleTrainStatus(summary.value, $event)"
+                  >
+                    {{ summary.label }} · {{ summary.count }}
+                  </mat-chip>
+                }
+              </mat-chip-set>
+            </div>
+          }
+          @if (businessStatusSummaries().length) {
+            <div class="status-group status-group--business">
+              <span class="group-label">
+                <mat-icon inline>work</mat-icon>
+                Geschäfte
+              </span>
+              <mat-chip-set aria-label="Status der Geschäfte">
+                <mat-chip
+                  class="status-chip status-chip--business"
+                  [class.status-chip--active]="isBusinessStatusActive('all')"
+                  (click)="clearBusinessStatus($event)"
+                >
+                  Alle
+                </mat-chip>
+                @for (summary of businessStatusSummaries(); track summary.key) {
+                  <mat-chip
+                    class="status-chip status-chip--business"
+                    [ngClass]="summary.key"
+                    [class.status-chip--active]="isBusinessStatusActive(summary.value)"
+                    (click)="toggleBusinessStatus(summary.value, $event)"
+                  >
+                    {{ summary.label }} · {{ summary.count }}
+                  </mat-chip>
+                }
+              </mat-chip-set>
+            </div>
+          }
+        </div>
+      }
     </div>
 
     <div class="right">
@@ -39,7 +106,7 @@
 
   @if (expanded()) {
     <mat-divider></mat-divider>
-    <app-order-item-list [items]="order.items" />
+    <app-order-item-list [items]="effectiveItems()" />
     @if (order.comment) {
       <mat-divider></mat-divider>
       <div class="comment">

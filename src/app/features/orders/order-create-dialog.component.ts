@@ -7,7 +7,6 @@ import {
   CreateOrderPayload,
   OrderService,
 } from '../../core/services/order.service';
-import { OrderStatus } from '../../core/models/order-status';
 
 @Component({
   selector: 'app-order-create-dialog',
@@ -21,18 +20,10 @@ export class OrderCreateDialogComponent {
   private readonly dialogRef = inject(MatDialogRef<OrderCreateDialogComponent>);
   private readonly orderService = inject(OrderService);
 
-  readonly statusOptions: { value: OrderStatus; label: string }[] = [
-    { value: 'open', label: 'Offen' },
-    { value: 'in_progress', label: 'In Arbeit' },
-    { value: 'blocked', label: 'Blockiert' },
-    { value: 'done', label: 'Erledigt' },
-  ];
-
   readonly form = this.fb.group({
     id: [''],
     name: ['', Validators.required],
     customer: [''],
-    status: this.fb.nonNullable.control<OrderStatus>('open'),
     tags: [''],
     comment: [''],
   });
@@ -52,7 +43,6 @@ export class OrderCreateDialogComponent {
       id: value.id?.trim() || undefined,
       name: value.name!,
       customer: value.customer?.trim() || undefined,
-      status: value.status,
       tags: this.parseTags(value.tags),
       comment: value.comment?.trim() || undefined,
     };

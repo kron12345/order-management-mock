@@ -111,9 +111,9 @@ export class TrafficPeriodService {
     }
   }
 
-  createPeriod(payload: TrafficPeriodCreatePayload) {
+  createPeriod(payload: TrafficPeriodCreatePayload): string {
     if (!payload.selectedDates.length) {
-      return;
+      return '';
     }
 
     const sortedDates = [...new Set(payload.selectedDates)].sort();
@@ -143,6 +143,7 @@ export class TrafficPeriodService {
     };
 
     this._periods.update((periods) => [period, ...periods]);
+    return id;
   }
 
   updatePeriod(periodId: string, payload: TrafficPeriodCreatePayload) {

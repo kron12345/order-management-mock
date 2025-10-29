@@ -10,17 +10,59 @@
   </mat-form-field>
 
   <mat-form-field appearance="outline">
-    <mat-label>Status</mat-label>
-    <mat-select [value]="status()" (valueChange)="onStatusChange($event)">
-      @for (s of statusOptions; track s) {
-        <mat-option [value]="s">{{ s }}</mat-option>
+    <mat-label>Tag</mat-label>
+    <input
+      matInput
+      placeholder="z. B. S-Bahn"
+      [value]="tag() === 'all' ? '' : tag()"
+      (input)="onTagInput($event)"
+    />
+  </mat-form-field>
+
+  <mat-form-field appearance="outline">
+    <mat-label>Zugnummer</mat-label>
+    <input
+      matInput
+      placeholder="z. B. 4711"
+      [ngModel]="trainNumber()"
+      (ngModelChange)="onTrainNumberChange($event)"
+    />
+  </mat-form-field>
+
+  <mat-form-field appearance="outline">
+    <mat-label>Zeitraum</mat-label>
+    <mat-select
+      [value]="store.filters().timeRange"
+      (valueChange)="onTimeRangeChange($event)"
+    >
+      @for (option of timeOptions; track option.value) {
+        <mat-option [value]="option.value">{{ option.label }}</mat-option>
       }
     </mat-select>
   </mat-form-field>
 
   <mat-form-field appearance="outline">
-    <mat-label>Tag</mat-label>
-    <input matInput placeholder="z. B. S-Bahn" (input)="onTagInput($event)" />
+    <mat-label>Zugstatus</mat-label>
+    <mat-select
+      [value]="store.filters().trainStatus"
+      (valueChange)="onTrainStatusChange($event)"
+    >
+      @for (option of trainStatusOptions; track option.value) {
+        <mat-option [value]="option.value">{{ option.label }}</mat-option>
+      }
+    </mat-select>
+  </mat-form-field>
+
+  <mat-form-field appearance="outline">
+    <mat-label>Geschäftsstatus</mat-label>
+    <mat-select
+      [value]="store.filters().businessStatus"
+      (valueChange)="onBusinessStatusChange($event)"
+    >
+      @for (option of businessStatusOptions; track option.value) {
+        <mat-option [value]="option.value">{{ option.label }}</mat-option>
+      }
+    </mat-select>
   </mat-form-field>
 
   <span class="spacer"></span>

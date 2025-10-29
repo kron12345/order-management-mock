@@ -10,11 +10,47 @@
   gap: 16px;
 }
 
+.inline-actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.inline-button {
+  align-self: flex-start;
+}
+
+.file-input {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 1px dashed rgba(26, 115, 232, 0.4);
+  border-radius: 8px;
+  color: #1a73e8;
+  cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease;
+
+  &:hover {
+    background: rgba(26, 115, 232, 0.08);
+    border-color: rgba(26, 115, 232, 0.6);
+  }
+
+  input[type='file'] {
+    display: none;
+  }
+}
+
 .form {
   display: flex;
   flex-direction: column;
   gap: 16px;
   width: min(680px, 95vw);
+}
+
+.form--compact {
+  width: min(760px, 95vw);
 }
 
 .grid {
@@ -26,4 +62,109 @@
 .error {
   margin-top: 12px;
   color: #d93025;
+}
+
+.import-filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  align-items: end;
+}
+
+.import-results {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.import-results__actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  color: rgba(0, 0, 0, 0.6);
+}
+
+.import-results__buttons {
+  display: inline-flex;
+  gap: 8px;
+}
+
+.import-train {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.import-train__title {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: baseline;
+}
+
+.import-train__meta {
+  font-size: 0.8rem;
+  color: rgba(0, 0, 0, 0.6);
+}
+
+.import-train__route {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: rgba(0, 0, 0, 0.75);
+  font-size: 0.85rem;
+
+  mat-icon {
+    font-size: 16px;
+    width: 16px;
+    height: 16px;
+  }
+}
+
+.import-train__time {
+  font-weight: 600;
+  color: #1a73e8;
+}
+
+.template-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 16px;
+  border-radius: 8px;
+  background: rgba(26, 115, 232, 0.08);
+  color: rgba(13, 31, 60, 0.9);
+}
+
+.template-summary__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.template-summary__actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.template-summary__train {
+  display: inline-block;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: rgba(13, 31, 60, 0.8);
+}
+
+.template-summary__meta {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: rgba(13, 31, 60, 0.65);
+}
+
+.hint {
+  margin: 0;
+  color: rgba(0, 0, 0, 0.6);
 }

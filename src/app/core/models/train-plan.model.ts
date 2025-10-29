@@ -1,4 +1,5 @@
 export type TrainPlanStatus =
+  | 'not_ordered'
   | 'requested'
   | 'offered'
   | 'confirmed'

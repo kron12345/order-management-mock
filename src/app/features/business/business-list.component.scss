@@ -114,6 +114,9 @@
 .business-card {
   display: flex;
   flex-direction: column;
+  transition:
+    box-shadow 0.25s ease,
+    transform 0.25s ease;
 
   mat-card-header {
     align-items: flex-start;
@@ -134,6 +137,16 @@
     flex-direction: column;
     gap: 16px;
   }
+
+  &:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12);
+  }
+}
+
+.business-card--highlight {
+  box-shadow: 0 0 0 3px rgba(26, 115, 232, 0.25);
+  transform: translateY(0);
 }
 
 .due-date {

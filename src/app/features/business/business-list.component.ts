@@ -1,4 +1,4 @@
-import { CommonModule } from '@angular/common';
+import { CommonModule, DOCUMENT } from '@angular/common';
 import { Component, computed, effect, inject } from '@angular/core';
 import {
   FormControl,
@@ -24,6 +24,7 @@ import {
 } from '../../core/services/order.service';
 import { MatDialog } from '@angular/material/dialog';
 import { BusinessCreateDialogComponent } from './business-create-dialog.component';
+import { ActivatedRoute } from '@angular/router';
 
 interface SortOption {
   value: string;
@@ -41,6 +42,8 @@ export class BusinessListComponent {
   private readonly businessService = inject(BusinessService);
   private readonly orderService = inject(OrderService);
   private readonly dialog = inject(MatDialog);
+  private readonly route = inject(ActivatedRoute);
+  private readonly document = inject(DOCUMENT);
 
   readonly searchControl = new FormControl('', {
     nonNullable: true,
@@ -89,6 +92,7 @@ export class BusinessListComponent {
     in_arbeit: 'In Arbeit',
     erledigt: 'Erledigt',
   };
+  private pendingScrollId: string | null = null;
 
   constructor() {
     this.searchControl.setValue(this.filters().search, { emitEvent: false });
@@ -104,6 +108,18 @@ export class BusinessListComponent {
       if (this.searchControl.value !== next) {
         this.searchControl.setValue(next, { emitEvent: false });
       }
+    });
+
+    this.route.fragment
+      .pipe(takeUntilDestroyed())
+      .subscribe((fragment) => {
+        this.pendingScrollId = fragment ?? null;
+        window.setTimeout(() => this.scrollToPendingBusiness(), 0);
+      });
+
+    effect(() => {
+      this.businesses();
+      window.setTimeout(() => this.scrollToPendingBusiness(), 0);
     });
   }
 
@@ -209,6 +225,10 @@ export class BusinessListComponent {
     return business.id;
   }
 
+  businessElementId(id: string): string {
+    return `business-${id}`;
+  }
+
   private isSameDay(a: Date, b: Date): boolean {
     return (
       a.getFullYear() === b.getFullYear() &&
@@ -221,5 +241,23 @@ export class BusinessListComponent {
     const startA = new Date(a.getFullYear(), a.getMonth(), a.getDate());
     const startB = new Date(b.getFullYear(), b.getMonth(), b.getDate());
     return startA.getTime() < startB.getTime();
+  }
+
+  private scrollToPendingBusiness(): void {
+    if (!this.pendingScrollId) {
+      return;
+    }
+    const element = this.document.getElementById(
+      this.businessElementId(this.pendingScrollId),
+    );
+    if (!element) {
+      return;
+    }
+    this.pendingScrollId = null;
+    element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    element.classList.add('business-card--highlight');
+    window.setTimeout(() => {
+      element.classList.remove('business-card--highlight');
+    }, 2000);
   }
 }

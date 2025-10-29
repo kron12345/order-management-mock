@@ -7,15 +7,6 @@
         <mat-label>Auftrags-ID</mat-label>
         <input matInput formControlName="id" placeholder="A-2025-0003" />
       </mat-form-field>
-
-      <mat-form-field appearance="outline">
-        <mat-label>Status</mat-label>
-        <mat-select formControlName="status">
-          @for (option of statusOptions; track option.value) {
-            <mat-option [value]="option.value">{{ option.label }}</mat-option>
-          }
-        </mat-select>
-      </mat-form-field>
     </div>
 
     <mat-form-field appearance="outline">

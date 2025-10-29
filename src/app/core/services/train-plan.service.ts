@@ -5,7 +5,7 @@ import {
   TrainPlanStatus,
 } from '../models/train-plan.model';
 import { MOCK_TRAIN_PLANS } from '../mock/mock-train-plans.mock';
-import { ScheduleTemplateService } from './schedule-template.service';
+import { ScheduleTemplateService, CreateScheduleTemplateStopPayload } from './schedule-template.service';
 import { ScheduleTemplateStop } from '../models/schedule-template.model';
 import { TrafficPeriodService } from './traffic-period.service';
 
@@ -28,6 +28,17 @@ export interface CreatePlansFromTemplatePayload {
   intervalMinutes: number;
   count: number;
   responsibleRu?: string;
+}
+
+export interface CreateManualPlanPayload {
+  title: string;
+  trainNumber: string;
+  responsibleRu: string;
+  departure: string; // ISO datetime
+  stops: (CreateScheduleTemplateStopPayload | ScheduleTemplateStop)[];
+  sourceName?: string;
+  notes?: string;
+  templateId?: string;
 }
 
 @Injectable({ providedIn: 'root' })
@@ -196,6 +207,62 @@ export class TrainPlanService {
     return plans;
   }
 
+  createManualPlan(payload: CreateManualPlanPayload): TrainPlan {
+    const departureDate = new Date(payload.departure);
+    if (Number.isNaN(departureDate.getTime())) {
+      throw new Error('Ungültige Abfahrtszeit für den Fahrplan.');
+    }
+
+    const templateId = payload.templateId ?? `TMP-${Date.now().toString(36).toUpperCase()}`;
+    const stops = payload.stops.map((stop, index) =>
+      this.toTemplateStop(templateId, index, stop),
+    );
+
+    if (!stops.length) {
+      throw new Error('Der Fahrplan benötigt mindestens einen Halt.');
+    }
+
+    const planStops = this.buildStops(stops, departureDate);
+    if (!planStops.length) {
+      throw new Error('Die Haltestellen enthalten keine gültigen Zeiten.');
+    }
+
+    const planId = this.generatePlanId();
+    const timestamp = new Date().toISOString();
+
+    const plan: TrainPlan = {
+      id: planId,
+      title: payload.title,
+      trainNumber: payload.trainNumber,
+      pathRequestId: `PR-${planId}`,
+      pathId: undefined,
+      caseReferenceId: undefined,
+      status: 'not_ordered',
+      responsibleRu: payload.responsibleRu,
+      calendar: {
+        validFrom: departureDate.toISOString().slice(0, 10),
+        validTo: departureDate.toISOString().slice(0, 10),
+        daysBitmap: '1111111',
+      },
+      stops: planStops,
+      technical: {
+        trainType: 'Passenger',
+      },
+      createdAt: timestamp,
+      updatedAt: timestamp,
+      source: {
+        type: 'external',
+        name: payload.sourceName ?? payload.title,
+        templateId,
+      },
+      linkedOrderItemId: undefined,
+      notes: payload.notes,
+    } satisfies TrainPlan;
+
+    this._plans.update((plans) => [plan, ...plans]);
+    return plan;
+  }
+
   getById(id: string): TrainPlan | undefined {
     return this._plans().find((plan) => plan.id === id);
   }
@@ -216,11 +283,12 @@ export class TrainPlanService {
         );
       case 'status': {
         const order: Record<TrainPlanStatus, number> = {
-          requested: 0,
-          offered: 1,
-          confirmed: 2,
-          operating: 3,
-          canceled: 4,
+          not_ordered: 0,
+          requested: 1,
+          offered: 2,
+          confirmed: 3,
+          operating: 4,
+          canceled: 5,
         };
         return (order[a.status] - order[b.status]) * direction;
       }
@@ -255,7 +323,7 @@ export class TrainPlanService {
       pathRequestId: `PR-${planId}`,
       pathId: undefined,
       caseReferenceId: undefined,
-      status: 'requested',
+      status: 'not_ordered',
       responsibleRu,
       calendar: {
         validFrom: calendarDate,
@@ -276,6 +344,48 @@ export class TrainPlanService {
       linkedOrderItemId: undefined,
       notes: undefined,
     } satisfies TrainPlan;
+  }
+
+  private toTemplateStop(
+    templateId: string,
+    index: number,
+    stop: CreateScheduleTemplateStopPayload | ScheduleTemplateStop,
+  ): ScheduleTemplateStop {
+    if ('id' in stop && 'sequence' in stop) {
+      return stop as ScheduleTemplateStop;
+    }
+
+    const payload = stop as CreateScheduleTemplateStopPayload;
+    return {
+      id: `${templateId}-ST-${String(index + 1).padStart(3, '0')}`,
+      sequence: index + 1,
+      type: payload.type,
+      locationCode: payload.locationCode,
+      locationName: payload.locationName,
+      countryCode: payload.countryCode,
+      arrival:
+        payload.arrivalEarliest || payload.arrivalLatest
+          ? {
+              earliest: payload.arrivalEarliest,
+              latest: payload.arrivalLatest,
+            }
+          : undefined,
+      departure:
+        payload.departureEarliest || payload.departureLatest
+          ? {
+              earliest: payload.departureEarliest,
+              latest: payload.departureLatest,
+            }
+          : undefined,
+      offsetDays: payload.offsetDays,
+      dwellMinutes: payload.dwellMinutes,
+      activities:
+        payload.activities && payload.activities.length
+          ? payload.activities
+          : ['0001'],
+      platformWish: payload.platformWish,
+      notes: payload.notes,
+    } satisfies ScheduleTemplateStop;
   }
 
   private buildStops(stops: ScheduleTemplateStop[], departureDate: Date) {

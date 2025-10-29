@@ -45,6 +45,7 @@ export class TrainPlanListComponent {
   );
 
   readonly statusLabels: Record<TrainPlanStatus, string> = {
+    not_ordered: 'Nicht bestellt',
     requested: 'Angefragt',
     offered: 'Im Angebot',
     confirmed: 'Bestätigt',
@@ -61,6 +62,7 @@ export class TrainPlanListComponent {
   readonly statusOptions: { value: TrainPlanStatus | 'all'; label: string }[] =
     [
       { value: 'all', label: 'Alle Status' },
+      { value: 'not_ordered', label: 'Nicht bestellt' },
       { value: 'requested', label: 'Angefragt' },
       { value: 'offered', label: 'Im Angebot' },
       { value: 'confirmed', label: 'Bestätigt' },
@@ -152,7 +154,7 @@ export class TrainPlanListComponent {
   }
 
   statusClass(plan: TrainPlan): string {
-    return `status-${plan.status}`;
+    return `status-${plan.status.replace(/_/g, '-')}`;
   }
 
   stopTypeLabel(type: TrainPlan['stops'][number]['type']): string {

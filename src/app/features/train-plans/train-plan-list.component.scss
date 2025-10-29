@@ -127,6 +127,11 @@
     color: #f57c00;
   }
 
+  &.status-not-ordered {
+    background: #f3f4f6;
+    color: #4b5563;
+  }
+
   &.status-requested {
     background: #e8f0fe;
     color: #1a73e8;
@@ -147,6 +152,11 @@ mat-chip.status-operating {
 mat-chip.status-offered {
   background: rgba(245, 124, 0, 0.16);
   color: #f57c00;
+}
+
+mat-chip.status-not-ordered {
+  background: rgba(107, 114, 128, 0.16);
+  color: #4b5563;
 }
 
 mat-chip.status-requested {

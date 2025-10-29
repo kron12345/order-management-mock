@@ -4,43 +4,36 @@
   <div class="mode-toggle">
     <mat-button-toggle-group [formControl]="modeControl" appearance="legacy">
       <mat-button-toggle value="service">Leistung</mat-button-toggle>
-      <mat-button-toggle value="plan">Fahrplan</mat-button-toggle>
+      <mat-button-toggle value="plan">Fahrplan (Serie)</mat-button-toggle>
+      <mat-button-toggle value="manualPlan">Fahrplan (manuell)</mat-button-toggle>
+      <mat-button-toggle value="import">Fahrplan (Import)</mat-button-toggle>
     </mat-button-toggle-group>
   </div>
 
   <div class="section" *ngIf="mode() === 'service'">
     <form [formGroup]="serviceForm" class="form">
       <mat-form-field appearance="outline">
-        <mat-label>Positionsname</mat-label>
-        <input matInput formControlName="name" placeholder="Zug 1 / 08:00" />
-        @if (serviceForm.controls.name.invalid && serviceForm.controls.name.touched) {
-          <mat-error>Pflichtfeld.</mat-error>
+        <mat-label>Leistungstyp</mat-label>
+        <input matInput formControlName="serviceType" placeholder="z. B. Werkstattaufenthalt" />
+        @if (serviceForm.controls.serviceType.invalid && serviceForm.controls.serviceType.touched) {
+          <mat-error>Bitte einen Leistungstyp angeben.</mat-error>
         }
+      </mat-form-field>
+
+      <mat-form-field appearance="outline">
+        <mat-label>Positionsname (optional)</mat-label>
+        <input matInput formControlName="name" placeholder="Leistung · Nachtpflege" />
+        <mat-hint>Ohne Eingabe wird der Leistungstyp als Name verwendet.</mat-hint>
       </mat-form-field>
 
       <div class="grid">
         <mat-form-field appearance="outline">
-          <mat-label>Typ</mat-label>
-          <mat-select formControlName="type">
-            <mat-option value="TTT">TTT</mat-option>
-            <mat-option value="Fahrzeugsegment">Fahrzeugsegment</mat-option>
-            <mat-option value="Sonstiges">Sonstiges</mat-option>
-          </mat-select>
-        </mat-form-field>
-        <mat-form-field appearance="outline">
-          <mat-label>Leistungstyp</mat-label>
-          <input matInput formControlName="serviceType" placeholder="z. B. Umlauf" />
-        </mat-form-field>
-      </div>
-
-      <div class="grid">
-        <mat-form-field appearance="outline">
           <mat-label>Von</mat-label>
-          <input matInput formControlName="fromLocation" />
+          <input matInput formControlName="fromLocation" placeholder="z. B. Basel SBB" />
         </mat-form-field>
         <mat-form-field appearance="outline">
           <mat-label>Nach</mat-label>
-          <input matInput formControlName="toLocation" />
+          <input matInput formControlName="toLocation" placeholder="z. B. Zürich HB" />
         </mat-form-field>
       </div>
 
@@ -65,7 +58,7 @@
           </mat-select>
         </mat-form-field>
         <mat-form-field appearance="outline">
-          <mat-label>Verantwortlich</mat-label>
+          <mat-label>Verantwortlich (optional)</mat-label>
           <input matInput formControlName="responsible" />
         </mat-form-field>
       </div>
@@ -74,10 +67,34 @@
         <mat-label>Bemerkung</mat-label>
         <input matInput formControlName="deviation" placeholder="z. B. +3 min" />
       </mat-form-field>
+
+      <button
+        mat-stroked-button
+        type="button"
+        class="inline-button"
+        (click)="openTrafficPeriodEditor('service')"
+      >
+        <mat-icon>event</mat-icon>
+        Verkehrsperiode erstellen
+      </button>
     </form>
   </div>
 
   <div class="section" *ngIf="mode() === 'plan'">
+    <div class="inline-actions">
+      <button mat-stroked-button type="button" (click)="openTemplateCreateDialog('plan')">
+        <mat-icon>schema</mat-icon>
+        Vorlage erstellen
+      </button>
+      <button
+        mat-stroked-button
+        type="button"
+        (click)="openTrafficPeriodEditor('plan')"
+      >
+        <mat-icon>event</mat-icon>
+        Verkehrsperiode erstellen
+      </button>
+    </div>
     <form [formGroup]="planForm" class="form">
       <mat-form-field appearance="outline">
         <mat-label>Vorlage</mat-label>
@@ -103,12 +120,13 @@
           <input matInput type="time" formControlName="startTime" />
         </mat-form-field>
         <mat-form-field appearance="outline">
-          <mat-label>Takt (Minuten)</mat-label>
-          <input matInput type="number" formControlName="intervalMinutes" min="1" />
+          <mat-label>Letzte Abfahrt</mat-label>
+          <input matInput type="time" formControlName="endTime" />
         </mat-form-field>
         <mat-form-field appearance="outline">
-          <mat-label>Anzahl Züge</mat-label>
-          <input matInput type="number" formControlName="count" min="1" />
+          <mat-label>Takt (Minuten)</mat-label>
+          <input matInput type="number" formControlName="intervalMinutes" min="1" />
+          <mat-hint>Abstand zwischen den Zügen, z. B. 30.</mat-hint>
         </mat-form-field>
       </div>
 
@@ -123,6 +141,181 @@
         </mat-form-field>
       </div>
     </form>
+  </div>
+
+  <div class="section" *ngIf="mode() === 'manualPlan'">
+    <div class="inline-actions">
+      <button mat-stroked-button type="button" (click)="openTemplateCreateDialog('manualPlan')">
+        <mat-icon>schema</mat-icon>
+        Fahrplan zusammenstellen
+      </button>
+      <button
+        mat-stroked-button
+        type="button"
+        (click)="openTrafficPeriodEditor('import')"
+      >
+        <mat-icon>event</mat-icon>
+        Verkehrsperiode erstellen
+      </button>
+    </div>
+
+    @if (manualTemplate(); as tpl) {
+      <mat-card class="template-summary">
+        <div class="template-summary__header">
+          <div>
+            <strong>{{ tpl.title }}</strong>
+            <span class="template-summary__train">Zug {{ tpl.trainNumber }}</span>
+          </div>
+          <div class="template-summary__actions">
+            <span class="template-summary__meta">
+              {{ tpl.stops.length }} Halte
+            </span>
+            <button
+              mat-icon-button
+              type="button"
+              (click)="clearManualTemplate()"
+              aria-label="Fahrplan entfernen"
+            >
+              <mat-icon>close</mat-icon>
+            </button>
+          </div>
+        </div>
+      </mat-card>
+    } @else {
+      <p class="hint">Nutze „Fahrplan zusammenstellen“, um Halte und Zeiten zu definieren.</p>
+    }
+
+    <form [formGroup]="manualPlanForm" class="form">
+      <div class="grid">
+        <mat-form-field appearance="outline">
+          <mat-label>Verkehrsperiode</mat-label>
+          <mat-select formControlName="trafficPeriodId">
+            @for (period of trafficPeriods(); track period.id) {
+              <mat-option [value]="period.id">{{ period.name }}</mat-option>
+            }
+          </mat-select>
+        </mat-form-field>
+        <mat-form-field appearance="outline">
+          <mat-label>Abfahrt</mat-label>
+          <input matInput type="datetime-local" formControlName="departure" />
+        </mat-form-field>
+      </div>
+
+      <div class="grid">
+        <mat-form-field appearance="outline">
+          <mat-label>Positionsname</mat-label>
+          <input matInput formControlName="name" placeholder="z. B. Sonderzug 4711" />
+        </mat-form-field>
+        <mat-form-field appearance="outline">
+          <mat-label>Verantwortlich</mat-label>
+          <input matInput formControlName="responsible" />
+        </mat-form-field>
+      </div>
+    </form>
+  </div>
+
+  <div class="section" *ngIf="mode() === 'import'">
+    <div class="inline-actions">
+      <label class="file-input">
+        <input type="file" accept=".xml,.railml,.railml.xml" (change)="onRailMlFileSelected($event)" />
+        <span>
+          <mat-icon>upload_file</mat-icon>
+          RailML-Datei auswählen
+        </span>
+      </label>
+      <button mat-stroked-button type="button" (click)="clearImportedData()">
+        <mat-icon>delete_sweep</mat-icon>
+        Auswahl zurücksetzen
+      </button>
+    </div>
+
+    @if (importError()) {
+      <p class="error">{{ importError() }}</p>
+    }
+
+    @if (importedTrains().length) {
+      <form [formGroup]="importOptionsForm" class="form form--compact">
+        <div class="grid">
+          <mat-form-field appearance="outline">
+            <mat-label>Verkehrsperiode</mat-label>
+            <mat-select formControlName="trafficPeriodId">
+              @for (period of trafficPeriods(); track period.id) {
+                <mat-option [value]="period.id">{{ period.name }}</mat-option>
+              }
+            </mat-select>
+          </mat-form-field>
+          <mat-form-field appearance="outline">
+            <mat-label>Namenspräfix</mat-label>
+            <input matInput formControlName="namePrefix" placeholder="z. B. RailML Import" />
+          </mat-form-field>
+          <mat-form-field appearance="outline">
+            <mat-label>Verantwortlich</mat-label>
+            <input matInput formControlName="responsible" />
+          </mat-form-field>
+        </div>
+      </form>
+
+      <form [formGroup]="importFilters" class="import-filters">
+        <mat-form-field appearance="outline">
+          <mat-label>Suche</mat-label>
+          <input matInput formControlName="search" placeholder="Train-ID oder Name" />
+        </mat-form-field>
+        <mat-form-field appearance="outline">
+          <mat-label>Start</mat-label>
+          <input matInput formControlName="start" placeholder="z. B. Basel" />
+        </mat-form-field>
+        <mat-form-field appearance="outline">
+          <mat-label>Ziel</mat-label>
+          <input matInput formControlName="end" placeholder="z. B. Zürich" />
+        </mat-form-field>
+        <button mat-stroked-button type="button" (click)="onImportFiltersReset()">
+          <mat-icon>clear_all</mat-icon>
+          Filter zurücksetzen
+        </button>
+      </form>
+
+      <div class="import-results">
+        <div class="import-results__actions">
+          <div>
+            {{ filteredTrains().length }} Züge · {{ selectedTrainIds().size }} ausgewählt
+          </div>
+          <div class="import-results__buttons">
+            <button mat-button type="button" (click)="selectAllFiltered(true)">Alle auswählen</button>
+            <button mat-button type="button" (click)="selectAllFiltered(false)">Auswahl aufheben</button>
+          </div>
+        </div>
+
+        <mat-selection-list [multiple]="true">
+          @for (train of filteredTrains(); track train.id) {
+            <mat-list-option
+              [selected]="isTrainSelected(train.id)"
+              (selectedChange)="toggleTrainSelection(train.id, $event)"
+            >
+              <div class="import-train">
+                <div class="import-train__title">
+                  <strong>{{ train.name }}</strong>
+                  <span class="import-train__meta">
+                    {{ train.number }} · {{ train.category || 'ohne Kategorie' }}
+                  </span>
+                </div>
+                <div class="import-train__route">
+                  <span>{{ train.start || '—' }}</span>
+                  <mat-icon>arrow_forward</mat-icon>
+                  <span>{{ train.end || '—' }}</span>
+                  <span class="import-train__time">
+                    {{ train.departureTime || '--:--' }}
+                  </span>
+                </div>
+              </div>
+            </mat-list-option>
+          }
+        </mat-selection-list>
+      </div>
+    } @else if (!importError()) {
+      <p class="hint">
+        Wähle eine RailML-Datei, um Züge zu importieren.
+      </p>
+    }
   </div>
 
   @if (errorMessage()) {

@@ -100,7 +100,11 @@
   } @else {
     <section class="business-grid">
       @for (business of businesses(); track trackByBusinessId($index, business)) {
-        <mat-card class="business-card" appearance="outlined">
+        <mat-card
+          class="business-card"
+          appearance="outlined"
+          [attr.id]="businessElementId(business.id)"
+        >
           <mat-card-header>
             <div
               mat-card-avatar

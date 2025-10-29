@@ -14,8 +14,8 @@
       <mat-card-content>Keine Aufträge gefunden.</mat-card-content>
     </mat-card>
   } @else {
-    @for (o of orders(); track o.id) {
-      <app-order-card [order]="o" />
+    @for (entry of orders(); track entry.order.id) {
+      <app-order-card [order]="entry.order" [items]="entry.items" />
     }
   }
 </div>

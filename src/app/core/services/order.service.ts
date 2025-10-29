@@ -1,18 +1,23 @@
 import { Injectable, computed, signal } from '@angular/core';
 import { Order } from '../models/order.model';
-import { OrderStatus } from '../models/order-status';
 import { OrderItem } from '../models/order-item.model';
 import { MOCK_ORDERS } from '../mock/mock-orders.mock';
+import { ScheduleTemplate } from '../models/schedule-template.model';
 import {
   CreatePlansFromTemplatePayload,
   TrainPlanService,
 } from './train-plan.service';
-import { TrainPlan } from '../models/train-plan.model';
+import { TrainPlan, TrainPlanStatus } from '../models/train-plan.model';
+import { CreateScheduleTemplateStopPayload } from './schedule-template.service';
+import { BusinessStatus } from '../models/business.model';
 
 export interface OrderFilters {
   search: string;
-  status: OrderStatus | 'all';
   tag: string | 'all';
+  timeRange: 'all' | 'next4h' | 'next12h' | 'today' | 'thisWeek';
+  trainStatus: TrainPlanStatus | 'all';
+  businessStatus: BusinessStatus | 'all';
+  trainNumber: string;
 }
 
 export interface OrderItemOption {
@@ -26,23 +31,21 @@ export interface CreateOrderPayload {
   id?: string;
   name: string;
   customer?: string;
-  status: OrderStatus;
   tags?: string[];
   comment?: string;
 }
 
 export interface CreateServiceOrderItemPayload {
   orderId: string;
-  name: string;
-  type: OrderItem['type'];
   serviceType: string;
   fromLocation: string;
   toLocation: string;
   start: string; // ISO
   end: string; // ISO
+  trafficPeriodId: string;
   responsible?: string;
   deviation?: string;
-  trafficPeriodId: string;
+  name?: string;
 }
 
 export interface CreatePlanOrderItemsPayload
@@ -52,13 +55,49 @@ export interface CreatePlanOrderItemsPayload
   responsible?: string;
 }
 
+export interface ImportedRailMlStop extends CreateScheduleTemplateStopPayload {}
+
+export interface ImportedRailMlTrain {
+  id: string;
+  name: string;
+  number: string;
+  category?: string;
+  start?: string;
+  end?: string;
+  departureIso: string;
+  arrivalIso?: string;
+  departureTime?: string;
+  arrivalTime?: string;
+  stops: ImportedRailMlStop[];
+}
+
+export interface CreateManualPlanOrderItemPayload {
+  orderId: string;
+  template: ScheduleTemplate;
+  departure: string; // ISO
+  trafficPeriodId: string;
+  name?: string;
+  responsible?: string;
+}
+
+export interface CreateImportedPlanOrderItemPayload {
+  orderId: string;
+  train: ImportedRailMlTrain;
+  trafficPeriodId: string;
+  namePrefix?: string;
+  responsible?: string;
+}
+
 @Injectable({ providedIn: 'root' })
 export class OrderService {
   private readonly _orders = signal<Order[]>(MOCK_ORDERS);
   private readonly _filters = signal<OrderFilters>({
     search: '',
-    status: 'all',
     tag: 'all',
+    timeRange: 'all',
+    trainStatus: 'all',
+    businessStatus: 'all',
+    trainNumber: '',
   });
 
   constructor(private readonly trainPlanService: TrainPlanService) {}
@@ -70,7 +109,6 @@ export class OrderService {
       order.items.map((item) => ({
         orderId: order.id,
         orderName: order.name,
-        orderStatus: order.status,
         item,
       })),
     ),
@@ -85,15 +123,22 @@ export class OrderService {
   );
 
   readonly filteredOrders = computed(() => {
-    const f = this._filters();
-    return this._orders().filter((o) => {
-      const matchesSearch =
-        !f.search ||
-        o.name.toLowerCase().includes(f.search.toLowerCase()) ||
-        o.id.toLowerCase().includes(f.search.toLowerCase());
-      const matchesStatus = f.status === 'all' || o.status === f.status;
-      const matchesTag = f.tag === 'all' || (o.tags?.includes(f.tag) ?? false);
-      return matchesSearch && matchesStatus && matchesTag;
+    const filters = this._filters();
+    const itemFiltersActive =
+      filters.timeRange !== 'all' ||
+      filters.trainStatus !== 'all' ||
+      filters.businessStatus !== 'all' ||
+      filters.trainNumber.trim() !== '';
+
+    return this._orders().filter((order) => {
+      if (!this.matchesOrder(order, filters)) {
+        return false;
+      }
+      const filteredItems = this.filterItemsForOrder(order);
+      if (itemFiltersActive && filteredItems.length === 0) {
+        return false;
+      }
+      return true;
     });
   });
 
@@ -105,13 +150,17 @@ export class OrderService {
     return this._orders().find((order) => order.id === orderId);
   }
 
+  filterItemsForOrder(order: Order): OrderItem[] {
+    const filters = this._filters();
+    return order.items.filter((item) => this.matchesItem(item, filters));
+  }
+
   createOrder(payload: CreateOrderPayload): Order {
     const id = payload.id?.trim().length ? payload.id.trim() : this.generateOrderId();
     const order: Order = {
       id,
       name: payload.name,
       customer: payload.customer,
-      status: payload.status,
       tags: this.normalizeTags(payload.tags),
       comment: payload.comment,
       items: [],
@@ -122,18 +171,24 @@ export class OrderService {
   }
 
   addServiceOrderItem(payload: CreateServiceOrderItemPayload): OrderItem {
+    const serviceType = payload.serviceType.trim();
+    const name =
+      payload.name?.trim() && payload.name.trim().length > 0
+        ? payload.name.trim()
+        : serviceType;
+
     const item: OrderItem = {
       id: this.generateItemId(payload.orderId),
-      name: payload.name,
-      type: payload.type,
-      serviceType: payload.serviceType,
+      name,
+      type: 'Leistung',
+      serviceType,
       fromLocation: payload.fromLocation,
       toLocation: payload.toLocation,
       start: payload.start,
       end: payload.end,
+      trafficPeriodId: payload.trafficPeriodId,
       responsible: payload.responsible,
       deviation: payload.deviation,
-      trafficPeriodId: payload.trafficPeriodId,
     };
 
     this.appendItems(payload.orderId, [item]);
@@ -155,17 +210,21 @@ export class OrderService {
       const end = this.extractPlanEnd(plan) ?? start;
       const namePrefix = payload.namePrefix?.trim() ?? plan.title;
       const itemName = plans.length > 1 ? `${namePrefix} #${index + 1}` : namePrefix;
+      const firstStop = plan.stops[0];
+      const lastStop = plan.stops[plan.stops.length - 1];
 
       return {
         id: this.generateItemId(payload.orderId),
         name: itemName,
-        type: 'TTT',
+        type: 'Fahrplan',
         start,
         end,
         responsible: payload.responsible,
         trafficPeriodId: payload.trafficPeriodId,
         linkedTemplateId: payload.templateId,
         linkedTrainPlanId: plan.id,
+        fromLocation: firstStop?.locationName,
+        toLocation: lastStop?.locationName,
       } satisfies OrderItem;
     });
 
@@ -178,6 +237,218 @@ export class OrderService {
     });
 
     return items;
+  }
+
+  addManualPlanOrderItem(payload: CreateManualPlanOrderItemPayload): OrderItem {
+    const plan = this.trainPlanService.createManualPlan({
+      title: payload.template.title,
+      trainNumber: payload.template.trainNumber,
+      responsibleRu: payload.template.responsibleRu,
+      departure: payload.departure,
+      stops: payload.template.stops,
+      sourceName: payload.template.title,
+      notes: payload.template.description,
+      templateId: payload.template.id,
+    });
+
+    const start = this.extractPlanStart(plan);
+    const end = this.extractPlanEnd(plan);
+    const firstStop = plan.stops[0];
+    const lastStop = plan.stops[plan.stops.length - 1];
+
+    const item: OrderItem = {
+      id: this.generateItemId(payload.orderId),
+      name:
+        payload.name?.trim() && payload.name.trim().length
+          ? payload.name.trim()
+          : payload.template.title,
+      type: 'Fahrplan',
+      responsible:
+        payload.responsible?.trim() || payload.template.responsibleRu,
+      trafficPeriodId: payload.trafficPeriodId,
+      linkedTrainPlanId: plan.id,
+      linkedTemplateId: payload.template.id,
+      fromLocation: firstStop?.locationName,
+      toLocation: lastStop?.locationName,
+    } satisfies OrderItem;
+
+    if (start) {
+      item.start = start;
+    }
+    if (end) {
+      item.end = end;
+    }
+
+    this.appendItems(payload.orderId, [item]);
+    this.trainPlanService.linkOrderItem(plan.id, item.id);
+    this.linkTrainPlanToItem(plan.id, item.id);
+    return item;
+  }
+
+  addImportedPlanOrderItem(payload: CreateImportedPlanOrderItemPayload): OrderItem {
+    const departureIso = payload.train.departureIso;
+    if (!departureIso) {
+      throw new Error(`Zug ${payload.train.name} enthält keine Abfahrtszeit.`);
+    }
+
+    const responsible = payload.responsible ?? 'RailML Import';
+
+    const plan = this.trainPlanService.createManualPlan({
+      title: payload.train.name,
+      trainNumber: payload.train.number,
+      responsibleRu: responsible,
+      departure: departureIso,
+      stops: payload.train.stops,
+      sourceName: payload.train.category ?? 'RailML',
+      notes: undefined,
+      templateId: undefined,
+    });
+
+    const start = this.extractPlanStart(plan);
+    const end = this.extractPlanEnd(plan);
+    const firstStop = plan.stops[0];
+    const lastStop = plan.stops[plan.stops.length - 1];
+
+    const namePrefix = payload.namePrefix?.trim();
+    const itemName = namePrefix ? `${namePrefix} ${payload.train.name}` : payload.train.name;
+    const item: OrderItem = {
+      id: this.generateItemId(payload.orderId),
+      name: itemName,
+      type: 'Fahrplan',
+      responsible,
+      trafficPeriodId: payload.trafficPeriodId,
+      linkedTrainPlanId: plan.id,
+      fromLocation: firstStop?.locationName ?? payload.train.start,
+      toLocation: lastStop?.locationName ?? payload.train.end,
+    } satisfies OrderItem;
+
+    if (start) {
+      item.start = start;
+    }
+    if (end) {
+      item.end = end;
+    }
+
+    this.appendItems(payload.orderId, [item]);
+    this.trainPlanService.linkOrderItem(plan.id, item.id);
+    this.linkTrainPlanToItem(plan.id, item.id);
+    return item;
+  }
+
+  private matchesOrder(order: Order, filters: OrderFilters): boolean {
+    const term = filters.search.trim().toLowerCase();
+    if (
+      term &&
+      !(
+        order.name.toLowerCase().includes(term) ||
+        order.id.toLowerCase().includes(term) ||
+        (order.customer?.toLowerCase().includes(term) ?? false)
+      )
+    ) {
+      return false;
+    }
+    if (filters.tag !== 'all' && !(order.tags?.includes(filters.tag) ?? false)) {
+      return false;
+    }
+    return true;
+  }
+
+  private matchesItem(item: OrderItem, filters: OrderFilters): boolean {
+    if (filters.trainStatus !== 'all' || filters.trainNumber.trim()) {
+      if (item.type !== 'Fahrplan') {
+        if (filters.trainStatus !== 'all' || filters.trainNumber.trim() !== '') {
+          return false;
+        }
+      } else {
+        const plan = item.linkedTrainPlanId
+          ? this.trainPlanService.getById(item.linkedTrainPlanId)
+          : undefined;
+        if (filters.trainStatus !== 'all') {
+          if (!plan || plan.status !== filters.trainStatus) {
+            return false;
+          }
+        }
+        if (filters.trainNumber.trim()) {
+          const search = filters.trainNumber.trim().toLowerCase();
+          const trainNumber = plan?.trainNumber ?? item.name;
+          if (!trainNumber.toLowerCase().includes(search)) {
+            return false;
+          }
+        }
+      }
+    }
+
+    if (filters.timeRange !== 'all') {
+      if (!this.matchesTimeRange(item, filters.timeRange)) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  private matchesTimeRange(
+    item: OrderItem,
+    range: OrderFilters['timeRange'],
+  ): boolean {
+    if (range === 'all') {
+      return true;
+    }
+    if (!item.start) {
+      return false;
+    }
+    const start = new Date(item.start);
+    if (Number.isNaN(start.getTime())) {
+      return false;
+    }
+    const now = new Date();
+    switch (range) {
+      case 'next4h':
+        return start >= now && start <= this.addHours(now, 4);
+      case 'next12h':
+        return start >= now && start <= this.addHours(now, 12);
+      case 'today':
+        return this.isSameDay(start, now);
+      case 'thisWeek':
+        return this.isSameWeek(start, now);
+      default:
+        return true;
+    }
+  }
+
+  private addHours(date: Date, hours: number): Date {
+    const result = new Date(date.getTime());
+    result.setHours(result.getHours() + hours);
+    return result;
+  }
+
+  private addDays(date: Date, days: number): Date {
+    const result = new Date(date.getTime());
+    result.setDate(result.getDate() + days);
+    return result;
+  }
+
+  private isSameDay(a: Date, b: Date): boolean {
+    return (
+      a.getFullYear() === b.getFullYear() &&
+      a.getMonth() === b.getMonth() &&
+      a.getDate() === b.getDate()
+    );
+  }
+
+  private isSameWeek(date: Date, reference: Date): boolean {
+    const start = this.startOfWeek(reference);
+    const end = this.addDays(start, 7);
+    return date >= start && date < end;
+  }
+
+  private startOfWeek(date: Date): Date {
+    const result = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    const day = result.getDay();
+    const diff = (day + 6) % 7; // Monday start
+    result.setDate(result.getDate() - diff);
+    result.setHours(0, 0, 0, 0);
+    return result;
   }
 
   linkBusinessToItem(businessId: string, itemId: string) {
