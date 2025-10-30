@@ -1,0 +1,49 @@
+.gantt-resource {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 16px;
+  height: 100%;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.gantt-resource__name {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-weight: 600;
+}
+
+.gantt-resource__id {
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 10px;
+  background: rgba(25, 118, 210, 0.12);
+  color: #0d47a1;
+}
+
+.gantt-resource__label {
+  font-size: 0.95rem;
+}
+
+.gantt-resource__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  color: rgba(0, 0, 0, 0.6);
+  font-size: 0.72rem;
+}
+
+.gantt-resource__meta-item {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  padding: 2px 6px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.gantt-resource__meta-key::after {
+  content: ':';
+}

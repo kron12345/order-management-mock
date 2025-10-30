@@ -1,40 +1,58 @@
 <mat-sidenav-container class="layout">
-  <mat-sidenav class="sidenav" mode="side" opened>
-    <div class="brand">
-      <mat-icon>assignment</mat-icon>
-      <span>Auftragsmanager</span>
-    </div>
+  @if (section() === 'manager') {
+    <mat-sidenav class="sidenav" mode="side" opened>
+      <div class="brand">
+        <mat-icon>assignment</mat-icon>
+        <span>Auftragsmanager</span>
+      </div>
 
-    <mat-nav-list>
-      <a mat-list-item routerLink="/" routerLinkActive="active">
-        <mat-icon matListItemIcon>list_alt</mat-icon>
-        <span matListItemTitle>Aufträge</span>
-        <span matListItemLine>Übersicht & Bearbeitung</span>
-      </a>
-      <a mat-list-item routerLink="/businesses" routerLinkActive="active">
-        <mat-icon matListItemIcon>work_outline</mat-icon>
-        <span matListItemTitle>Geschäfte</span>
-        <span matListItemLine>Aufgaben & Fälligkeiten</span>
-      </a>
-      <a mat-list-item routerLink="/templates" routerLinkActive="active">
-        <mat-icon matListItemIcon>schema</mat-icon>
-        <span matListItemTitle>Vorlagen</span>
-        <span matListItemLine>Fahrpläne & Kalender</span>
-      </a>
-      <a mat-list-item routerLink="/plans" routerLinkActive="active">
-        <mat-icon matListItemIcon>train</mat-icon>
-        <span matListItemTitle>Fahrpläne</span>
-        <span matListItemLine>Züge & Path Requests</span>
-      </a>
-    </mat-nav-list>
-  </mat-sidenav>
+      <mat-nav-list>
+        <a mat-list-item routerLink="/" routerLinkActive="active" [routerLinkActiveOptions]="{ exact: true }">
+          <mat-icon matListItemIcon>list_alt</mat-icon>
+          <span matListItemTitle>Aufträge</span>
+          <span matListItemLine>Übersicht & Bearbeitung</span>
+        </a>
+        <a mat-list-item routerLink="/businesses" routerLinkActive="active">
+          <mat-icon matListItemIcon>work_outline</mat-icon>
+          <span matListItemTitle>Geschäfte</span>
+          <span matListItemLine>Aufgaben & Fälligkeiten</span>
+        </a>
+        <a mat-list-item routerLink="/templates" routerLinkActive="active">
+          <mat-icon matListItemIcon>schema</mat-icon>
+          <span matListItemTitle>Vorlagen</span>
+          <span matListItemLine>Fahrpläne & Kalender</span>
+        </a>
+        <a mat-list-item routerLink="/plans" routerLinkActive="active">
+          <mat-icon matListItemIcon>train</mat-icon>
+          <span matListItemTitle>Fahrpläne</span>
+          <span matListItemLine>Züge & Path Requests</span>
+        </a>
+      </mat-nav-list>
+    </mat-sidenav>
+  }
 
-  <mat-sidenav-content class="content">
+  <mat-sidenav-content class="content" [class.content--full]="section() !== 'manager'">
     <mat-toolbar class="toolbar" color="primary">
-      <button mat-icon-button [matMenuTriggerFor]="menu">
-        <mat-icon>menu</mat-icon>
-      </button>
-      <span class="title">{{ pageTitle() }}</span>
+      <div class="toolbar-brand">
+        <mat-icon>assignment</mat-icon>
+        <div class="toolbar-brand-text">
+          <span class="brand-title">{{ sectionTitle() }}</span>
+          @if (showSubtitle()) {
+            <small class="brand-subtitle">{{ pageTitle() }}</small>
+          }
+        </div>
+      </div>
+      <nav class="primary-nav">
+        <a mat-button routerLink="/" [class.active]="section() === 'manager'">
+          Auftragsmanager
+        </a>
+        <a mat-button routerLink="/planning" [class.active]="section() === 'planning'">
+          Planung
+        </a>
+        <a mat-button routerLink="/master-data" [class.active]="section() === 'master-data'">
+          Stammdaten
+        </a>
+      </nav>
       <span class="spacer"></span>
       <button mat-icon-button matTooltip="Benachrichtigungen">
         <mat-icon>notifications</mat-icon>
@@ -42,9 +60,12 @@
       <button mat-icon-button matTooltip="Profil">
         <mat-icon>account_circle</mat-icon>
       </button>
+      <button mat-icon-button [matMenuTriggerFor]="menu" aria-label="Weitere Optionen">
+        <mat-icon>more_vert</mat-icon>
+      </button>
     </mat-toolbar>
 
-    <div class="page">
+    <div class="page" [class.page--wide]="section() === 'manager'">
       <router-outlet />
     </div>
 

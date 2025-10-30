@@ -1,10 +1,4 @@
-import {
-  Component,
-  Input,
-  computed,
-  effect,
-  signal,
-} from '@angular/core';
+import { Component, Input, computed, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { MatDialog } from '@angular/material/dialog';
 import { MATERIAL_IMPORTS } from '../../../core/material.imports.imports';
@@ -52,8 +46,12 @@ export class OrderCardComponent {
     return this.itemsSignal();
   }
   expanded = signal(true);
-  readonly businessStatusSummaries = signal<StatusSummary[]>([]);
-  readonly trainStatusSummaries = signal<StatusSummary[]>([]);
+  readonly businessStatusSummaries = computed(() =>
+    this.computeBusinessStatusSummaries(this.effectiveItems()),
+  );
+  readonly trainStatusSummaries = computed(() =>
+    this.computeTrainStatusSummaries(this.effectiveItems()),
+  );
   private readonly filters = computed(() => this.orderService.filters());
   readonly effectiveItems = computed(() => this.resolveItems());
 
@@ -78,17 +76,7 @@ export class OrderCardComponent {
     private readonly businessService: BusinessService,
     private readonly trainPlanService: TrainPlanService,
     private readonly orderService: OrderService,
-  ) {
-    effect(() => {
-      const items = this.effectiveItems();
-      this.businessStatusSummaries.set(
-        this.computeBusinessStatusSummaries(items),
-      );
-      this.trainStatusSummaries.set(
-        this.computeTrainStatusSummaries(items),
-      );
-    });
-  }
+  ) {}
 
   openPositionDialog(event: MouseEvent) {
     event.stopPropagation();

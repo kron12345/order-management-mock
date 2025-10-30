@@ -1,0 +1,17 @@
+<div class="gantt-resource" role="rowheader">
+  <div class="gantt-resource__name">
+    <span class="gantt-resource__id">{{ resource.id }}</span>
+    <span class="gantt-resource__label">{{ resource.name }}</span>
+  </div>
+
+  @if (resource.attributes) {
+    <div class="gantt-resource__meta" role="list">
+      @for (entry of resource.attributes | keyvalue; track entry.key) {
+        <span class="gantt-resource__meta-item" role="listitem">
+          <span class="gantt-resource__meta-key">{{ entry.key }}</span>
+          <span class="gantt-resource__meta-value">{{ entry.value }}</span>
+        </span>
+      }
+    </div>
+  }
+</div>

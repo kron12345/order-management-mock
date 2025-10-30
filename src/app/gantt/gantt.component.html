@@ -1,0 +1,92 @@
+<section class="gantt" role="region" aria-label="Planungsgantt">
+  <app-gantt-menu
+    [zoomLevel]="zoomLevel()"
+    [zoomLevels]="zoomLevels"
+    [viewRangeLabel]="viewRangeLabel()"
+    [filterText]="filterText()"
+    (zoomIn)="onZoomIn()"
+    (zoomOut)="onZoomOut()"
+    (zoomLevelChange)="onZoomLevelChange($event)"
+    (gotoToday)="onGotoToday()"
+    (gotoDate)="onGotoDate($event)"
+    (filterChange)="onFilterChange($event)"
+  />
+
+  <div class="gantt__main">
+    <div class="gantt__grid" role="grid">
+      <div class="gantt__resource-header" role="columnheader">Ressourcen</div>
+
+      <div
+        class="gantt__timeline-header"
+        role="columnheader"
+        #headerScroller="appTrackHorizontalScroll"
+        [appTrackHorizontalScroll]="rowScrollerElements()"
+        [appScrollLeft]="scrollX()"
+        (appHorizontalScroll)="onTimelineScroll($event)"
+        (wheel)="onTimelineWheel($event, headerScroller.element)"
+      >
+        <app-gantt-timeline-header
+          [ticks]="ticks()"
+          [contentWidth]="contentWidth()"
+          [zoomLevel]="zoomLevel()"
+        />
+      </div>
+
+      <cdk-virtual-scroll-viewport
+        class="gantt__viewport"
+        [itemSize]="rowHeight"
+        [minBufferPx]="rowHeight * 4"
+        [maxBufferPx]="rowHeight * 6"
+        style="height: 100%; width: 100%;"
+        role="rowgroup"
+      >
+        <div
+          class="gantt__row"
+          *cdkVirtualFor="let row of rows(); trackBy: trackResource; let i = index"
+          role="row"
+        >
+          <div class="gantt__resource-cell" role="gridcell">
+            <app-gantt-resources [resource]="row.resource" />
+          </div>
+
+          <div
+            class="gantt__timeline-cell"
+            role="gridcell"
+            #rowScroller="appTrackHorizontalScroll"
+            [appTrackHorizontalScroll]="headerScrollerTargets()"
+            [appScrollLeft]="scrollX()"
+            (appHorizontalScroll)="onTimelineScroll($event)"
+            (wheel)="onTimelineWheel($event, rowScroller.element)"
+            (mousemove)="onTimelineMouseMove($event, rowScroller.element)"
+            (mouseleave)="onTimelineMouseLeave()"
+          >
+            <app-gantt-timeline-row
+              [bars]="row.bars"
+              [contentWidth]="contentWidth()"
+              [backgroundSegments]="timelineBackgroundSegments()"
+              [serviceRanges]="row.services"
+              [nowMarkerLeft]="nowMarkerLeft()"
+              [zebra]="i % 2 === 1"
+            />
+          </div>
+        </div>
+      </cdk-virtual-scroll-viewport>
+      @if (!hasRows() && isViewportReady()) {
+        <div class="gantt__empty" role="note">
+          Keine Aktivitäten im aktuellen Zeitraum.
+        </div>
+      }
+    </div>
+  </div>
+
+  <app-gantt-status-bar
+    [viewStart]="viewStart()"
+    [viewEnd]="viewDisplayEnd()"
+    [zoomLevel]="zoomLevel()"
+    [cursorTime]="cursorTime()"
+    [resourceCount]="resourceCount()"
+    [visibleResourceCount]="visibleResourceCount()"
+    [activityCount]="totalActivityCount()"
+    [visibleActivityCount]="visibleActivityCount()"
+  />
+</section>

@@ -1,0 +1,59 @@
+<section class="gantt-menu" role="toolbar" aria-label="Gantt-Steuerung">
+  <div class="gantt-menu__group">
+    <button mat-icon-button type="button" aria-label="Zoom Out" (click)="zoomOut.emit()">
+      <mat-icon>remove</mat-icon>
+    </button>
+    <button mat-icon-button type="button" aria-label="Zoom In" (click)="zoomIn.emit()">
+      <mat-icon>add</mat-icon>
+    </button>
+
+    <mat-form-field appearance="outline" class="gantt-menu__field gantt-menu__field--compact">
+      <mat-label>Zoomstufe</mat-label>
+      <mat-select [value]="zoomLevel" (valueChange)="onZoomLevelChange($event)">
+        @for (level of zoomLevels; track level) {
+          <mat-option [value]="level">{{ level }}</mat-option>
+        }
+      </mat-select>
+    </mat-form-field>
+  </div>
+
+  <div class="gantt-menu__group">
+    <button mat-stroked-button type="button" (click)="gotoToday.emit()">
+      <mat-icon>today</mat-icon>
+      Heute
+    </button>
+
+    <mat-form-field appearance="outline" class="gantt-menu__field">
+      <mat-label>Datumssprung</mat-label>
+      <input
+        matInput
+        [matDatepicker]="jumpPicker"
+        (dateChange)="onDatePicked($event.value)"
+        placeholder="Datum wählen"
+        aria-label="Datum auswählen"
+      />
+      <mat-datepicker-toggle matIconSuffix [for]="jumpPicker"></mat-datepicker-toggle>
+      <mat-datepicker #jumpPicker></mat-datepicker>
+    </mat-form-field>
+  </div>
+
+  <div class="gantt-menu__group gantt-menu__group--grow">
+    <mat-form-field appearance="outline" class="gantt-menu__field gantt-menu__field--search">
+      <mat-label>Ressourcen filtern</mat-label>
+      <mat-icon matPrefix>search</mat-icon>
+      <input
+        matInput
+        type="search"
+        [ngModel]="filterText"
+        (ngModelChange)="onFilterChange($event)"
+        placeholder="z. B. Depot, Name, ID"
+        aria-label="Ressourcen filtern"
+      />
+    </mat-form-field>
+  </div>
+
+  <div class="gantt-menu__group gantt-menu__group--info" aria-live="polite">
+    <mat-icon>calendar_today</mat-icon>
+    <span>{{ viewRangeLabel }}</span>
+  </div>
+</section>

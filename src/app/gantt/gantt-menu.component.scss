@@ -1,0 +1,44 @@
+.gantt-menu {
+  display: grid;
+  grid-template-columns: auto auto 1fr auto;
+  gap: 16px;
+  align-items: center;
+  padding: 12px 16px;
+  background: rgba(255, 255, 255, 0.95);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+  position: sticky;
+  top: 0;
+  z-index: 4;
+}
+
+.gantt-menu__group {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+
+  &--grow {
+    width: 100%;
+  }
+
+  &--info {
+    gap: 8px;
+    color: rgba(0, 0, 0, 0.65);
+
+    mat-icon {
+      font-size: 18px;
+    }
+  }
+}
+
+.gantt-menu__field {
+  min-width: 160px;
+
+  &--compact {
+    min-width: 130px;
+  }
+
+  &--search {
+    width: 100%;
+  }
+}
+

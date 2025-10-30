@@ -1,0 +1,23 @@
+<div
+  class="gantt-activity"
+  role="button"
+  tabindex="0"
+  [ngClass]="hostClasses"
+  [style.left.px]="leftPx"
+  [style.width.px]="widthPx"
+  [attr.aria-label]="ariaLabel"
+  [matTooltip]="tooltipText()"
+  matTooltipClass="gantt-activity__tooltip"
+  matTooltipShowDelay="180"
+>
+  <div class="gantt-activity__content">
+    @if (showTitle) {
+      <span class="gantt-activity__title">{{ activity.title }}</span>
+    }
+    @if (showRoute) {
+      <span class="gantt-activity__route">
+        {{ activity.from ?? '—' }} → {{ activity.to ?? '—' }}
+      </span>
+    }
+  </div>
+</div>

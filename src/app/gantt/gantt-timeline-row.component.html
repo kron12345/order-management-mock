@@ -1,0 +1,39 @@
+<div class="gantt-timeline-row" [class.gantt-timeline-row--zebra]="zebra">
+  <div class="gantt-timeline-row__canvas" [style.width.px]="contentWidth">
+    @for (segment of backgroundSegments; track segment.left) {
+      <div
+        class="gantt-timeline-row__background"
+        [ngClass]="segment.cssClass"
+        [style.left.px]="segment.left"
+        [style.width.px]="segment.width"
+      ></div>
+    }
+
+    @for (range of serviceRanges; track range.id) {
+      <div
+        class="gantt-timeline-row__service-range"
+        [style.left.px]="range.left"
+        [style.width.px]="range.width"
+      >
+        <span class="gantt-timeline-row__service-label">
+          {{ range.label }}
+        </span>
+      </div>
+    }
+
+    @if (nowMarkerLeft !== null) {
+      <div class="gantt-timeline-row__now" [style.left.px]="nowMarkerLeft"></div>
+    }
+
+    <div class="gantt-timeline-row__activities">
+      @for (bar of bars; track bar.activity.id) {
+        <app-gantt-activity
+          [activity]="bar.activity"
+          [leftPx]="bar.left"
+          [widthPx]="bar.width"
+          [classes]="bar.classes ?? []"
+        />
+      }
+    </div>
+  </div>
+</div>

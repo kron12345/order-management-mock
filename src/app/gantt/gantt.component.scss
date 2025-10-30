@@ -1,0 +1,122 @@
+:host {
+  --gantt-scrollbar-width: 0px;
+}
+
+.gantt {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+  min-height: 0;
+  background: linear-gradient(180deg, #fafafa 0%, #f4f6f8 100%);
+}
+
+.gantt__main {
+  flex: 1;
+  min-height: 0;
+  padding: 0 16px 16px;
+  height: 100%;
+  display: flex;
+}
+
+.gantt__grid {
+  display: grid;
+  grid-template-columns: 260px 1fr;
+  grid-template-rows: auto minmax(0, 1fr);
+  flex: 1;
+  height: 100%;
+  border-radius: 16px;
+  overflow: hidden;
+  background: #fff;
+  box-shadow: 0 20px 45px rgba(15, 23, 42, 0.08);
+}
+
+.gantt__resource-header {
+  position: sticky;
+  left: 0;
+  top: 0;
+  z-index: 5;
+  padding: 12px 16px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.75rem;
+  background: rgba(255, 255, 255, 0.95);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.gantt__timeline-header {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  overflow-x: auto;
+  overflow-y: hidden;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+  background: rgba(255, 255, 255, 0.96);
+  width: calc(100% - var(--gantt-scrollbar-width, 0px));
+  margin-right: var(--gantt-scrollbar-width, 0px);
+  box-sizing: border-box;
+}
+
+.gantt__viewport {
+  grid-column: 1 / span 2;
+  height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.gantt__row {
+  display: grid;
+  grid-template-columns: 260px 1fr;
+  height: 64px;
+}
+
+.gantt__resource-cell {
+  position: sticky;
+  left: 0;
+  z-index: 3;
+  background: #fff;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.gantt__timeline-cell {
+  position: relative;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.gantt__timeline-cell::-webkit-scrollbar {
+  display: none;
+}
+
+.gantt__empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  color: rgba(0, 0, 0, 0.6);
+  font-size: 0.9rem;
+}
+
+.gantt__timeline-cell::-webkit-scrollbar,
+.gantt__timeline-header::-webkit-scrollbar {
+  height: 8px;
+}
+
+.gantt__timeline-cell::-webkit-scrollbar-thumb,
+.gantt__timeline-header::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 4px;
+}
+
+.gantt__timeline-cell::-webkit-scrollbar-track,
+.gantt__timeline-header::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+cdk-virtual-scroll-viewport {
+  width: 100%;
+}

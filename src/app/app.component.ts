@@ -1,4 +1,4 @@
-import { Component, inject, signal } from '@angular/core';
+import { Component, computed, inject, signal } from '@angular/core';
 import {
   ActivatedRoute,
   ActivatedRouteSnapshot,
@@ -12,6 +12,8 @@ import { filter } from 'rxjs';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { MATERIAL_IMPORTS } from './core/material.imports.imports';
 
+type AppSection = 'manager' | 'planning' | 'master-data';
+
 @Component({
   selector: 'app-root',
   standalone: true,
@@ -24,6 +26,11 @@ export class AppComponent {
   private readonly activatedRoute = inject(ActivatedRoute);
 
   readonly pageTitle = signal('Auftragsmanager');
+  readonly section = signal<AppSection>('manager');
+  readonly sectionTitle = computed(() => this.resolveSectionTitle());
+  readonly showSubtitle = computed(
+    () => this.pageTitle().toLowerCase() !== this.sectionTitle().toLowerCase(),
+  );
 
   constructor() {
     this.updateTitle();
@@ -36,9 +43,11 @@ export class AppComponent {
   }
 
   private updateTitle() {
-    const title =
-      this.extractTitle(this.activatedRoute.snapshot) ?? 'Auftragsmanager';
+    const snapshot = this.activatedRoute.snapshot;
+    const title = this.extractTitle(snapshot) ?? 'Auftragsmanager';
+    const section = this.extractSection(snapshot) ?? 'manager';
     this.pageTitle.set(title);
+    this.section.set(section);
   }
 
   private extractTitle(route: ActivatedRouteSnapshot): string | undefined {
@@ -53,5 +62,28 @@ export class AppComponent {
       current = current.firstChild ?? null;
     }
     return title;
+  }
+
+  private extractSection(route: ActivatedRouteSnapshot): AppSection | undefined {
+    let current: ActivatedRouteSnapshot | null = route;
+    while (current) {
+      const section = current.data?.['section'] as AppSection | undefined;
+      if (section) {
+        return section;
+      }
+      current = current.firstChild ?? null;
+    }
+    return undefined;
+  }
+
+  private resolveSectionTitle(): string {
+    switch (this.section()) {
+      case 'planning':
+        return 'Planung';
+      case 'master-data':
+        return 'Stammdaten';
+      default:
+        return 'Auftragsmanager';
+    }
   }
 }

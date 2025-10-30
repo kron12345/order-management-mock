@@ -1,0 +1,13 @@
+.planning-shell {
+  display: flex;
+  flex: 1;
+  width: 100%;
+  height: calc(100vh - 120px);
+  min-height: 0;
+}
+
+.planning-shell__gantt {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+}
