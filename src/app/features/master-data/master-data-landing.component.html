@@ -1,34 +1,3 @@
 <div class="master-data">
-  <section class="header">
-    <div>
-      <h1>Stammdaten</h1>
-      <p>
-        Hier pflegen Sie die Grundlagen für Planung und Auftragsabwicklung:
-        Fahrzeuge, Personal und Streckenressourcen.
-      </p>
-    </div>
-    <button mat-stroked-button color="primary">
-      <mat-icon>settings</mat-icon>
-      Stammdaten konfigurieren
-    </button>
-  </section>
-
-  <div class="section-grid">
-    @for (section of sections; track section.title) {
-      <mat-card>
-        <mat-card-header>
-          <div mat-card-avatar class="section-icon">
-            <mat-icon>{{ section.icon }}</mat-icon>
-          </div>
-          <mat-card-title>{{ section.title }}</mat-card-title>
-        </mat-card-header>
-        <mat-card-content>
-          <p>{{ section.description }}</p>
-        </mat-card-content>
-        <mat-card-actions>
-          <button mat-flat-button color="primary">{{ section.actionLabel }}</button>
-        </mat-card-actions>
-      </mat-card>
-    }
-  </div>
+  <app-master-data-layout [title]="title" [subtitle]="subtitle" [tabs]="tabs" />
 </div>

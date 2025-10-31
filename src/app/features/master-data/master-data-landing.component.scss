@@ -1,55 +1,6 @@
 .master-data {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 24px;
-}
-
-.header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-  flex-wrap: wrap;
-
-  h1 {
-    margin: 0;
-    font-size: 2rem;
-  }
-
-  p {
-    margin: 8px 0 0;
-    color: rgba(0, 0, 0, 0.65);
-    max-width: 540px;
-  }
-
-  button mat-icon {
-    margin-right: 6px;
-  }
-}
-
-.section-grid {
-  display: grid;
-  gap: 20px;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-}
-
-.section-icon {
-  background: rgba(25, 118, 210, 0.08);
-  border-radius: 50%;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-
-  mat-icon {
-    color: #1976d2;
-  }
-}
-
-mat-card-actions {
-  padding: 16px;
-  display: flex;
-  justify-content: flex-end;
-
-  button mat-icon {
-    margin-right: 6px;
-  }
+  height: 100%;
 }
