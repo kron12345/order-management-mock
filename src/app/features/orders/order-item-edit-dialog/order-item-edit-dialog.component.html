@@ -1,0 +1,89 @@
+<h2 mat-dialog-title>Auftragsposition bearbeiten</h2>
+
+<mat-dialog-content>
+  <p class="validity">{{ validityLabel() }}</p>
+
+  <form [formGroup]="form" class="form">
+    @if (!isPlanItem) {
+      <app-order-item-range-fields [form]="form"></app-order-item-range-fields>
+    }
+
+    <mat-divider />
+
+    <div class="section">
+      <div class="section-title">Allgemein</div>
+      <app-order-item-general-fields [form]="form"></app-order-item-general-fields>
+    </div>
+
+    @if (isServiceItem) {
+      <div class="section">
+        <div class="section-title">Leistung</div>
+        <app-order-item-service-fields
+          [form]="form"
+          [config]="serviceFieldsConfig"
+          [trafficPeriods]="availablePeriods()"
+        ></app-order-item-service-fields>
+      </div>
+    }
+
+    @if (isPlanItem) {
+      @if (currentPlan(); as plan) {
+        <div class="section plan-section">
+          <div class="section-title">Fahrplan</div>
+          <div class="plan-details">
+            <div class="plan-details__primary">
+              <div class="plan-details__title">{{ plan.title }}</div>
+              <div class="plan-details__meta">
+                <span>
+                  <mat-icon>train</mat-icon>
+                  {{ plan.trainNumber }}
+                </span>
+                <span>
+                  <mat-icon>person</mat-icon>
+                  {{ plan.responsibleRu }}
+                </span>
+              </div>
+            </div>
+            <div class="plan-details__calendar">
+              <mat-icon>calendar_month</mat-icon>
+              <span>
+                {{ plan.calendar.validFrom || '–' }}
+                @if (plan.calendar.validTo) {
+                  – {{ plan.calendar.validTo }}
+                }
+              </span>
+            </div>
+            <div class="plan-details__actions">
+              <button mat-stroked-button color="primary" type="button" (click)="openPlanModificationDialog()">
+                <mat-icon>edit</mat-icon>
+                Fahrplan bearbeiten
+              </button>
+            </div>
+          </div>
+        </div>
+      } @else {
+        <div class="section">
+          <div class="section-title">Fahrplan</div>
+          <p class="plan-hint">Kein Fahrplan mit dieser Position verknüpft.</p>
+        </div>
+      }
+    }
+  </form>
+
+  @if (errorMessage()) {
+    <div class="error">{{ errorMessage() }}</div>
+  }
+</mat-dialog-content>
+
+<mat-dialog-actions align="end">
+  <button mat-stroked-button type="button" (click)="cancel()">Abbrechen</button>
+  <button
+    mat-flat-button
+    color="primary"
+    type="button"
+    (click)="submit()"
+    [disabled]="form.invalid"
+  >
+    Speichern
+  </button>
+</mat-dialog-actions>

@@ -1,0 +1,86 @@
+<div class="service-section">
+  @if (controlName('startControl') || controlName('endControl')) {
+    <div class="columns">
+      @if (controlName('startControl'); as startCtrl) {
+      <mat-form-field appearance="outline">
+        <mat-label>Start</mat-label>
+        <input matInput type="datetime-local" [formControlName]="startCtrl" />
+        @if (form.controls[startCtrl].touched && form.controls[startCtrl].invalid) {
+          <mat-error>Bitte eine gültige Startzeit angeben.</mat-error>
+        }
+      </mat-form-field>
+      }
+      @if (controlName('endControl'); as endCtrl) {
+      <mat-form-field appearance="outline">
+        <mat-label>Ende</mat-label>
+        <input matInput type="datetime-local" [formControlName]="endCtrl" />
+        @if (form.controls[endCtrl].touched && form.controls[endCtrl].invalid) {
+          <mat-error>Bitte eine gültige Endzeit angeben.</mat-error>
+        }
+      </mat-form-field>
+      }
+    </div>
+  }
+
+  @if (controlName('serviceTypeControl'); as serviceTypeCtrl) {
+      <mat-form-field appearance="outline">
+        <mat-label>Leistungstyp</mat-label>
+        <input
+          matInput
+          [formControlName]="serviceTypeCtrl"
+          [placeholder]="placeholder('serviceType') ?? ''"
+        />
+        @if (form.controls[serviceTypeCtrl].touched && form.controls[serviceTypeCtrl].invalid) {
+          <mat-error>Bitte einen Leistungstyp angeben.</mat-error>
+        }
+      </mat-form-field>
+  }
+
+  @if (controlName('fromControl') || controlName('toControl')) {
+    <div class="columns">
+      @if (controlName('fromControl'); as fromCtrl) {
+        <mat-form-field appearance="outline">
+          <mat-label>Von</mat-label>
+          <input
+            matInput
+            [formControlName]="fromCtrl"
+            [placeholder]="placeholder('from') ?? ''"
+          />
+          @if (form.controls[fromCtrl].touched && form.controls[fromCtrl].invalid) {
+            <mat-error>Pflichtfeld.</mat-error>
+          }
+        </mat-form-field>
+      }
+      @if (controlName('toControl'); as toCtrl) {
+        <mat-form-field appearance="outline">
+          <mat-label>Nach</mat-label>
+          <input
+            matInput
+            [formControlName]="toCtrl"
+            [placeholder]="placeholder('to') ?? ''"
+          />
+          @if (form.controls[toCtrl].touched && form.controls[toCtrl].invalid) {
+            <mat-error>Pflichtfeld.</mat-error>
+          }
+        </mat-form-field>
+      }
+    </div>
+  }
+
+  @if (controlName('trafficPeriodControl'); as trafficPeriodCtrl) {
+    <mat-form-field appearance="outline">
+      <mat-label>Verkehrsperiode</mat-label>
+      <mat-select [formControlName]="trafficPeriodCtrl">
+        @for (period of trafficPeriods; track period.id) {
+          <mat-option [value]="period.id">{{ period.name }}</mat-option>
+        }
+      </mat-select>
+      @if (
+        form.controls[trafficPeriodCtrl].touched &&
+        form.controls[trafficPeriodCtrl].invalid
+      ) {
+        <mat-error>Bitte eine Verkehrsperiode auswählen.</mat-error>
+      }
+    </mat-form-field>
+  }
+</div>

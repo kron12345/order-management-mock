@@ -77,7 +77,11 @@
   } @else {
     <section class="period-grid">
       @for (period of periods(); track trackByPeriodId($index, period)) {
-        <mat-card class="period-card" appearance="outlined">
+        <mat-card
+          class="period-card"
+          appearance="outlined"
+          [attr.id]="periodElementId(period.id)"
+        >
           <mat-card-header>
             <div mat-card-avatar class="type-icon" [ngClass]="period.type">
               <mat-icon>event</mat-icon>

@@ -1,5 +1,5 @@
-import { CommonModule } from '@angular/common';
-import { Component, computed, effect, inject } from '@angular/core';
+import { CommonModule, DOCUMENT } from '@angular/common';
+import { Component, Input, computed, effect, inject, signal } from '@angular/core';
 import { FormControl, ReactiveFormsModule } from '@angular/forms';
 import { debounceTime, distinctUntilChanged } from 'rxjs';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
@@ -31,6 +31,8 @@ interface SortOption {
 export class TrafficPeriodListComponent {
   private readonly service = inject(TrafficPeriodService);
   private readonly dialog = inject(MatDialog);
+  private readonly document = inject(DOCUMENT);
+  private readonly highlightPeriodId = signal<string | null>(null);
 
   readonly searchControl = new FormControl('', { nonNullable: true });
 
@@ -58,6 +60,12 @@ export class TrafficPeriodListComponent {
   };
   private readonly monthLabels = ['Jan', 'Feb', 'Mrz', 'Apr', 'Mai', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dez'];
 
+  @Input()
+  set highlightId(value: string | null) {
+    this.highlightPeriodId.set(value);
+    window.setTimeout(() => this.scrollToHighlightedPeriod(), 0);
+  }
+
   constructor() {
     this.searchControl.setValue(this.filters().search, { emitEvent: false });
 
@@ -70,6 +78,11 @@ export class TrafficPeriodListComponent {
       if (this.searchControl.value !== current) {
         this.searchControl.setValue(current, { emitEvent: false });
       }
+    });
+
+    effect(() => {
+      this.periods();
+      window.setTimeout(() => this.scrollToHighlightedPeriod(), 0);
     });
   }
 
@@ -99,6 +112,10 @@ export class TrafficPeriodListComponent {
 
   trackByRuleId(_: number, rule: TrafficPeriod['rules'][number]) {
     return rule.id;
+  }
+
+  periodElementId(id: string): string {
+    return `traffic-period-${id}`;
   }
 
   openCreateDialog() {
@@ -275,6 +292,23 @@ export class TrafficPeriodListComponent {
     const startStr = this.formatShortDate(range.start);
     const endStr = this.formatShortDate(range.end);
     return startStr === endStr ? startStr : `${startStr}–${endStr}`;
+  }
+
+  private scrollToHighlightedPeriod() {
+    const highlight = this.highlightPeriodId();
+    if (!highlight) {
+      return;
+    }
+    const element = this.document.getElementById(this.periodElementId(highlight));
+    if (!element) {
+      return;
+    }
+    this.highlightPeriodId.set(null);
+    element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    element.classList.add('period-card--highlight');
+    window.setTimeout(() => {
+      element.classList.remove('period-card--highlight');
+    }, 2000);
   }
 
   private parseDate(iso: string): Date {

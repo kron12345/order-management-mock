@@ -1,5 +1,5 @@
-import { CommonModule } from '@angular/common';
-import { Component, computed, effect, inject } from '@angular/core';
+import { CommonModule, DOCUMENT } from '@angular/common';
+import { Component, Input, computed, effect, inject, signal } from '@angular/core';
 import {
   FormControl,
   ReactiveFormsModule,
@@ -40,6 +40,8 @@ export class ScheduleTemplateListComponent {
   private readonly templateService = inject(ScheduleTemplateService);
   private readonly orderService = inject(OrderService);
   private readonly dialog = inject(MatDialog);
+  private readonly document = inject(DOCUMENT);
+  private readonly highlightTemplateId = signal<string | null>(null);
 
   readonly searchControl = new FormControl('', {
     nonNullable: true,
@@ -105,6 +107,12 @@ export class ScheduleTemplateListComponent {
     { value: 'status:asc', label: 'Status' },
   ];
 
+  @Input()
+  set highlightId(value: string | null) {
+    this.highlightTemplateId.set(value);
+    window.setTimeout(() => this.scrollToHighlightedTemplate(), 0);
+  }
+
   constructor() {
     this.searchControl.setValue(this.filters().search, { emitEvent: false });
     this.searchControl.valueChanges
@@ -118,6 +126,11 @@ export class ScheduleTemplateListComponent {
       if (this.searchControl.value !== value) {
         this.searchControl.setValue(value, { emitEvent: false });
       }
+    });
+
+    effect(() => {
+      this.templates();
+      window.setTimeout(() => this.scrollToHighlightedTemplate(), 0);
     });
   }
 
@@ -218,5 +231,26 @@ export class ScheduleTemplateListComponent {
 
   trackByTemplateId(_: number, template: ScheduleTemplate) {
     return template.id;
+  }
+
+  templateElementId(id: string): string {
+    return `template-${id}`;
+  }
+
+  private scrollToHighlightedTemplate() {
+    const highlight = this.highlightTemplateId();
+    if (!highlight) {
+      return;
+    }
+    const element = this.document.getElementById(this.templateElementId(highlight));
+    if (!element) {
+      return;
+    }
+    this.highlightTemplateId.set(null);
+    element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    element.classList.add('template-card--highlight');
+    window.setTimeout(() => {
+      element.classList.remove('template-card--highlight');
+    }, 2000);
   }
 }

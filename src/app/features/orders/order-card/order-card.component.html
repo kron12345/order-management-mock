@@ -106,7 +106,7 @@
 
   @if (expanded()) {
     <mat-divider></mat-divider>
-    <app-order-item-list [items]="effectiveItems()" />
+    <app-order-item-list [items]="effectiveItems()" [orderId]="order.id" />
     @if (order.comment) {
       <mat-divider></mat-divider>
       <div class="comment">

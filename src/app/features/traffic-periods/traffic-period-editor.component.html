@@ -41,7 +41,6 @@
             matInput
             type="number"
             formControlName="year"
-            (input)="onYearChange(form.controls.year)"
           />
         </mat-form-field>
       </div>
@@ -53,59 +52,12 @@
     </section>
 
     <section class="selection-section">
-      <header>
-        <h3>Kalender {{ form.controls.year.value }}</h3>
-        <div class="selection-actions">
-          <span>{{ selectedCount() }} Tage markiert</span>
-          <button mat-button type="button" (click)="clearSelection()">Zurücksetzen</button>
-          <button mat-button type="button" (click)="selectWorkdays()">Mo–Fr</button>
-          <button mat-button type="button" (click)="selectWeekends()">Sa/So</button>
-          @for (weekday of weekdayNames; track weekday; let idx = $index) {
-            <button mat-stroked-button type="button" (click)="selectWeekday(idx)">{{ weekday }}</button>
-          }
-        </div>
-      </header>
-
-      <div class="calendar-table">
-        <table>
-          <thead>
-            <tr>
-              <th class="month-col">Monat</th>
-              @for (label of headerLabels(); track $index) {
-                <th>{{ label }}</th>
-              }
-            </tr>
-          </thead>
-          <tbody>
-            @for (month of weekGroups(); track monthIndex; let monthIndex = $index) {
-              <tr>
-                <td class="month-col">{{ monthNames[monthIndex] }}</td>
-                @for (cell of month.cells; track colIndex; let colIndex = $index) {
-                  <td
-                    [class.leading]="cell.kind === 'leading'"
-                    [class.trailing-cell]="cell.kind === 'trailing'"
-                    [class.empty]="!cell.date"
-                    [class.weekend]="cell.weekday !== null && cell.weekday >= 5"
-                    [class.selected]="isSelected(cell.date)"
-                    (click)="toggleCell(cell, $event)"
-                  >
-                    {{ cell.label }}
-                  </td>
-                }
-                @if (month.cells.length < headerLabels().length) {
-                  @for (extra of extraColumns(headerLabels().length - month.cells.length); track extra) {
-                    <td class="empty trailing-cell"></td>
-                  }
-                }
-              </tr>
-            }
-          </tbody>
-        </table>
-      </div>
-
-      <p class="hint">
-        Tipp: Shift + Klick für Bereichsauswahl, Strg/Cmd + Klick um bestehende Auswahl zu erweitern.
-      </p>
+      <app-annual-calendar-selector
+        [title]="'Kalender'"
+        [year]="selectedYear()"
+        [selectedDates]="selectedDates()"
+        (selectedDatesChange)="onSelectedDatesChange($event)"
+      ></app-annual-calendar-selector>
     </section>
   </form>
 </mat-dialog-content>

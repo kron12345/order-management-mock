@@ -1,5 +1,5 @@
-import { CommonModule } from '@angular/common';
-import { Component, computed, effect, inject } from '@angular/core';
+import { CommonModule, DOCUMENT } from '@angular/common';
+import { Component, computed, effect, inject, signal } from '@angular/core';
 import { FormControl, ReactiveFormsModule } from '@angular/forms';
 import { debounceTime, distinctUntilChanged } from 'rxjs';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
@@ -17,6 +17,7 @@ import {
   OrderItemOption,
   OrderService,
 } from '../../core/services/order.service';
+import { ActivatedRoute, Router } from '@angular/router';
 
 interface SortOption {
   value: string;
@@ -33,6 +34,9 @@ interface SortOption {
 export class TrainPlanListComponent {
   private readonly plansService = inject(TrainPlanService);
   private readonly orderService = inject(OrderService);
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
+  private readonly document = inject(DOCUMENT);
 
   readonly searchControl = new FormControl('', { nonNullable: true });
 
@@ -43,6 +47,7 @@ export class TrainPlanListComponent {
   readonly orderItemOptions = computed<OrderItemOption[]>(() =>
     this.orderService.orderItemOptions(),
   );
+  private readonly highlightPlanId = signal<string | null>(null);
 
   readonly statusLabels: Record<TrainPlanStatus, string> = {
     not_ordered: 'Nicht bestellt',
@@ -51,6 +56,7 @@ export class TrainPlanListComponent {
     confirmed: 'Bestätigt',
     operating: 'Unterwegs',
     canceled: 'Storniert',
+    modification_request: 'Modifikation bestellen',
   };
 
   readonly sourceLabels: Record<TrainPlanSourceType, string> = {
@@ -68,6 +74,7 @@ export class TrainPlanListComponent {
       { value: 'confirmed', label: 'Bestätigt' },
       { value: 'operating', label: 'Unterwegs' },
       { value: 'canceled', label: 'Storniert' },
+      { value: 'modification_request', label: 'Modifikation bestellen' },
     ];
 
   readonly sourceOptions: {
@@ -100,6 +107,19 @@ export class TrainPlanListComponent {
         this.searchControl.setValue(current, { emitEvent: false });
       }
     });
+
+    this.route.queryParamMap
+      .pipe(takeUntilDestroyed())
+      .subscribe((params) => {
+        const highlight = params.get('highlightPlan');
+        this.highlightPlanId.set(highlight);
+        window.setTimeout(() => this.scrollToHighlightedPlan(), 0);
+      });
+
+    effect(() => {
+      this.plans();
+      window.setTimeout(() => this.scrollToHighlightedPlan(), 0);
+    });
   }
 
   onStatusFilterChange(value: TrainPlanStatus | 'all') {
@@ -131,6 +151,10 @@ export class TrainPlanListComponent {
       ? ` – ${plan.calendar.validTo}`
       : ' – offen';
     return `${plan.calendar.validFrom}${toPart}`;
+  }
+
+  planElementId(id: string): string {
+    return `plan-${id}`;
   }
 
   linkedOrderLabel(plan: TrainPlan): string | undefined {
@@ -174,5 +198,28 @@ export class TrainPlanListComponent {
 
   trackByStopId(_: number, stop: TrainPlan['stops'][number]) {
     return stop.id;
+  }
+
+  private scrollToHighlightedPlan() {
+    const highlight = this.highlightPlanId();
+    if (!highlight) {
+      return;
+    }
+    const element = this.document.getElementById(this.planElementId(highlight));
+    if (!element) {
+      return;
+    }
+    this.highlightPlanId.set(null);
+    element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    element.classList.add('plan-card--highlight');
+    window.setTimeout(() => {
+      element.classList.remove('plan-card--highlight');
+    }, 2000);
+    this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: { highlightPlan: null },
+      queryParamsHandling: 'merge',
+      replaceUrl: true,
+    });
   }
 }

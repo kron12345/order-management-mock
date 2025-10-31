@@ -12,61 +12,19 @@
 
   <div class="section" *ngIf="mode() === 'service'">
     <form [formGroup]="serviceForm" class="form">
-      <mat-form-field appearance="outline">
-        <mat-label>Leistungstyp</mat-label>
-        <input matInput formControlName="serviceType" placeholder="z. B. Werkstattaufenthalt" />
-        @if (serviceForm.controls.serviceType.invalid && serviceForm.controls.serviceType.touched) {
-          <mat-error>Bitte einen Leistungstyp angeben.</mat-error>
-        }
-      </mat-form-field>
+      <app-order-item-general-fields
+        [form]="serviceForm"
+        [labels]="serviceGeneralLabels"
+        [hints]="{ name: 'Ohne Eingabe wird der Leistungstyp als Name verwendet.', deviation: 'z. B. +3 min' }"
+        [placeholders]="{ name: 'Leistung · Nachtpflege', deviation: 'z. B. +3 min' }"
+      ></app-order-item-general-fields>
 
-      <mat-form-field appearance="outline">
-        <mat-label>Positionsname (optional)</mat-label>
-        <input matInput formControlName="name" placeholder="Leistung · Nachtpflege" />
-        <mat-hint>Ohne Eingabe wird der Leistungstyp als Name verwendet.</mat-hint>
-      </mat-form-field>
-
-      <div class="grid">
-        <mat-form-field appearance="outline">
-          <mat-label>Von</mat-label>
-          <input matInput formControlName="fromLocation" placeholder="z. B. Basel SBB" />
-        </mat-form-field>
-        <mat-form-field appearance="outline">
-          <mat-label>Nach</mat-label>
-          <input matInput formControlName="toLocation" placeholder="z. B. Zürich HB" />
-        </mat-form-field>
-      </div>
-
-      <div class="grid">
-        <mat-form-field appearance="outline">
-          <mat-label>Start</mat-label>
-          <input matInput type="datetime-local" formControlName="start" />
-        </mat-form-field>
-        <mat-form-field appearance="outline">
-          <mat-label>Ende</mat-label>
-          <input matInput type="datetime-local" formControlName="end" />
-        </mat-form-field>
-      </div>
-
-      <div class="grid">
-        <mat-form-field appearance="outline">
-          <mat-label>Verkehrsperiode</mat-label>
-          <mat-select formControlName="trafficPeriodId">
-            @for (period of trafficPeriods(); track period.id) {
-              <mat-option [value]="period.id">{{ period.name }}</mat-option>
-            }
-          </mat-select>
-        </mat-form-field>
-        <mat-form-field appearance="outline">
-          <mat-label>Verantwortlich (optional)</mat-label>
-          <input matInput formControlName="responsible" />
-        </mat-form-field>
-      </div>
-
-      <mat-form-field appearance="outline">
-        <mat-label>Bemerkung</mat-label>
-        <input matInput formControlName="deviation" placeholder="z. B. +3 min" />
-      </mat-form-field>
+      <app-order-item-service-fields
+        [form]="serviceForm"
+        [config]="serviceFieldsConfig"
+        [trafficPeriods]="trafficPeriods()"
+        [placeholders]="{ serviceType: 'z. B. Werkstattaufenthalt', from: 'z. B. Basel SBB', to: 'z. B. Zürich HB' }"
+      ></app-order-item-service-fields>
 
       <button
         mat-stroked-button
@@ -200,17 +158,11 @@
           <input matInput type="datetime-local" formControlName="departure" />
         </mat-form-field>
       </div>
-
-      <div class="grid">
-        <mat-form-field appearance="outline">
-          <mat-label>Positionsname</mat-label>
-          <input matInput formControlName="name" placeholder="z. B. Sonderzug 4711" />
-        </mat-form-field>
-        <mat-form-field appearance="outline">
-          <mat-label>Verantwortlich</mat-label>
-          <input matInput formControlName="responsible" />
-        </mat-form-field>
-      </div>
+      <app-order-item-general-fields
+        [form]="manualPlanForm"
+        [labels]="manualGeneralLabels"
+        [placeholders]="{ name: 'z. B. Sonderzug 4711' }"
+      ></app-order-item-general-fields>
     </form>
   </div>
 

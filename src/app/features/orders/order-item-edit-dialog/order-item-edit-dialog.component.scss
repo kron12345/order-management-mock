@@ -1,0 +1,78 @@
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.section-title {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--mat-sys-on-surface-variant, rgba(0, 0, 0, 0.65));
+}
+
+.validity {
+  margin-bottom: 16px;
+  color: var(--mat-sys-on-surface-variant, rgba(0, 0, 0, 0.6));
+  font-size: 0.9rem;
+}
+
+.error {
+  margin-top: 16px;
+  color: #b00020;
+}
+
+.plan-section {
+  .plan-details {
+    display: grid;
+    gap: 12px;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    align-items: center;
+
+    &__primary {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    &__title {
+      font-weight: 600;
+      font-size: 1rem;
+    }
+
+    &__meta {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      color: rgba(0, 0, 0, 0.6);
+
+      span {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+      }
+    }
+
+    &__calendar {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      color: rgba(0, 0, 0, 0.6);
+    }
+
+    &__actions {
+      display: inline-flex;
+      justify-content: flex-end;
+    }
+  }
+}
+
+.plan-hint {
+  margin: 0;
+  color: rgba(0, 0, 0, 0.6);
+}

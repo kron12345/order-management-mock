@@ -125,138 +125,42 @@
     </section>
 
     <section class="section">
-      <header>
-        <h3>Fahrweg & Halte</h3>
-        <button
-          mat-stroked-button
-          type="button"
-          (click)="
-            addIntermediateStop(stops.length - 2 >= 0 ? stops.length - 2 : 0)
-          "
-        >
-          <mat-icon>add</mat-icon>
-          Zwischenhalt hinzufügen
+      <div class="stops-header">
+        <div>
+          <h3>Fahrweg & Halte</h3>
+          <p class="stops-hint">Bearbeite Halte, Zeiten und Aktivitäten im Dialog „Fahrplan zusammenstellen“.</p>
+        </div>
+        <button mat-stroked-button type="button" (click)="openPlanAssembly()">
+          <mat-icon>build</mat-icon>
+          Fahrplan zusammenstellen
         </button>
-      </header>
+      </div>
 
-      <div class="stops">
-        @for (stopControl of stops.controls; track stopControl; let i = $index) {
-          <mat-card class="stop-card">
-            <mat-card-header>
-              <mat-card-title>
-                @switch (stopAt(i).controls.type.value) {
-                  @case ('origin') { Startpunkt }
-                  @case ('destination') { Ziel }
-                  @default { Zwischenhalt }
+      <div class="stop-summary">
+        <div class="stop-summary__metrics">
+          <span>Anzahl Halte: {{ stopCount() }}</span>
+          <span>Start: {{ startStopLabel() }}</span>
+          <span>Ziel: {{ endStopLabel() }}</span>
+        </div>
+
+        <div class="stop-summary__list" *ngIf="stopPreview().length; else noStopSummary">
+          @for (stop of stopPreview(); track stop.sequence) {
+            <div class="stop-summary__item">
+              <span class="stop-summary__index">#{{ stop.sequence }}</span>
+              <div class="stop-summary__content">
+                <span class="stop-summary__name">{{ stop.name }}</span>
+                @if (stop.time) {
+                  <span class="stop-summary__time">{{ stop.time }}</span>
                 }
-                {{ i + 1 }}
-              </mat-card-title>
-              <mat-card-subtitle>
-                OTN-Referenzpunkt &
-                @if (stopAt(i).controls.type.value === 'intermediate') {
-                  Haltezweck
-                } @else {
-                  Abfahrts-/Ankunftsfenster
-                }
-              </mat-card-subtitle>
-              <span class="stop-card__badge">{{ stopAt(i).controls.type.value }}</span>
-            </mat-card-header>
-
-            <mat-card-content [formGroup]="stopAt(i)">
-              <div class="grid grid--two">
-                <mat-form-field appearance="outline">
-                  <mat-label>Stationsname</mat-label>
-                  <input matInput formControlName="locationName" />
-                  @if (
-                    stopAt(i).controls.locationName.invalid &&
-                    stopAt(i).controls.locationName.touched
-                  ) {
-                    <mat-error>Stationsname ist erforderlich.</mat-error>
-                  }
-                </mat-form-field>
-
-                <mat-form-field appearance="outline">
-                  <mat-label>Betriebspunkt-Code (RCS)</mat-label>
-                  <input matInput formControlName="locationCode" />
-                  @if (
-                    stopAt(i).controls.locationCode.invalid &&
-                    stopAt(i).controls.locationCode.touched
-                  ) {
-                    <mat-error>Bitte Code angeben.</mat-error>
-                  }
-                </mat-form-field>
               </div>
+              <mat-chip color="primary" selected>{{ stop.type | titlecase }}</mat-chip>
+            </div>
+          }
+        </div>
 
-              <div class="grid grid--four">
-                <mat-form-field appearance="outline">
-                  <mat-label>Früheste Ankunft</mat-label>
-                  <input matInput formControlName="arrivalEarliest" placeholder="HH:MM" />
-                </mat-form-field>
-                <mat-form-field appearance="outline">
-                  <mat-label>Späteste Ankunft</mat-label>
-                  <input matInput formControlName="arrivalLatest" placeholder="HH:MM" />
-                </mat-form-field>
-                <mat-form-field appearance="outline">
-                  <mat-label>Früheste Abfahrt</mat-label>
-                  <input matInput formControlName="departureEarliest" placeholder="HH:MM" />
-                </mat-form-field>
-                <mat-form-field appearance="outline">
-                  <mat-label>Späteste Abfahrt</mat-label>
-                  <input matInput formControlName="departureLatest" placeholder="HH:MM" />
-                </mat-form-field>
-              </div>
-
-              <div class="grid grid--three">
-                <mat-form-field appearance="outline">
-                  <mat-label>Land</mat-label>
-                  <input matInput maxlength="2" formControlName="countryCode" />
-                </mat-form-field>
-                <mat-form-field appearance="outline">
-                  <mat-label>Dwell (Min)</mat-label>
-                  <input matInput type="number" formControlName="dwellMinutes" />
-                </mat-form-field>
-                <mat-form-field appearance="outline">
-                  <mat-label>Offset (Tage)</mat-label>
-                  <input matInput type="number" formControlName="offsetDays" />
-                </mat-form-field>
-              </div>
-
-              <mat-form-field appearance="outline">
-                <mat-label>Gleisanschluss</mat-label>
-                <input matInput formControlName="platformWish" placeholder="z. B. 11" />
-              </mat-form-field>
-
-              <div class="activities">
-                <span>Haltezwecke</span>
-                <div class="activities__chips">
-                  @for (activity of activityOptions; track activity.code) {
-                    <button
-                      mat-stroked-button
-                      type="button"
-                      [class.active]="stopAt(i).controls.activities.value.includes(activity.code)"
-                      (click)="toggleActivity(i, activity.code)"
-                    >
-                      {{ activity.label }}
-                    </button>
-                  }
-                </div>
-              </div>
-
-              <mat-form-field appearance="outline">
-                <mat-label>Hinweis (optional)</mat-label>
-                <textarea matInput rows="2" formControlName="notes"></textarea>
-              </mat-form-field>
-            </mat-card-content>
-
-            <mat-card-actions align="end">
-              @if (stopAt(i).controls.type.value === 'intermediate') {
-                <button mat-button color="warn" (click)="removeStop(i)">
-                  Entfernen
-                </button>
-              }
-            </mat-card-actions>
-          </mat-card>
-        }
+        <ng-template #noStopSummary>
+          <p class="hint">Noch keine Halte definiert.</p>
+        </ng-template>
       </div>
     </section>
   </form>

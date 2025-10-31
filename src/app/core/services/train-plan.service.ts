@@ -1,8 +1,10 @@
 import { Injectable, computed, signal } from '@angular/core';
 import {
   TrainPlan,
+  TrainPlanCalendar,
   TrainPlanSourceType,
   TrainPlanStatus,
+  TrainPlanStop,
 } from '../models/train-plan.model';
 import { MOCK_TRAIN_PLANS } from '../mock/mock-train-plans.mock';
 import { ScheduleTemplateService, CreateScheduleTemplateStopPayload } from './schedule-template.service';
@@ -39,6 +41,37 @@ export interface CreateManualPlanPayload {
   sourceName?: string;
   notes?: string;
   templateId?: string;
+  trafficPeriodId?: string;
+  validFrom?: string;
+  validTo?: string;
+  daysBitmap?: string;
+}
+
+export interface CreatePlanModificationPayload {
+  originalPlanId: string;
+  title: string;
+  trainNumber: string;
+  responsibleRu: string;
+  calendar: TrainPlanCalendar;
+  trafficPeriodId?: string;
+  notes?: string;
+  stops?: PlanModificationStopInput[];
+}
+
+export interface PlanModificationStopInput {
+  sequence: number;
+  type: TrainPlanStop['type'];
+  locationCode: string;
+  locationName: string;
+  countryCode?: string;
+  arrivalTime?: string;
+  departureTime?: string;
+  arrivalOffsetDays?: number;
+  departureOffsetDays?: number;
+  dwellMinutes?: number;
+  activities: string[];
+  platform?: string;
+  notes?: string;
 }
 
 @Injectable({ providedIn: 'root' })
@@ -229,6 +262,13 @@ export class TrainPlanService {
 
     const planId = this.generatePlanId();
     const timestamp = new Date().toISOString();
+    const defaultDate = departureDate.toISOString().slice(0, 10);
+    const validFrom = payload.validFrom ?? defaultDate;
+    const validTo = payload.validTo ?? validFrom;
+    const daysBitmap =
+      payload.daysBitmap && /^[01]{7}$/.test(payload.daysBitmap)
+        ? payload.daysBitmap
+        : '1111111';
 
     const plan: TrainPlan = {
       id: planId,
@@ -240,10 +280,11 @@ export class TrainPlanService {
       status: 'not_ordered',
       responsibleRu: payload.responsibleRu,
       calendar: {
-        validFrom: departureDate.toISOString().slice(0, 10),
-        validTo: departureDate.toISOString().slice(0, 10),
-        daysBitmap: '1111111',
+        validFrom,
+        validTo,
+        daysBitmap,
       },
+      trafficPeriodId: payload.trafficPeriodId ?? undefined,
       stops: planStops,
       technical: {
         trainType: 'Passenger',
@@ -257,6 +298,77 @@ export class TrainPlanService {
       },
       linkedOrderItemId: undefined,
       notes: payload.notes,
+    } satisfies TrainPlan;
+
+    this._plans.update((plans) => [plan, ...plans]);
+    return plan;
+  }
+
+  createPlanModification(payload: CreatePlanModificationPayload): TrainPlan {
+    const original = this.getById(payload.originalPlanId);
+    if (!original) {
+      throw new Error('Originalfahrplan nicht gefunden.');
+    }
+
+    const timestamp = new Date().toISOString();
+    const newPlanId = this.generatePlanId();
+    const sourceStops = payload.stops?.length
+      ? payload.stops
+      : original.stops.map((stop) => ({
+          sequence: stop.sequence,
+          type: stop.type,
+          locationCode: stop.locationCode,
+          locationName: stop.locationName,
+          countryCode: stop.countryCode,
+          arrivalTime: stop.arrivalTime,
+          departureTime: stop.departureTime,
+          arrivalOffsetDays: stop.arrivalOffsetDays,
+          departureOffsetDays: stop.departureOffsetDays,
+          dwellMinutes: stop.dwellMinutes,
+          activities: [...stop.activities],
+          platform: stop.platform,
+          notes: stop.notes,
+        } satisfies PlanModificationStopInput));
+
+    const clonedStops: TrainPlanStop[] = sourceStops
+      .sort((a, b) => a.sequence - b.sequence)
+      .map((stop, index) => ({
+        id: `${newPlanId}-STOP-${String(index + 1).padStart(3, '0')}`,
+        sequence: index + 1,
+        type: stop.type,
+        locationCode: stop.locationCode,
+        locationName: stop.locationName,
+        countryCode: stop.countryCode,
+        arrivalTime: stop.arrivalTime,
+        departureTime: stop.departureTime,
+        arrivalOffsetDays: stop.arrivalOffsetDays,
+        departureOffsetDays: stop.departureOffsetDays,
+        dwellMinutes: stop.dwellMinutes,
+        activities: stop.activities,
+        platform: stop.platform,
+        notes: stop.notes,
+      }));
+
+    const plan: TrainPlan = {
+      ...original,
+      id: newPlanId,
+      title: payload.title,
+      trainNumber: payload.trainNumber,
+      pathRequestId: `PR-${newPlanId}`,
+      status: 'modification_request',
+      responsibleRu: payload.responsibleRu,
+      calendar: {
+        validFrom: payload.calendar.validFrom,
+        validTo: payload.calendar.validTo,
+        daysBitmap: payload.calendar.daysBitmap,
+      },
+      trafficPeriodId: payload.trafficPeriodId ?? undefined,
+      referencePlanId: original.referencePlanId ?? original.id,
+      stops: clonedStops,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+      linkedOrderItemId: undefined,
+      notes: payload.notes ?? original.notes,
     } satisfies TrainPlan;
 
     this._plans.update((plans) => [plan, ...plans]);
@@ -289,6 +401,7 @@ export class TrainPlanService {
           confirmed: 3,
           operating: 4,
           canceled: 5,
+          modification_request: 6,
         };
         return (order[a.status] - order[b.status]) * direction;
       }
@@ -330,6 +443,7 @@ export class TrainPlanService {
         validTo: calendarDate,
         daysBitmap: '1111111',
       },
+      trafficPeriodId,
       stops,
       technical: {
         trainType: 'Passenger',

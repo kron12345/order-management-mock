@@ -70,7 +70,11 @@
   } @else {
     <section class="plan-grid">
       @for (plan of plans(); track trackByPlanId($index, plan)) {
-        <mat-card class="plan-card" appearance="outlined">
+        <mat-card
+          class="plan-card"
+          appearance="outlined"
+          [attr.id]="planElementId(plan.id)"
+        >
           <mat-card-header>
             <div mat-card-avatar class="status-icon" [ngClass]="statusClass(plan)">
               <mat-icon>train</mat-icon>

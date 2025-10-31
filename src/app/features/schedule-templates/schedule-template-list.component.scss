@@ -125,6 +125,11 @@
   mat-card-header {
     align-items: flex-start;
   }
+
+  &.template-card--highlight {
+    box-shadow: 0 0 0 3px rgba(26, 115, 232, 0.35);
+    transition: box-shadow 0.3s ease;
+  }
 }
 
 .status-icon {

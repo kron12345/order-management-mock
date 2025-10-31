@@ -113,7 +113,11 @@
   } @else {
     <section class="template-grid">
       @for (template of templates(); track trackByTemplateId($index, template)) {
-        <mat-card class="template-card" appearance="outlined">
+        <mat-card
+          class="template-card"
+          appearance="outlined"
+          [attr.id]="templateElementId(template.id)"
+        >
           <mat-card-header>
             <div mat-card-avatar class="status-icon" [ngClass]="template.status">
               <mat-icon>{{ statusIcon[template.status] }}</mat-icon>

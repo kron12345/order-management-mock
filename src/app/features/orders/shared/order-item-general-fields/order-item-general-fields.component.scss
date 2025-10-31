@@ -1,0 +1,9 @@
+.general-section {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+mat-form-field {
+  width: 100%;
+}

@@ -5,10 +5,23 @@
       <span>Keine Auftragspositionen vorhanden.</span>
     </div>
   } @else {
-    @for (it of items; track it.id) {
-      <div class="item">
+    @for (it of orderedItems; track it.id) {
+      <div class="item" [ngClass]="versionDepthClass(it)">
         <div class="left">
-          <div class="name">{{ it.name }}</div>
+          <div class="headline">
+            <div class="name">{{ it.name }}</div>
+            @if (versionLabel(it)) {
+              <mat-chip class="version-chip" appearance="outlined">
+                Version {{ versionLabel(it) }}
+              </mat-chip>
+            }
+          </div>
+          @if (isChildVersion(it) && parentVersionLabel(it)) {
+            <div class="version-parent">
+              <mat-icon inline>subdirectory_arrow_right</mat-icon>
+              <span>Abgeleitet von Version {{ parentVersionLabel(it) }}</span>
+            </div>
+          }
           <div class="meta">
             <span class="type">{{ typeLabel(it) }}</span>
             @let planStatus = trainPlanStatus(it);
@@ -35,6 +48,12 @@
               <span>{{ it.responsible }}</span>
             }
           </div>
+          @if (validitySummary(it)) {
+            <div class="validity">
+              <mat-icon inline>calendar_month</mat-icon>
+              <span>{{ validitySummary(it) }}</span>
+            </div>
+          }
           @if (it.fromLocation || it.toLocation || it.serviceType) {
             <div class="route">
               @if (it.fromLocation || it.toLocation) {
@@ -50,23 +69,38 @@
             </div>
           }
           <div class="chips">
+            @if (it.linkedTrainPlanId && trainPlanLabel(it.linkedTrainPlanId)) {
+              <button
+                class="train-chip"
+                type="button"
+                mat-stroked-button
+                (click)="navigateToTrainPlan($event, it.linkedTrainPlanId)"
+              >
+                <mat-icon>train</mat-icon>
+                <span>{{ trainPlanLabel(it.linkedTrainPlanId) }}</span>
+              </button>
+            }
             @if (trafficPeriodName(it.trafficPeriodId)) {
-              <mat-chip>
+              <button
+                class="info-chip"
+                type="button"
+                mat-stroked-button
+                (click)="navigateToTrafficPeriod($event, it.trafficPeriodId!)"
+              >
                 <mat-icon>calendar_today</mat-icon>
                 {{ trafficPeriodName(it.trafficPeriodId) }}
-              </mat-chip>
+              </button>
             }
             @if (templateName(it.linkedTemplateId)) {
-              <mat-chip>
+              <button
+                class="info-chip"
+                type="button"
+                mat-stroked-button
+                (click)="navigateToTemplate($event, it.linkedTemplateId!)"
+              >
                 <mat-icon>schema</mat-icon>
                 {{ templateName(it.linkedTemplateId) }}
-              </mat-chip>
-            }
-            @if (trainPlanLabel(it.linkedTrainPlanId)) {
-              <mat-chip>
-                <mat-icon>train</mat-icon>
-                {{ trainPlanLabel(it.linkedTrainPlanId) }}
-              </mat-chip>
+              </button>
             }
           </div>
           @let businesses = businessesForItem(it);
@@ -133,6 +167,14 @@
           }
         </div>
         <div class="right">
+          <button
+            mat-icon-button
+            matTooltip="Auftragsposition bearbeiten"
+            (click)="openEditDialog(it, orderId); $event.stopPropagation()"
+            aria-label="Auftragsposition bearbeiten"
+          >
+            <mat-icon>edit</mat-icon>
+          </button>
           @if (it.deviation) {
             <span class="deviation" matTooltip="Abweichung">{{
               it.deviation

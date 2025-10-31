@@ -1,3 +1,8 @@
+export interface OrderItemValiditySegment {
+  startDate: string; // ISO date (YYYY-MM-DD)
+  endDate: string; // ISO date (YYYY-MM-DD)
+}
+
 export interface OrderItem {
   id: string;
   name: string;
@@ -13,4 +18,8 @@ export interface OrderItem {
   serviceType?: string;
   fromLocation?: string;
   toLocation?: string;
+  validity?: OrderItemValiditySegment[];
+  parentItemId?: string;
+  childItemIds?: string[];
+  versionPath?: number[];
 }

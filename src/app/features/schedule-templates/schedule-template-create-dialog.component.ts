@@ -10,6 +10,7 @@ import {
 } from '@angular/forms';
 import {
   MAT_DIALOG_DATA,
+  MatDialog,
   MatDialogRef,
 } from '@angular/material/dialog';
 import { MATERIAL_IMPORTS } from '../../core/material.imports.imports';
@@ -17,6 +18,13 @@ import {
   CreateScheduleTemplatePayload,
   CreateScheduleTemplateStopPayload,
 } from '../../core/services/schedule-template.service';
+import { TrainPlanStop } from '../../core/models/train-plan.model';
+import { PlanModificationStopInput } from '../../core/services/train-plan.service';
+import {
+  PlanAssemblyDialogComponent,
+  PlanAssemblyDialogData,
+  PlanAssemblyDialogResult,
+} from '../orders/plan-assembly-dialog/plan-assembly-dialog.component';
 import {
   ScheduleTemplateCategory,
   ScheduleTemplateDay,
@@ -79,6 +87,7 @@ export class ScheduleTemplateCreateDialogComponent {
       optional: true,
     }) ?? {};
   private readonly fb = inject(FormBuilder);
+  private readonly dialog = inject(MatDialog);
 
   readonly categoryOptions: ScheduleTemplateCategory[] = [
     'S-Bahn',
@@ -92,12 +101,6 @@ export class ScheduleTemplateCreateDialogComponent {
     'draft',
     'active',
     'archived',
-  ];
-
-  readonly activityOptions = [
-    { code: '0001', label: 'Fahrgastwechsel (0001)' },
-    { code: '0002', label: 'Betrieblicher Halt (0002)' },
-    { code: '0005', label: 'Wende (0005)' },
   ];
 
   readonly dayOptions: { value: ScheduleTemplateDay; label: string }[] = [
@@ -151,31 +154,171 @@ export class ScheduleTemplateCreateDialogComponent {
     return this.form.controls.stops;
   }
 
-  stopAt(index: number): StopFormGroup {
-    return this.stops.at(index);
+  openPlanAssembly() {
+    const stops = this.toTrainPlanStops();
+    this.dialog
+      .open<PlanAssemblyDialogComponent, PlanAssemblyDialogData, PlanAssemblyDialogResult | undefined>(
+        PlanAssemblyDialogComponent,
+        {
+          width: '1320px',
+          maxWidth: '95vw',
+          maxHeight: 'calc(100vh - 48px)',
+          panelClass: 'plan-assembly-dialog-panel',
+          data: { stops },
+        },
+      )
+      .afterClosed()
+      .subscribe((result) => {
+        if (result?.stops?.length) {
+          this.applyAssemblyStops(result.stops);
+        }
+      });
   }
 
-  addIntermediateStop(afterIndex: number) {
-    const group = this.createStopGroup('intermediate');
-    this.stops.insert(afterIndex + 1, group);
+  stopCount(): number {
+    return this.stops.length;
   }
 
-  removeStop(index: number) {
-    if (this.stops.length <= 2) {
+  startStopLabel(): string {
+    return this.stopLabelAt(0);
+  }
+
+  endStopLabel(): string {
+    return this.stopLabelAt(this.stops.length - 1);
+  }
+
+  stopPreview(): { sequence: number; name: string; time?: string; type: string }[] {
+    return this.stops.controls.map((stop, index) => {
+      const time = this.firstNonEmpty([
+        stop.controls.departureEarliest.value,
+        stop.controls.departureLatest.value,
+        stop.controls.arrivalEarliest.value,
+        stop.controls.arrivalLatest.value,
+      ]);
+      return {
+        sequence: index + 1,
+        name: stop.controls.locationName.value || '–',
+        type: stop.controls.type.value,
+        time: time || undefined,
+      };
+    });
+  }
+
+  private stopLabelAt(index: number): string {
+    const preview = this.stopPreview();
+    const item = preview[index];
+    if (!item) {
+      return '–';
+    }
+    return item.time ? `${item.name} (${item.time})` : item.name;
+  }
+
+  private toTrainPlanStops(): TrainPlanStop[] {
+    const baseDate = this.form.controls.startDate.value ?? new Date();
+    return this.stops.controls.map((group, index) => {
+      const raw = group.getRawValue() as StopFormValue;
+      const offset = raw.offsetDays ?? 0;
+      return {
+        id: `TPL-${index}`,
+        sequence: index + 1,
+        type: raw.type,
+        locationName: raw.locationName || '',
+        locationCode: raw.locationCode || '',
+        countryCode: raw.countryCode ?? undefined,
+        arrivalTime: this.combineWithBase(baseDate, raw.arrivalEarliest ?? raw.arrivalLatest, offset),
+        departureTime: this.combineWithBase(baseDate, raw.departureEarliest ?? raw.departureLatest, offset),
+        arrivalOffsetDays: raw.offsetDays ?? undefined,
+        departureOffsetDays: raw.offsetDays ?? undefined,
+        dwellMinutes: raw.dwellMinutes ?? undefined,
+        activities: raw.activities?.length ? raw.activities : ['0001'],
+        platform: raw.platformWish ?? undefined,
+        notes: raw.notes ?? undefined,
+      } satisfies TrainPlanStop;
+    });
+  }
+
+  private applyAssemblyStops(stops: PlanModificationStopInput[]): void {
+    if (!stops.length) {
       return;
     }
-    this.stops.removeAt(index);
+    this.stops.clear();
+    stops.forEach((stop) => {
+      this.stops.push(this.createStopGroupFromAssembly(stop));
+    });
+    this.form.markAsDirty();
   }
 
-  toggleActivity(stopIndex: number, activity: string) {
-    const control = this.stopAt(stopIndex).controls.activities;
-    const current = new Set(control.value ?? []);
-    if (current.has(activity)) {
-      current.delete(activity);
-    } else {
-      current.add(activity);
+  private createStopGroupFromAssembly(stop: PlanModificationStopInput): StopFormGroup {
+    const group = this.createStopGroup(stop.type);
+    const arrivalTime = this.isoToTime(stop.arrivalTime);
+    const departureTime = this.isoToTime(stop.departureTime);
+    const offset = stop.arrivalOffsetDays ?? stop.departureOffsetDays ?? null;
+
+    group.patchValue({
+      locationName: stop.locationName,
+      locationCode: stop.locationCode,
+      countryCode: stop.countryCode ?? 'CH',
+      arrivalEarliest: arrivalTime,
+      arrivalLatest: arrivalTime,
+      departureEarliest: departureTime,
+      departureLatest: departureTime,
+      offsetDays: offset,
+      dwellMinutes: stop.dwellMinutes ?? null,
+      activities: stop.activities?.length ? [...stop.activities] : ['0001'],
+      platformWish: stop.platform ?? null,
+      notes: stop.notes ?? null,
+    });
+
+    return group;
+  }
+
+  private combineWithBase(
+    baseDate: Date,
+    time: string | null | undefined,
+    offsetDays: number | null | undefined,
+  ): string | undefined {
+    if (!time) {
+      return undefined;
     }
-    control.setValue(Array.from(current));
+    const [hours, minutes] = time.split(':').map((value) => Number.parseInt(value, 10));
+    if (Number.isNaN(hours) || Number.isNaN(minutes)) {
+      return undefined;
+    }
+    const date = new Date(
+      Date.UTC(
+        baseDate.getFullYear(),
+        baseDate.getMonth(),
+        baseDate.getDate(),
+        hours,
+        minutes,
+        0,
+        0,
+      ),
+    );
+    if (offsetDays) {
+      date.setUTCDate(date.getUTCDate() + offsetDays);
+    }
+    return date.toISOString();
+  }
+
+  private isoToTime(value: string | undefined): string | null {
+    if (!value) {
+      return null;
+    }
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) {
+      return null;
+    }
+    return date.toISOString().slice(11, 16);
+  }
+
+  private firstNonEmpty(values: Array<string | null>): string | null {
+    for (const value of values) {
+      if (value && value.trim().length) {
+        return value;
+      }
+    }
+    return null;
   }
 
   toggleRecurrenceDay(day: ScheduleTemplateDay) {

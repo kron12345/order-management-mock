@@ -1,0 +1,135 @@
+<h2 mat-dialog-title>Fahrplan bearbeiten</h2>
+
+<mat-dialog-content>
+  <form [formGroup]="form" class="form">
+    <section class="section">
+      <h3>Allgemein</h3>
+      <div class="grid">
+        <mat-form-field appearance="outline">
+          <mat-label>Titel</mat-label>
+          <input matInput formControlName="title" />
+          @if (form.controls.title.touched && form.controls.title.invalid) {
+            <mat-error>Titel ist erforderlich.</mat-error>
+          }
+        </mat-form-field>
+        <mat-form-field appearance="outline">
+          <mat-label>Zugnummer</mat-label>
+          <input matInput formControlName="trainNumber" />
+          @if (form.controls.trainNumber.touched && form.controls.trainNumber.invalid) {
+            <mat-error>Zugnummer ist erforderlich.</mat-error>
+          }
+        </mat-form-field>
+        <mat-form-field appearance="outline">
+          <mat-label>Verantwortliche RU</mat-label>
+          <input matInput formControlName="responsibleRu" />
+          @if (form.controls.responsibleRu.touched && form.controls.responsibleRu.invalid) {
+            <mat-error>Bitte eine RU angeben.</mat-error>
+          }
+        </mat-form-field>
+      </div>
+      <mat-form-field appearance="outline">
+        <mat-label>Notiz</mat-label>
+        <textarea matInput formControlName="notes" rows="2"></textarea>
+      </mat-form-field>
+    </section>
+
+    <section class="section">
+      <h3>Gültigkeit</h3>
+      <mat-button-toggle-group
+        formControlName="validityMode"
+        class="mode-toggle"
+        [value]="validityMode()"
+      >
+        <mat-button-toggle value="trafficPeriod">Verkehrsperiode</mat-button-toggle>
+        <mat-button-toggle value="custom">Individuell</mat-button-toggle>
+      </mat-button-toggle-group>
+
+      @if (validityMode() === 'trafficPeriod') {
+        <mat-form-field appearance="outline">
+          <mat-label>Verkehrsperiode</mat-label>
+          <mat-select formControlName="trafficPeriodId">
+            <mat-option value="">Bitte wählen</mat-option>
+            @for (period of periods(); track trackByPeriodId($index, period)) {
+              <mat-option [value]="period.id">{{ period.name }}</mat-option>
+            }
+          </mat-select>
+          @if (form.controls.trafficPeriodId.touched && form.controls.trafficPeriodId.invalid) {
+            <mat-error>Verkehrsperiode erforderlich.</mat-error>
+          }
+        </mat-form-field>
+      } @else {
+        <div class="custom-validity">
+          <mat-form-field appearance="outline" class="custom-validity__year">
+            <mat-label>Jahr</mat-label>
+            <input matInput type="number" formControlName="customYear" />
+          </mat-form-field>
+          <app-annual-calendar-selector
+            [title]="'Kalender'"
+            [year]="customYearValue()"
+            [selectedDates]="customSelectedDates()"
+            (selectedDatesChange)="onCustomDatesChange($event)"
+          ></app-annual-calendar-selector>
+        </div>
+      }
+    </section>
+
+    <section class="section">
+      <h3>Halte & Aktivitäten</h3>
+      @if (templates().length) {
+        <div class="template-actions">
+          <mat-form-field appearance="outline">
+            <mat-label>Fahrplanvorlage</mat-label>
+            <mat-select formControlName="templateId">
+              <mat-option value="">Bitte wählen</mat-option>
+              @for (template of templates(); track template.id) {
+                <mat-option [value]="template.id">
+                  {{ template.title }} · {{ template.trainNumber }}
+                </mat-option>
+              }
+            </mat-select>
+          </mat-form-field>
+
+          <mat-form-field appearance="outline">
+            <mat-label>Startzeit</mat-label>
+            <input matInput type="time" formControlName="templateStartTime" />
+            <mat-hint>HH:MM</mat-hint>
+          </mat-form-field>
+
+          <button
+            mat-stroked-button
+            type="button"
+            (click)="applyTemplate()"
+            [disabled]="!form.controls.templateId.value"
+          >
+            Vorlage anwenden
+          </button>
+        </div>
+      }
+      <div class="stop-summary">
+        <div class="stop-summary__info">
+          <span>Anzahl Halte: {{ stopCount() }}</span>
+          <span>Start: {{ startStopLabel() }}</span>
+          <span>Ziel: {{ endStopLabel() }}</span>
+          @if (hasCustomStops()) {
+            <mat-chip color="primary" selected>Neue Halte definiert</mat-chip>
+          }
+        </div>
+        <div class="stop-summary__actions">
+          <button mat-flat-button color="primary" type="button" (click)="openAssemblyDialog()">
+            <mat-icon>build</mat-icon>
+            Fahrplan zusammenstellen
+          </button>
+        </div>
+      </div>
+    </section>
+  </form>
+
+  @if (errorMessage()) {
+    <div class="error">{{ errorMessage() }}</div>
+  }
+</mat-dialog-content>
+
+<mat-dialog-actions align="end">
+  <button mat-stroked-button type="button" (click)="cancel()">Abbrechen</button>
+  <button mat-flat-button color="primary" type="button" (click)="submit()">Speichern</button>
+</mat-dialog-actions>

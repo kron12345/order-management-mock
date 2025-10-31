@@ -26,6 +26,11 @@ import { ScheduleTemplate } from '../../core/models/schedule-template.model';
 import { TrafficPeriodService } from '../../core/services/traffic-period.service';
 import { ScheduleTemplateCreateDialogComponent } from '../schedule-templates/schedule-template-create-dialog.component';
 import { TrafficPeriodEditorComponent } from '../traffic-periods/traffic-period-editor.component';
+import {
+  OrderItemGeneralFieldsComponent,
+  OrderItemGeneralLabels,
+} from '../orders/shared/order-item-general-fields/order-item-general-fields.component';
+import { OrderItemServiceFieldsComponent } from '../orders/shared/order-item-service-fields/order-item-service-fields.component';
 
 interface OrderPositionDialogData {
   order: Order;
@@ -34,7 +39,13 @@ interface OrderPositionDialogData {
 @Component({
   selector: 'app-order-position-dialog',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, ...MATERIAL_IMPORTS],
+  imports: [
+    CommonModule,
+    ReactiveFormsModule,
+    ...MATERIAL_IMPORTS,
+    OrderItemGeneralFieldsComponent,
+    OrderItemServiceFieldsComponent,
+  ],
   templateUrl: './order-position-dialog.component.html',
   styleUrl: './order-position-dialog.component.scss',
 })
@@ -106,6 +117,24 @@ export class OrderPositionDialogComponent {
     start: '',
     end: '',
   });
+  readonly serviceFieldsConfig = {
+    startControl: 'start',
+    endControl: 'end',
+    serviceTypeControl: 'serviceType',
+    fromControl: 'fromLocation',
+    toControl: 'toLocation',
+    trafficPeriodControl: 'trafficPeriodId',
+  } as const;
+  readonly serviceGeneralLabels: OrderItemGeneralLabels = {
+    name: 'Positionsname (optional)',
+    responsible: 'Verantwortlich (optional)',
+    deviation: 'Bemerkung',
+  };
+  readonly manualGeneralLabels: OrderItemGeneralLabels = {
+    name: 'Positionsname',
+    responsible: 'Verantwortlich',
+    deviation: 'Bemerkung',
+  };
 
   readonly filteredTrains = computed(() => {
     const filters = this.importFilterValues();

@@ -4,7 +4,8 @@ export type TrainPlanStatus =
   | 'offered'
   | 'confirmed'
   | 'operating'
-  | 'canceled';
+  | 'canceled'
+  | 'modification_request';
 
 export type TrainPlanSourceType = 'rollout' | 'ttt' | 'external';
 
@@ -56,6 +57,8 @@ export interface TrainPlan {
   status: TrainPlanStatus;
   responsibleRu: string;
   calendar: TrainPlanCalendar;
+  trafficPeriodId?: string;
+  referencePlanId?: string;
   stops: TrainPlanStop[];
   technical: TrainPlanTechnicalData;
   createdAt: string; // ISO datetime

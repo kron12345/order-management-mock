@@ -11,10 +11,11 @@ export const MOCK_TRAIN_PLANS: TrainPlan[] = [
     status: 'confirmed',
     responsibleRu: 'Qnamic Rail GmbH',
     calendar: {
-      validFrom: '2025-12-01',
-      validTo: '2025-12-31',
-      daysBitmap: '1111100',
+      validFrom: '2025-10-01',
+      validTo: '2025-10-20',
+      daysBitmap: '1111111',
     },
+    trafficPeriodId: 'TPER-002',
     stops: [
       {
         id: 'TP-2025-0001-STOP-001',
@@ -100,10 +101,11 @@ export const MOCK_TRAIN_PLANS: TrainPlan[] = [
     status: 'offered',
     responsibleRu: 'Qnamic Rail GmbH',
     calendar: {
-      validFrom: '2025-12-01',
-      validTo: '2025-12-31',
+      validFrom: '2025-10-01',
+      validTo: '2025-12-15',
       daysBitmap: '1111100',
     },
+    trafficPeriodId: 'TPER-002',
     stops: [
       {
         id: 'TP-2025-0002-STOP-001',
@@ -162,9 +164,10 @@ export const MOCK_TRAIN_PLANS: TrainPlan[] = [
     responsibleRu: 'SBB Personenverkehr',
     calendar: {
       validFrom: '2025-11-01',
-      validTo: '2026-05-31',
+      validTo: '2026-03-31',
       daysBitmap: '1111111',
     },
+    trafficPeriodId: 'TPER-002',
     stops: [
       {
         id: 'TP-2025-0501-STOP-001',
@@ -222,6 +225,7 @@ export const MOCK_TRAIN_PLANS: TrainPlan[] = [
       name: 'SBB Fahrplanmanagement',
       systemId: 'SBB-FP-2025',
     },
+    linkedOrderItemId: 'A-2025-0002-OP-001',
     notes:
       'Importiert aus SBB Fahrplanmanagement, dient als Referenzfahrt für den RE-Stundentakt.',
   },

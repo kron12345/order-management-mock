@@ -1,0 +1,43 @@
+<div class="general-section">
+  @if (hasControl(nameControl)) {
+    <mat-form-field appearance="outline">
+      <mat-label>{{ label('name') }}</mat-label>
+      <input
+        matInput
+        [formControlName]="nameControl!"
+        [placeholder]="placeholder('name') ?? ''"
+      />
+      @if (hints.name) {
+        <mat-hint>{{ hints.name }}</mat-hint>
+      }
+    </mat-form-field>
+  }
+
+  @if (hasControl(responsibleControl)) {
+    <mat-form-field appearance="outline">
+      <mat-label>{{ label('responsible') }}</mat-label>
+      <input
+        matInput
+        [formControlName]="responsibleControl!"
+        [placeholder]="placeholder('responsible') ?? ''"
+      />
+      @if (hints.responsible) {
+        <mat-hint>{{ hints.responsible }}</mat-hint>
+      }
+    </mat-form-field>
+  }
+
+  @if (hasControl(deviationControl)) {
+    <mat-form-field appearance="outline">
+      <mat-label>{{ label('deviation') }}</mat-label>
+      <input
+        matInput
+        [formControlName]="deviationControl!"
+        [placeholder]="placeholder('deviation') ?? ''"
+      />
+      @if (hints.deviation) {
+        <mat-hint>{{ hints.deviation }}</mat-hint>
+      }
+    </mat-form-field>
+  }
+</div>

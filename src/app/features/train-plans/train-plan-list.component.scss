@@ -104,6 +104,11 @@
   mat-card-header {
     align-items: flex-start;
   }
+
+  &.plan-card--highlight {
+    box-shadow: 0 0 0 3px rgba(26, 115, 232, 0.35);
+    transition: box-shadow 0.3s ease;
+  }
 }
 
 .status-icon {
@@ -141,6 +146,11 @@
     background: #fdecea;
     color: #d93025;
   }
+
+  &.status-modification-request {
+    background: rgba(26, 115, 232, 0.16);
+    color: #1a73e8;
+  }
 }
 
 mat-chip.status-confirmed,
@@ -157,6 +167,11 @@ mat-chip.status-offered {
 mat-chip.status-not-ordered {
   background: rgba(107, 114, 128, 0.16);
   color: #4b5563;
+}
+
+mat-chip.status-modification-request {
+  background: rgba(26, 115, 232, 0.16);
+  color: #1a73e8;
 }
 
 mat-chip.status-requested {

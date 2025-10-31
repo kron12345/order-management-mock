@@ -1,6 +1,6 @@
 import { Injectable, computed, signal } from '@angular/core';
 import { Order } from '../models/order.model';
-import { OrderItem } from '../models/order-item.model';
+import { OrderItem, OrderItemValiditySegment } from '../models/order-item.model';
 import { MOCK_ORDERS } from '../mock/mock-orders.mock';
 import { ScheduleTemplate } from '../models/schedule-template.model';
 import {
@@ -88,6 +88,30 @@ export interface CreateImportedPlanOrderItemPayload {
   responsible?: string;
 }
 
+type EditableOrderItemKeys =
+  | 'name'
+  | 'start'
+  | 'end'
+  | 'responsible'
+  | 'deviation'
+  | 'serviceType'
+  | 'fromLocation'
+  | 'toLocation'
+  | 'trafficPeriodId'
+  | 'linkedBusinessIds'
+  | 'linkedTemplateId'
+  | 'linkedTrainPlanId';
+
+export type OrderItemUpdateData = Pick<OrderItem, EditableOrderItemKeys>;
+
+export interface SplitOrderItemPayload {
+  orderId: string;
+  itemId: string;
+  rangeStart: string; // ISO date (YYYY-MM-DD)
+  rangeEnd: string; // ISO date (YYYY-MM-DD)
+  updates?: Partial<OrderItemUpdateData>;
+}
+
 @Injectable({ providedIn: 'root' })
 export class OrderService {
   private readonly _orders = signal<Order[]>(MOCK_ORDERS);
@@ -100,7 +124,11 @@ export class OrderService {
     trainNumber: '',
   });
 
-  constructor(private readonly trainPlanService: TrainPlanService) {}
+  constructor(private readonly trainPlanService: TrainPlanService) {
+    this._orders.set(
+      this._orders().map((order) => this.initializeOrder(order)),
+    );
+  }
 
   readonly filters = computed(() => this._filters());
   readonly orders = computed(() => this._orders());
@@ -206,26 +234,18 @@ export class OrderService {
     });
 
     const items: OrderItem[] = plans.map((plan, index) => {
-      const start = this.extractPlanStart(plan) ?? this.combineDateTime(plan.calendar.validFrom, payload.startTime);
-      const end = this.extractPlanEnd(plan) ?? start;
       const namePrefix = payload.namePrefix?.trim() ?? plan.title;
       const itemName = plans.length > 1 ? `${namePrefix} #${index + 1}` : namePrefix;
-      const firstStop = plan.stops[0];
-      const lastStop = plan.stops[plan.stops.length - 1];
-
-      return {
+      const base: OrderItem = {
         id: this.generateItemId(payload.orderId),
         name: itemName,
         type: 'Fahrplan',
-        start,
-        end,
-        responsible: payload.responsible,
-        trafficPeriodId: payload.trafficPeriodId,
+        responsible: plan.responsibleRu,
         linkedTemplateId: payload.templateId,
         linkedTrainPlanId: plan.id,
-        fromLocation: firstStop?.locationName,
-        toLocation: lastStop?.locationName,
       } satisfies OrderItem;
+
+      return this.applyPlanDetailsToItem(base, plan);
     });
 
     this.appendItems(payload.orderId, items);
@@ -249,14 +269,10 @@ export class OrderService {
       sourceName: payload.template.title,
       notes: payload.template.description,
       templateId: payload.template.id,
+      trafficPeriodId: payload.trafficPeriodId,
     });
 
-    const start = this.extractPlanStart(plan);
-    const end = this.extractPlanEnd(plan);
-    const firstStop = plan.stops[0];
-    const lastStop = plan.stops[plan.stops.length - 1];
-
-    const item: OrderItem = {
+    const base: OrderItem = {
       id: this.generateItemId(payload.orderId),
       name:
         payload.name?.trim() && payload.name.trim().length
@@ -265,19 +281,10 @@ export class OrderService {
       type: 'Fahrplan',
       responsible:
         payload.responsible?.trim() || payload.template.responsibleRu,
-      trafficPeriodId: payload.trafficPeriodId,
       linkedTrainPlanId: plan.id,
       linkedTemplateId: payload.template.id,
-      fromLocation: firstStop?.locationName,
-      toLocation: lastStop?.locationName,
     } satisfies OrderItem;
-
-    if (start) {
-      item.start = start;
-    }
-    if (end) {
-      item.end = end;
-    }
+    const item = this.applyPlanDetailsToItem(base, plan);
 
     this.appendItems(payload.orderId, [item]);
     this.trainPlanService.linkOrderItem(plan.id, item.id);
@@ -302,37 +309,175 @@ export class OrderService {
       sourceName: payload.train.category ?? 'RailML',
       notes: undefined,
       templateId: undefined,
+      trafficPeriodId: payload.trafficPeriodId,
     });
 
-    const start = this.extractPlanStart(plan);
-    const end = this.extractPlanEnd(plan);
     const firstStop = plan.stops[0];
     const lastStop = plan.stops[plan.stops.length - 1];
 
     const namePrefix = payload.namePrefix?.trim();
     const itemName = namePrefix ? `${namePrefix} ${payload.train.name}` : payload.train.name;
-    const item: OrderItem = {
+    const base: OrderItem = {
       id: this.generateItemId(payload.orderId),
       name: itemName,
       type: 'Fahrplan',
       responsible,
-      trafficPeriodId: payload.trafficPeriodId,
       linkedTrainPlanId: plan.id,
-      fromLocation: firstStop?.locationName ?? payload.train.start,
-      toLocation: lastStop?.locationName ?? payload.train.end,
     } satisfies OrderItem;
 
-    if (start) {
-      item.start = start;
-    }
-    if (end) {
-      item.end = end;
-    }
+    const item = this.applyPlanDetailsToItem(
+      {
+        ...base,
+        fromLocation: firstStop?.locationName ?? payload.train.start,
+        toLocation: lastStop?.locationName ?? payload.train.end,
+      },
+      plan,
+    );
 
     this.appendItems(payload.orderId, [item]);
     this.trainPlanService.linkOrderItem(plan.id, item.id);
     this.linkTrainPlanToItem(plan.id, item.id);
     return item;
+  }
+
+  applyPlanModification(payload: {
+    orderId: string;
+    itemId: string;
+    plan: TrainPlan;
+  }): void {
+    const { orderId, itemId, plan } = payload;
+
+    this._orders.update((orders) =>
+      orders.map((order) => {
+        if (order.id !== orderId) {
+          return order;
+        }
+
+        const items = order.items.map((item) => {
+          if (item.id !== itemId) {
+            return item;
+          }
+
+          const base: OrderItem = {
+            ...item,
+            linkedTrainPlanId: plan.id,
+          } satisfies OrderItem;
+
+          return this.applyPlanDetailsToItem(base, plan);
+        });
+
+        return { ...order, items } satisfies Order;
+      }),
+    );
+
+    this.trainPlanService.linkOrderItem(plan.id, itemId);
+  }
+
+  splitOrderItem(
+    payload: SplitOrderItemPayload,
+  ): { created: OrderItem; original: OrderItem } {
+    const rangeStart = this.normalizeDateInput(payload.rangeStart);
+    const rangeEnd = this.normalizeDateInput(payload.rangeEnd);
+    if (!rangeStart || !rangeEnd) {
+      throw new Error('Ungültiger Datumsbereich.');
+    }
+    if (rangeStart > rangeEnd) {
+      throw new Error('Das Startdatum darf nicht nach dem Enddatum liegen.');
+    }
+
+    type SplitResult = { created: OrderItem; original: OrderItem };
+    let result: SplitResult | null = null;
+
+    this._orders.update((orders) =>
+      orders.map((order) => {
+        if (order.id !== payload.orderId) {
+          return order;
+        }
+
+        const targetIndex = order.items.findIndex(
+          (item) => item.id === payload.itemId,
+        );
+        if (targetIndex === -1) {
+          throw new Error(
+            `Auftragsposition ${payload.itemId} wurde im Auftrag ${order.id} nicht gefunden.`,
+          );
+        }
+
+        const target = this.ensureItemDefaults(order.items[targetIndex]);
+        const validity = target.validity ?? [];
+
+        const { retained, extracted } = this.splitSegments(
+          validity,
+          rangeStart,
+          rangeEnd,
+        );
+
+        if (!extracted.length) {
+          throw new Error(
+            'Die ausgewählten Tage überschneiden sich nicht mit der Auftragsposition.',
+          );
+        }
+
+        const childId = this.generateItemId(order.id);
+        const preparedUpdates = this.prepareUpdatePayload(payload.updates);
+
+        const child: OrderItem = this.applyUpdatesToItem(
+          {
+            ...target,
+            id: childId,
+            validity: extracted,
+            parentItemId: target.id,
+            childItemIds: [],
+          },
+          preparedUpdates,
+        );
+
+        if (preparedUpdates.linkedTrainPlanId) {
+          const linkedPlan = this.trainPlanService.getById(
+            preparedUpdates.linkedTrainPlanId,
+          );
+          if (linkedPlan) {
+            const planStart = this.extractPlanStart(linkedPlan);
+            const planEnd = this.extractPlanEnd(linkedPlan);
+            if (planStart) {
+              child.start = planStart;
+            }
+            if (planEnd) {
+              child.end = planEnd;
+            }
+          }
+        }
+
+        const updatedOriginal: OrderItem = {
+          ...target,
+          validity: retained,
+          childItemIds: [...(target.childItemIds ?? []), childId],
+        };
+
+        const nextItems = [...order.items];
+        nextItems[targetIndex] = updatedOriginal;
+        nextItems.push(child);
+
+        const normalizedItems = this.normalizeItemsAfterChange(nextItems);
+
+        const normalizedChild =
+          normalizedItems.find((item) => item.id === childId) ?? child;
+        const normalizedOriginal =
+          normalizedItems.find((item) => item.id === target.id) ?? updatedOriginal;
+
+        result = { created: normalizedChild, original: normalizedOriginal };
+
+        return { ...order, items: normalizedItems };
+      }),
+    );
+
+    if (!result) {
+      throw new Error(
+        `Der Split der Auftragsposition ${payload.itemId} konnte nicht durchgeführt werden.`,
+      );
+    }
+
+    return result;
   }
 
   private matchesOrder(order: Order, filters: OrderFilters): boolean {
@@ -498,13 +643,18 @@ export class OrderService {
   }
 
   linkTrainPlanToItem(planId: string, itemId: string) {
+    const plan = this.trainPlanService.getById(planId);
     this._orders.update((orders) =>
       orders.map((order) => {
         let mutated = false;
         const items = order.items.map((item) => {
           if (item.id === itemId) {
             mutated = true;
-            return { ...item, linkedTrainPlanId: planId };
+            const base: OrderItem = {
+              ...item,
+              linkedTrainPlanId: planId,
+            };
+            return plan ? this.applyPlanDetailsToItem(base, plan) : base;
           }
           if (item.linkedTrainPlanId === planId && item.id !== itemId) {
             mutated = true;
@@ -542,13 +692,316 @@ export class OrderService {
           return order;
         }
         updated = true;
-        return { ...order, items: [...order.items, ...items] };
+        const prepared = this.prepareItemsForInsertion(items);
+        return {
+          ...order,
+          items: this.normalizeItemsAfterChange([...order.items, ...prepared]),
+        };
       }),
     );
 
     if (!updated) {
       throw new Error(`Auftrag ${orderId} nicht gefunden`);
     }
+  }
+
+  private prepareItemsForInsertion(items: OrderItem[]): OrderItem[] {
+    return items.map((item) => this.ensureItemDefaults(item));
+  }
+
+  private initializeOrder(order: Order): Order {
+    const prepared = order.items.map((item) => this.ensureItemDefaults(item));
+    return {
+      ...order,
+      items: this.normalizeItemsAfterChange(prepared),
+    };
+  }
+
+  private ensureItemDefaults(item: OrderItem): OrderItem {
+    const validity =
+      item.validity && item.validity.length
+        ? this.normalizeSegments(item.validity)
+        : this.deriveDefaultValidity(item);
+
+    return {
+      ...item,
+      validity,
+      childItemIds: [...(item.childItemIds ?? [])],
+      versionPath: item.versionPath ? [...item.versionPath] : undefined,
+      linkedBusinessIds: item.linkedBusinessIds
+        ? [...item.linkedBusinessIds]
+        : undefined,
+      linkedTemplateId: item.linkedTemplateId,
+      linkedTrainPlanId: item.linkedTrainPlanId,
+    };
+  }
+
+  private normalizeItemsAfterChange(items: OrderItem[]): OrderItem[] {
+    const itemMap = new Map<string, OrderItem>();
+    items.forEach((item) => {
+      const defaults = this.ensureItemDefaults(item);
+      itemMap.set(defaults.id, defaults);
+    });
+
+    // Reset child references to avoid duplicates.
+    itemMap.forEach((item) => {
+      item.childItemIds = [];
+    });
+    itemMap.forEach((item) => {
+      if (!item.parentItemId) {
+        return;
+      }
+      const parent = itemMap.get(item.parentItemId);
+      if (!parent) {
+        return;
+      }
+      parent.childItemIds = parent.childItemIds ?? [];
+      if (!parent.childItemIds.includes(item.id)) {
+        parent.childItemIds.push(item.id);
+      }
+    });
+
+    const result: OrderItem[] = Array.from(itemMap.values());
+
+    // Assign version paths depth-first, preserving original ordering as much as possible.
+    const inputOrder = items.map((item) => item.id);
+    const roots = inputOrder
+      .map((id) => itemMap.get(id))
+      .filter((item): item is OrderItem => !!item && !item.parentItemId);
+
+    let rootCounter = 1;
+    roots.forEach((root) => {
+      const existingRootNumber =
+        root.versionPath && root.versionPath.length === 1
+          ? root.versionPath[0]
+          : undefined;
+      if (typeof existingRootNumber === 'number') {
+        this.assignVersionPath(root, [existingRootNumber], itemMap, inputOrder);
+        rootCounter = Math.max(rootCounter, existingRootNumber + 1);
+      } else {
+        this.assignVersionPath(root, [rootCounter], itemMap, inputOrder);
+        rootCounter += 1;
+      }
+    });
+
+    const orphans = inputOrder
+      .map((id) => itemMap.get(id))
+      .filter(
+        (item): item is OrderItem =>
+          !!item &&
+          !!item.parentItemId &&
+          !itemMap.has(item.parentItemId),
+      );
+    orphans.forEach((orphan) => {
+      const existing = orphan.versionPath?.[0];
+      if (typeof existing === 'number') {
+        this.assignVersionPath(orphan, [existing], itemMap, inputOrder);
+        rootCounter = Math.max(rootCounter, existing + 1);
+      } else {
+        this.assignVersionPath(orphan, [rootCounter], itemMap, inputOrder);
+        rootCounter += 1;
+      }
+    });
+
+    return result;
+  }
+
+  private assignVersionPath(
+    item: OrderItem,
+    path: number[],
+    itemMap: Map<string, OrderItem>,
+    inputOrder: string[],
+  ) {
+    item.versionPath = [...path];
+    const childrenIds = [...(item.childItemIds ?? [])].sort((a, b) => {
+      const indexA = inputOrder.indexOf(a);
+      const indexB = inputOrder.indexOf(b);
+      const safeA = indexA === -1 ? Number.MAX_SAFE_INTEGER : indexA;
+      const safeB = indexB === -1 ? Number.MAX_SAFE_INTEGER : indexB;
+      return safeA - safeB;
+    });
+    let childCounter = 1;
+    childrenIds.forEach((childId) => {
+      const child = itemMap.get(childId);
+      if (!child) {
+        return;
+      }
+      const existingChildNumber =
+        child.versionPath && child.versionPath.length === path.length + 1
+          ? child.versionPath[path.length]
+          : undefined;
+      let nextIndex: number;
+      if (typeof existingChildNumber === 'number') {
+        nextIndex = existingChildNumber;
+        childCounter = Math.max(childCounter, existingChildNumber + 1);
+      } else {
+        nextIndex = childCounter;
+        childCounter += 1;
+      }
+      const nextPath = [...path, nextIndex];
+      this.assignVersionPath(child, nextPath, itemMap, inputOrder);
+    });
+  }
+
+  private deriveDefaultValidity(item: OrderItem): OrderItemValiditySegment[] {
+    if (!item.start && !item.end) {
+      return [];
+    }
+    const startDate = item.start ? item.start.slice(0, 10) : item.end?.slice(0, 10);
+    const endDate = item.end ? item.end.slice(0, 10) : startDate;
+    if (!startDate || !endDate) {
+      return [];
+    }
+    if (!this.isValidDate(startDate) || !this.isValidDate(endDate)) {
+      return [];
+    }
+    const normalizedStart =
+      startDate <= endDate ? startDate : endDate;
+    const normalizedEnd =
+      endDate >= startDate ? endDate : startDate;
+    return [{ startDate: normalizedStart, endDate: normalizedEnd }];
+  }
+
+  private splitSegments(
+    segments: OrderItemValiditySegment[],
+    rangeStart: string,
+    rangeEnd: string,
+  ): { retained: OrderItemValiditySegment[]; extracted: OrderItemValiditySegment[] } {
+    const retained: OrderItemValiditySegment[] = [];
+    const extracted: OrderItemValiditySegment[] = [];
+
+    segments.forEach((segment) => {
+      const segStart = segment.startDate;
+      const segEnd = segment.endDate;
+
+      if (rangeEnd < segStart || rangeStart > segEnd) {
+        retained.push(segment);
+        return;
+      }
+
+      const overlapStart = rangeStart > segStart ? rangeStart : segStart;
+      const overlapEnd = rangeEnd < segEnd ? rangeEnd : segEnd;
+
+      if (overlapStart > overlapEnd) {
+        retained.push(segment);
+        return;
+      }
+
+      extracted.push({ startDate: overlapStart, endDate: overlapEnd });
+
+      if (segStart < overlapStart) {
+        retained.push({
+          startDate: segStart,
+          endDate: this.addDaysToDateString(overlapStart, -1),
+        });
+      }
+
+      if (overlapEnd < segEnd) {
+        retained.push({
+          startDate: this.addDaysToDateString(overlapEnd, 1),
+          endDate: segEnd,
+        });
+      }
+    });
+
+    return {
+      retained: this.normalizeSegments(retained),
+      extracted: this.normalizeSegments(extracted),
+    };
+  }
+
+  private normalizeSegments(
+    segments: OrderItemValiditySegment[],
+  ): OrderItemValiditySegment[] {
+    if (!segments.length) {
+      return [];
+    }
+    const sorted = [...segments].sort((a, b) =>
+      a.startDate.localeCompare(b.startDate),
+    );
+    const merged: OrderItemValiditySegment[] = [];
+    let current = { ...sorted[0] };
+    for (let i = 1; i < sorted.length; i++) {
+      const next = sorted[i];
+      const dayAfterCurrentEnd = this.addDaysToDateString(current.endDate, 1);
+      if (dayAfterCurrentEnd >= next.startDate) {
+        const maxEnd =
+          current.endDate > next.endDate ? current.endDate : next.endDate;
+        current = { startDate: current.startDate, endDate: maxEnd };
+      } else {
+        merged.push(current);
+        current = { ...next };
+      }
+    }
+    merged.push(current);
+    return merged;
+  }
+
+  private addDaysToDateString(date: string, days: number): string {
+    const utc = this.toUtcDate(date);
+    if (!utc) {
+      return date;
+    }
+    utc.setUTCDate(utc.getUTCDate() + days);
+    return this.fromUtcDate(utc);
+  }
+
+  private toUtcDate(value: string): Date | null {
+    if (!this.isValidDate(value)) {
+      return null;
+    }
+    const [year, month, day] = value.split('-').map(Number);
+    return new Date(Date.UTC(year, month - 1, day));
+  }
+
+  private fromUtcDate(date: Date): string {
+    return [
+      date.getUTCFullYear().toString().padStart(4, '0'),
+      (date.getUTCMonth() + 1).toString().padStart(2, '0'),
+      date.getUTCDate().toString().padStart(2, '0'),
+    ].join('-');
+  }
+
+  private isValidDate(value: string): boolean {
+    return /^\d{4}-\d{2}-\d{2}$/.test(value);
+  }
+
+  private normalizeDateInput(value: string): string | null {
+    if (!value) {
+      return null;
+    }
+    const trimmed = value.trim();
+    if (!this.isValidDate(trimmed)) {
+      return null;
+    }
+    return trimmed;
+  }
+
+  private prepareUpdatePayload(
+    updates: Partial<OrderItemUpdateData> | undefined,
+  ): Partial<OrderItemUpdateData> {
+    if (!updates) {
+      return {};
+    }
+    const clone: Partial<OrderItemUpdateData> = { ...updates };
+    if (updates.linkedBusinessIds) {
+      clone.linkedBusinessIds = [...updates.linkedBusinessIds];
+    }
+    return clone;
+  }
+
+  private applyUpdatesToItem(
+    item: OrderItem,
+    updates: Partial<OrderItemUpdateData>,
+  ): OrderItem {
+    if (!updates || Object.keys(updates).length === 0) {
+      return item;
+    }
+    const next: OrderItem = { ...item, ...updates };
+    if (updates.linkedBusinessIds) {
+      next.linkedBusinessIds = [...updates.linkedBusinessIds];
+    }
+    return next;
   }
 
   private generateOrderId(): string {
@@ -591,6 +1044,46 @@ export class OrderService {
       }
     }
     return undefined;
+  }
+
+  private applyPlanDetailsToItem(item: OrderItem, plan: TrainPlan): OrderItem {
+    const start = this.extractPlanStart(plan);
+    const end = this.extractPlanEnd(plan);
+    const firstStop = plan.stops[0];
+    const lastStop = plan.stops[plan.stops.length - 1];
+
+    const updated: OrderItem = {
+      ...item,
+      responsible: plan.responsibleRu,
+      fromLocation: firstStop?.locationName ?? item.fromLocation,
+      toLocation: lastStop?.locationName ?? item.toLocation,
+    };
+
+    if (start) {
+      updated.start = start;
+    }
+    if (end) {
+      updated.end = end;
+    }
+
+    if (plan.trafficPeriodId) {
+      updated.trafficPeriodId = plan.trafficPeriodId;
+      updated.validity = undefined;
+    } else if (plan.calendar?.validFrom) {
+      updated.trafficPeriodId = undefined;
+      const endDate = plan.calendar.validTo ?? plan.calendar.validFrom;
+      updated.validity = [
+        {
+          startDate: plan.calendar.validFrom,
+          endDate,
+        },
+      ];
+    } else {
+      updated.trafficPeriodId = undefined;
+      updated.validity = undefined;
+    }
+
+    return updated;
   }
 
   private combineDateTime(date: string, time: string): string {

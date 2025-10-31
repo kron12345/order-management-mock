@@ -6,12 +6,15 @@
     </div>
   </header>
 
-  <mat-tab-group>
+  <mat-tab-group
+    [selectedIndex]="selectedIndex()"
+    (selectedIndexChange)="onTabChange($event)"
+  >
     <mat-tab label="Fahrplanvorlagen">
-      <app-schedule-template-list />
+      <app-schedule-template-list [highlightId]="templateHighlight()" />
     </mat-tab>
     <mat-tab label="Verkehrsperioden">
-      <app-traffic-period-list />
+      <app-traffic-period-list [highlightId]="periodHighlight()" />
     </mat-tab>
   </mat-tab-group>
 </div>

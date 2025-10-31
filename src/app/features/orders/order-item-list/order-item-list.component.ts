@@ -12,6 +12,8 @@ import { ScheduleTemplateService } from '../../../core/services/schedule-templat
 import { TrainPlanService } from '../../../core/services/train-plan.service';
 import { Router } from '@angular/router';
 import { TrainPlanStatus } from '../../../core/models/train-plan.model';
+import { MatDialog } from '@angular/material/dialog';
+import { OrderItemEditDialogComponent } from '../order-item-edit-dialog/order-item-edit-dialog.component';
 
 @Component({
   selector: 'app-order-item-list',
@@ -22,6 +24,38 @@ import { TrainPlanStatus } from '../../../core/models/train-plan.model';
 })
 export class OrderItemListComponent {
   @Input({ required: true }) items!: OrderItem[];
+  @Input({ required: true }) orderId!: string;
+
+  get orderedItems(): OrderItem[] {
+    if (!this.items) {
+      return [];
+    }
+    return [...this.items].sort((a, b) => {
+      const aPath = a.versionPath;
+      const bPath = b.versionPath;
+      if (!aPath?.length && !bPath?.length) {
+        return this.items.indexOf(a) - this.items.indexOf(b);
+      }
+      if (!aPath?.length) {
+        return 1;
+      }
+      if (!bPath?.length) {
+        return -1;
+      }
+      const minLength = Math.min(aPath.length, bPath.length);
+      for (let i = 0; i < minLength; i++) {
+        const aValue = aPath[i];
+        const bValue = bPath[i];
+        if (aValue !== bValue) {
+          return aValue - bValue;
+        }
+      }
+      if (aPath.length !== bPath.length) {
+        return aPath.length - bPath.length;
+      }
+      return this.items.indexOf(a) - this.items.indexOf(b);
+    });
+  }
 
   private readonly statusLabels: Record<BusinessStatus, string> = {
     neu: 'Neu',
@@ -49,10 +83,18 @@ export class OrderItemListComponent {
     private readonly templateService: ScheduleTemplateService,
     private readonly trainPlanService: TrainPlanService,
     private readonly router: Router,
+    private readonly dialog: MatDialog,
   ) {}
 
   businessesForItem(item: OrderItem): Business[] {
     return this.businessService.getByIds(item.linkedBusinessIds ?? []);
+  }
+
+  navigateToTrainPlan(event: MouseEvent, trainPlanId: string) {
+    event.stopPropagation();
+    this.router.navigate(['/plans'], {
+      queryParams: { highlightPlan: trainPlanId },
+    });
   }
 
   typeLabel(item: OrderItem): string {
@@ -80,11 +122,31 @@ export class OrderItemListComponent {
     return this.trafficPeriodService.getById(id)?.name;
   }
 
+  navigateToTrafficPeriod(event: MouseEvent, periodId: string) {
+    event.stopPropagation();
+    this.router.navigate(['/templates'], {
+      queryParams: {
+        tab: 'traffic-periods',
+        highlightPeriod: periodId,
+      },
+    });
+  }
+
   templateName(id: string | undefined): string | undefined {
     if (!id) {
       return undefined;
     }
     return this.templateService.getById(id)?.title;
+  }
+
+  navigateToTemplate(event: MouseEvent, templateId: string) {
+    event.stopPropagation();
+    this.router.navigate(['/templates'], {
+      queryParams: {
+        tab: 'templates',
+        highlightTemplate: templateId,
+      },
+    });
   }
 
   trainPlanLabel(id: string | undefined): string | undefined {
@@ -129,6 +191,50 @@ export class OrderItemListComponent {
 
   hasSchedule(item: OrderItem): boolean {
     return Boolean(item.start && item.end);
+  }
+
+  versionLabel(item: OrderItem): string | undefined {
+    if (!item.versionPath?.length) {
+      return undefined;
+    }
+    return item.versionPath.join('.');
+  }
+
+  parentVersionLabel(item: OrderItem): string | undefined {
+    if (!item.versionPath || item.versionPath.length <= 1) {
+      return undefined;
+    }
+    return item.versionPath.slice(0, -1).join('.');
+  }
+
+  isChildVersion(item: OrderItem): boolean {
+    return !!item.versionPath && item.versionPath.length > 1;
+  }
+
+  versionDepthClass(item: OrderItem): string | undefined {
+    if (!item.versionPath?.length) {
+      return undefined;
+    }
+    return `version-depth-${item.versionPath.length}`;
+  }
+
+  validitySummary(item: OrderItem): string | undefined {
+    if (!item.validity?.length) {
+      return undefined;
+    }
+    return item.validity
+      .map((segment) => `${segment.startDate}–${segment.endDate}`)
+      .join(', ');
+  }
+
+  openEditDialog(item: OrderItem, orderId: string) {
+    this.dialog.open(OrderItemEditDialogComponent, {
+      width: '640px',
+      data: {
+        orderId,
+        item,
+      },
+    });
   }
 
   onBusinessCardClick(event: MouseEvent, businessId: string): void {
