@@ -1,4 +1,4 @@
-import { Component, Input, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, Input, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { MatTabsModule } from '@angular/material/tabs';
 import { MatIconModule } from '@angular/material/icon';
@@ -23,6 +23,7 @@ import { MasterDataHierarchySectionComponent } from '../master-data-hierarchy-se
   ],
   templateUrl: './master-data-layout.component.html',
   styleUrl: './master-data-layout.component.scss',
+  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class MasterDataLayoutComponent {
   @Input({ required: true }) title = '';

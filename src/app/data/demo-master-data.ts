@@ -65,7 +65,10 @@ export const DEMO_MASTER_DATA: DemoMasterData = {
   personnel: [
     {
       id: 'P-001',
-      firstName: 'Julia',
+      firstName: [
+        { value: 'Julia', validFrom: '2020-01-01' },
+        { value: 'Juliane', validFrom: '2024-06-01' },
+      ],
       lastName: 'Meier',
       preferredName: 'Jule',
       qualifications: ['Triebfahrzeugführer Klasse 3', 'ETCS Level 2'],
@@ -74,7 +77,7 @@ export const DEMO_MASTER_DATA: DemoMasterData = {
     },
     {
       id: 'P-002',
-      firstName: 'Lukas',
+      firstName: [{ value: 'Lukas', validFrom: '2021-03-01' }],
       lastName: 'Schmidt',
       qualifications: ['Triebfahrzeugführer Klasse 3'],
       serviceIds: ['PS-002'],
@@ -82,7 +85,7 @@ export const DEMO_MASTER_DATA: DemoMasterData = {
     },
     {
       id: 'P-003',
-      firstName: 'Mira',
+      firstName: [{ value: 'Mira', validFrom: '2018-09-15' }],
       lastName: 'Hassan',
       qualifications: ['Triebfahrzeugführer Klasse 4', 'Zugchef Berechtigung'],
       serviceIds: ['PS-003'],

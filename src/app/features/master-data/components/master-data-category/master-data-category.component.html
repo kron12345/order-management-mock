@@ -11,6 +11,7 @@
     <table
       mat-table
       [dataSource]="items()"
+      [trackBy]="trackById"
       class="md-category__table"
       [attr.aria-label]="config.entityLabel + ' Tabelle'"
     >
@@ -46,7 +47,7 @@
       <tr mat-header-row *matHeaderRowDef="displayedColumns()"></tr>
       <tr
         mat-row
-        *matRowDef="let row; columns: displayedColumns()"
+        *matRowDef="let row; columns: displayedColumns(); trackBy: trackById"
         (click)="handleSelect(row.id)"
         [class.is-active]="row.id === selectedId()"
       ></tr>
@@ -64,57 +65,156 @@
 
       <div class="md-category__form-grid">
         <ng-container *ngFor="let field of config.fields">
-          <mat-form-field appearance="outline">
-            <mat-label>{{ field.label }}</mat-label>
+          <ng-container *ngIf="isTemporalField(field); else regularField">
+            <div class="md-category__timeline-field" [formArrayName]="field.key">
+              @let timelineControls = temporalControls(field.key);
 
-            <ng-container [ngSwitch]="field.type">
-              <input
-                *ngSwitchCase="'text'"
-                matInput
-                [formControlName]="field.key"
-                [placeholder]="field.placeholder ?? ''"
-              />
+              <ng-template #timelineEntry let-index="index" let-removable="removable">
+                <div
+                  class="md-category__timeline-entry"
+                  [class.md-category__timeline-entry--current]="index === 0"
+                  [formGroupName]="index"
+                >
+                  <mat-form-field appearance="outline" class="md-category__timeline-value">
+                    <mat-label>
+                      {{ index === 0 ? field.label : field.label + ' (Historie)' }}
+                    </mat-label>
+                    <input
+                      matInput
+                      [type]="temporalInputType(field)"
+                      formControlName="value"
+                      [placeholder]="field.placeholder ?? ''"
+                    />
+                  </mat-form-field>
 
-              <textarea
-                *ngSwitchCase="'textarea'"
-                matInput
-                [formControlName]="field.key"
-                [placeholder]="field.placeholder ?? ''"
-                rows="3"
-              ></textarea>
+                  <mat-form-field appearance="outline">
+                    <mat-label>Gültig ab</mat-label>
+                    <input matInput type="date" formControlName="validFrom" />
+                  </mat-form-field>
 
-              <input
-                *ngSwitchCase="'number'"
-                matInput
-                type="number"
-                [formControlName]="field.key"
-                [placeholder]="field.placeholder ?? ''"
-              />
+                  <mat-form-field appearance="outline">
+                    <mat-label>Gültig bis</mat-label>
+                    <input matInput type="date" formControlName="validTo" />
+                  </mat-form-field>
 
-              <mat-select
-                *ngSwitchCase="'select'"
-                [formControlName]="field.key"
-                [placeholder]="field.placeholder ?? ''"
+                  <button
+                    mat-icon-button
+                    type="button"
+                    (click)="removeTemporalEntry(field.key, index)"
+                    [disabled]="!removable"
+                    aria-label="Zeitraum entfernen"
+                  >
+                    <mat-icon fontIcon="delete"></mat-icon>
+                  </button>
+                </div>
+              </ng-template>
+
+              <ng-container
+                [ngTemplateOutlet]="timelineEntry"
+                [ngTemplateOutletContext]="{
+                  index: 0,
+                  removable: timelineControls.length > 1
+                }"
+              ></ng-container>
+
+              <div
+                class="md-category__timeline-history-toggle"
+                *ngIf="timelineControls.length > 1"
               >
-                <mat-option *ngFor="let option of fieldOptions(field)" [value]="option.value">
-                  {{ option.label }}
-                </mat-option>
-              </mat-select>
+                <button mat-button type="button" (click)="toggleTemporalHistory(field.key)">
+                  <mat-icon fontIcon="history"></mat-icon>
+                  {{ isTemporalHistoryVisible(field.key) ? 'Historie verbergen' : 'Historie anzeigen' }}
+                </button>
+              </div>
 
-              <mat-select
-                *ngSwitchCase="'multiselect'"
-                [formControlName]="field.key"
-                [placeholder]="field.placeholder ?? ''"
-                multiple
+              <div
+                class="md-category__timeline-history"
+                *ngIf="isTemporalHistoryVisible(field.key)"
               >
-                <mat-option *ngFor="let option of fieldOptions(field)" [value]="option.value">
-                  {{ option.label }}
-                </mat-option>
-              </mat-select>
-            </ng-container>
+                <ng-container
+                  *ngFor="let control of timelineControls.controls; let index = index; trackBy: trackByIndex"
+                >
+                  <ng-container
+                    *ngIf="index > 0"
+                    [ngTemplateOutlet]="timelineEntry"
+                    [ngTemplateOutletContext]="{ index: index, removable: true }"
+                  ></ng-container>
+                </ng-container>
+              </div>
 
-            <mat-hint *ngIf="field.hint">{{ field.hint }}</mat-hint>
-          </mat-form-field>
+              <div class="md-category__timeline-actions">
+                <button mat-stroked-button type="button" (click)="addTemporalEntry(field)">
+                  <mat-icon fontIcon="add"></mat-icon>
+                  Zeitraum hinzufügen
+                </button>
+                <span class="md-category__timeline-hint" *ngIf="field.hint">{{ field.hint }}</span>
+              </div>
+
+              <div
+                class="md-category__timeline-error"
+                *ngIf="timelineControls.invalid && (timelineControls.dirty || timelineControls.touched) && timelineControls.errors as errors"
+              >
+                <mat-icon fontIcon="warning"></mat-icon>
+                <span *ngIf="errors['missingStart']">Bitte für jeden Zeitraum ein Startdatum angeben.</span>
+                <span *ngIf="errors['invalidRange']">„Gültig bis“ muss nach „Gültig ab“ liegen.</span>
+                <span *ngIf="errors['overlap']">Zeiträume dürfen sich nicht überschneiden.</span>
+              </div>
+            </div>
+          </ng-container>
+
+          <ng-template #regularField>
+            <mat-form-field appearance="outline">
+              <mat-label>{{ field.label }}</mat-label>
+
+              <ng-container [ngSwitch]="field.type">
+                <input
+                  *ngSwitchCase="'text'"
+                  matInput
+                  [formControlName]="field.key"
+                  [placeholder]="field.placeholder ?? ''"
+                />
+
+                <textarea
+                  *ngSwitchCase="'textarea'"
+                  matInput
+                  [formControlName]="field.key"
+                  [placeholder]="field.placeholder ?? ''"
+                  rows="3"
+                ></textarea>
+
+                <input
+                  *ngSwitchCase="'number'"
+                  matInput
+                  type="number"
+                  [formControlName]="field.key"
+                  [placeholder]="field.placeholder ?? ''"
+                />
+
+                <mat-select
+                  *ngSwitchCase="'select'"
+                  [formControlName]="field.key"
+                  [placeholder]="field.placeholder ?? ''"
+                >
+                  <mat-option *ngFor="let option of fieldOptions(field)" [value]="option.value">
+                    {{ option.label }}
+                  </mat-option>
+                </mat-select>
+
+                <mat-select
+                  *ngSwitchCase="'multiselect'"
+                  [formControlName]="field.key"
+                  [placeholder]="field.placeholder ?? ''"
+                  multiple
+                >
+                  <mat-option *ngFor="let option of fieldOptions(field)" [value]="option.value">
+                    {{ option.label }}
+                  </mat-option>
+                </mat-select>
+              </ng-container>
+
+              <mat-hint *ngIf="field.hint">{{ field.hint }}</mat-hint>
+            </mat-form-field>
+          </ng-template>
         </ng-container>
       </div>
 

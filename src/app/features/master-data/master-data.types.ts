@@ -1,4 +1,7 @@
+import { TemporalValue } from '../../models/master-data';
+
 export type MasterDataFieldType = 'text' | 'textarea' | 'number' | 'select' | 'multiselect';
+export type MasterDataTemporalValue<T = unknown> = TemporalValue<T>;
 
 export interface MasterDataOption {
   label: string;
@@ -13,6 +16,7 @@ export interface MasterDataFieldConfig {
   hint?: string;
   readonly?: boolean;
   options?: MasterDataOption[];
+  temporal?: boolean;
 }
 
 export interface MasterDataTableColumn<T extends Record<string, unknown> = Record<string, unknown>> {

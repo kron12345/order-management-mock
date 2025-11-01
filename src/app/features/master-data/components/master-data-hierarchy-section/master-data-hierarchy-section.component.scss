@@ -25,6 +25,7 @@
   display: grid;
   grid-template-columns: minmax(360px, 420px) 1fr;
   gap: 24px;
+  align-items: start;
 }
 
 .md-hierarchy__parent,
@@ -35,6 +36,7 @@
   box-shadow:
     0 2px 4px rgba(0, 0, 0, 0.05),
     0 6px 16px rgba(0, 0, 0, 0.06);
+  container-type: inline-size;
 }
 
 .md-hierarchy__children-header {

@@ -3,6 +3,8 @@
   grid-template-columns: minmax(380px, 480px) 1fr;
   gap: 24px;
   height: 100%;
+  width: 100%;
+  min-width: 0;
 }
 
 .md-category__list {
@@ -14,6 +16,7 @@
   box-shadow:
     0 2px 4px rgba(0, 0, 0, 0.05),
     0 6px 16px rgba(0, 0, 0, 0.06);
+  min-width: 0;
 }
 
 .md-category__list-header {
@@ -49,6 +52,7 @@
   box-shadow:
     0 2px 4px rgba(0, 0, 0, 0.05),
     0 6px 16px rgba(0, 0, 0, 0.06);
+  min-width: 0;
 }
 
 .md-category__detail-header {
@@ -79,10 +83,102 @@
   gap: 16px 24px;
 }
 
+.md-category__timeline-field {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  grid-column: 1 / -1;
+}
+
+.md-category__timeline-entry {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(160px, 200px) minmax(160px, 200px) auto;
+  gap: 12px;
+  align-items: end;
+  padding: 12px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 8px;
+  background: rgba(25, 118, 210, 0.04);
+  transition: border-color 160ms ease, background-color 160ms ease;
+}
+
+.md-category__timeline-entry--current {
+  border-left: 4px solid #1976d2;
+  background: rgba(25, 118, 210, 0.12);
+}
+
+.md-category__timeline-entry mat-form-field {
+  width: 100%;
+}
+
+.md-category__timeline-entry button {
+  margin-bottom: 4px;
+}
+
+.md-category__timeline-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+
+.md-category__timeline-hint {
+  font-size: 12px;
+  color: rgba(0, 0, 0, 0.6);
+}
+
+.md-category__timeline-history-toggle {
+  display: flex;
+  align-items: center;
+  margin-top: 4px;
+}
+
+.md-category__timeline-history-toggle button {
+  padding-left: 0;
+}
+
+.md-category__timeline-history {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.md-category__timeline-error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: #d32f2f;
+}
+
+.md-category__timeline-error mat-icon {
+  font-size: 18px;
+}
+
 .md-category__form-actions {
   display: flex;
   justify-content: flex-end;
   gap: 12px;
+}
+
+@container (max-width: 720px) {
+  .md-category {
+    grid-template-columns: 1fr;
+  }
+
+  .md-category__list,
+  .md-category__detail {
+    padding: 16px;
+  }
+
+  .md-category__timeline-entry {
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  }
+
+  .md-category__timeline-entry {
+    padding: 10px;
+  }
 }
 
 @media (max-width: 1200px) {

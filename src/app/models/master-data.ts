@@ -1,3 +1,9 @@
+export interface TemporalValue<T = unknown> {
+  value: T;
+  validFrom: string;
+  validTo?: string | null;
+}
+
 export interface PersonnelService {
   id: string;
   name: string;
@@ -15,9 +21,9 @@ export interface PersonnelServicePool {
 
 export interface Personnel {
   id: string;
-  firstName: string;
+  firstName: string | TemporalValue<string>[];
   lastName: string;
-  preferredName?: string;
+  preferredName?: string | TemporalValue<string>[];
   qualifications?: string[];
   serviceIds?: string[];
   poolId?: string;

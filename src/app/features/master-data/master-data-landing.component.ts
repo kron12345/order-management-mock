@@ -1,10 +1,11 @@
-import { Component } from '@angular/core';
+import { ChangeDetectionStrategy, Component } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { MasterDataLayoutComponent } from './components/master-data-layout/master-data-layout.component';
 import {
   MasterDataCategoryConfig,
   MasterDataHierarchyConfig,
   MasterDataOption,
+  MasterDataTemporalValue,
   MasterDataTabConfig,
 } from './master-data.types';
 import { DEMO_MASTER_DATA } from '../../data/demo-master-data';
@@ -28,6 +29,7 @@ import {
   imports: [CommonModule, MasterDataLayoutComponent],
   templateUrl: './master-data-landing.component.html',
   styleUrl: './master-data-landing.component.scss',
+  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class MasterDataLandingComponent {
   private readonly data = DEMO_MASTER_DATA;
@@ -238,7 +240,7 @@ export class MasterDataLandingComponent {
           {
             key: 'lastName',
             label: 'Name',
-            valueAccessor: (person) => `${person.lastName}, ${person.firstName}`,
+            valueAccessor: (person) => this.resolvePersonnelFullName(person),
           },
           {
             key: 'qualifications',
@@ -253,7 +255,13 @@ export class MasterDataLandingComponent {
           },
         ],
         fields: [
-          { key: 'firstName', label: 'Vorname', type: 'text' },
+          {
+            key: 'firstName',
+            label: 'Vorname',
+            type: 'text',
+            temporal: true,
+            hint: 'Mehrere Namen mit zeitlicher Gültigkeit pflegen.',
+          },
           { key: 'lastName', label: 'Nachname', type: 'text' },
           { key: 'preferredName', label: 'Rufname', type: 'text', placeholder: 'Optional' },
           {
@@ -507,6 +515,55 @@ export class MasterDataLandingComponent {
         };
       },
     };
+  }
+
+  private resolvePersonnelFullName(person: Personnel): string {
+    const lastName = this.resolveTemporalText(person.lastName);
+    const firstName = this.resolveTemporalText(person.firstName);
+
+    if (lastName && firstName) {
+      return `${lastName}, ${firstName}`;
+    }
+    if (lastName) {
+      return lastName;
+    }
+    if (firstName) {
+      return firstName;
+    }
+    return '—';
+  }
+
+  private resolveTemporalText(
+    value: string | MasterDataTemporalValue<string>[] | undefined,
+  ): string {
+    if (!value) {
+      return '';
+    }
+    if (Array.isArray(value)) {
+      return this.resolveTemporalCurrentValue(value);
+    }
+    return value;
+  }
+
+  private resolveTemporalCurrentValue(entries: MasterDataTemporalValue<string>[]): string {
+    if (!entries || entries.length === 0) {
+      return '';
+    }
+    const today = this.currentDate();
+    const sorted = [...entries].sort((a, b) => (b.validFrom ?? '').localeCompare(a.validFrom ?? ''));
+    const active =
+      sorted.find((entry) => this.isDateInRange(today, entry.validFrom, entry.validTo)) ?? sorted[0];
+    return String(active.value);
+  }
+
+  private currentDate(): string {
+    return new Date().toISOString().slice(0, 10);
+  }
+
+  private isDateInRange(date: string, from?: string | null, to?: string | null): boolean {
+    const afterStart = !from || date >= from;
+    const beforeEnd = !to || date <= to;
+    return afterStart && beforeEnd;
   }
 
   private formatCount(count: number, singular: string, plural: string): string {

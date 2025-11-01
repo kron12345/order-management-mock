@@ -1,4 +1,12 @@
-import { Component, Input, OnChanges, SimpleChanges, computed, signal } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  Input,
+  OnChanges,
+  SimpleChanges,
+  computed,
+  signal,
+} from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { MatIconModule } from '@angular/material/icon';
 import {
@@ -13,13 +21,21 @@ import { MasterDataCategoryComponent } from '../master-data-category/master-data
   imports: [CommonModule, MatIconModule, MasterDataCategoryComponent],
   templateUrl: './master-data-hierarchy-section.component.html',
   styleUrl: './master-data-hierarchy-section.component.scss',
+  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class MasterDataHierarchySectionComponent implements OnChanges {
   @Input({ required: true }) config!: MasterDataHierarchyConfig<any, any>;
 
   protected readonly parentItems = signal<any[]>([]);
   protected readonly childItems = signal<any[]>([]);
-  protected readonly selectedParent = signal<any | null>(null);
+  protected readonly selectedParentId = signal<string | null>(null);
+  protected readonly selectedParent = computed<any | null>(() => {
+    const id = this.selectedParentId();
+    if (!id) {
+      return null;
+    }
+    return this.parentItems().find((item) => item.id === id) ?? null;
+  });
 
   protected readonly parentConfigView = computed<MasterDataCategoryConfig<any> | null>(() => {
     if (!this.config) {
@@ -91,40 +107,42 @@ export class MasterDataHierarchySectionComponent implements OnChanges {
     if (changes['config'] && this.config) {
       this.parentItems.set(this.cloneItems(this.config.parent.items));
       this.childItems.set(this.cloneItems(this.config.child.items));
-      const initialParent = this.config.parent.items[0] ?? null;
-      this.selectedParent.set(initialParent ? { ...initialParent } : null);
+      const initialParentId = this.config.parent.items[0]?.id ?? null;
+      this.selectedParentId.set(initialParentId);
     }
   }
 
   protected handleParentItemsChange(updated: any[]): void {
     this.parentItems.set(this.cloneItems(updated));
-    const current = this.selectedParent();
-    if (!current) {
-      if (updated.length > 0) {
-        this.selectedParent.set({ ...updated[0] });
-      }
+    const currentId = this.selectedParentId();
+    if (currentId && updated.some((item) => item.id === currentId)) {
       return;
     }
-
-    const match = updated.find((item) => item.id === current.id);
-    if (match) {
-      this.selectedParent.set({ ...match });
-    } else {
-      this.selectedParent.set(updated.length > 0 ? { ...updated[0] } : null);
-    }
+    const fallbackId = updated[0]?.id ?? null;
+    this.selectedParentId.set(fallbackId);
   }
 
   protected handleParentSelectionChange(selection: any | null): void {
     if (!selection) {
-      this.selectedParent.set(null);
+      if (this.selectedParentId() !== null) {
+        this.selectedParentId.set(null);
+      }
       return;
     }
-    const match = this.parentItems().find((item) => item.id === selection.id);
-    this.selectedParent.set(match ? { ...match } : { ...selection });
+    if (this.selectedParentId() === selection.id) {
+      return;
+    }
+    const exists = this.parentItems().some((item) => item.id === selection.id);
+    this.selectedParentId.set(exists ? selection.id : this.parentItems()[0]?.id ?? selection.id);
   }
 
   protected handleChildItemsChange(updated: any[]): void {
-    const parent = this.selectedParent();
+    const parentId = this.selectedParentId();
+    if (!parentId) {
+      return;
+    }
+
+    const parent = this.parentItems().find((item) => item.id === parentId);
     if (!parent) {
       return;
     }
@@ -140,12 +158,14 @@ export class MasterDataHierarchySectionComponent implements OnChanges {
       const childIds = updated.map((child) => child.id);
       this.parentItems.update((parents) =>
         parents.map((item) =>
-          item.id === parent.id ? { ...item, [parentRelationKey]: childIds } : item,
+          item.id === parentId ? { ...item, [parentRelationKey]: childIds } : item,
         ),
       );
-      const refreshedParent =
-        this.parentItems().find((item) => item.id === parent.id) ?? parent;
-      this.selectedParent.set({ ...refreshedParent });
+      const refreshedParent = this.parentItems().find((item) => item.id === parentId);
+      if (!refreshedParent) {
+        const fallbackId = this.parentItems()[0]?.id ?? null;
+        this.selectedParentId.set(fallbackId);
+      }
     }
   }
 
@@ -158,6 +178,27 @@ export class MasterDataHierarchySectionComponent implements OnChanges {
   }
 
   private cloneItems(items: any[]): any[] {
-    return items.map((item) => ({ ...item }));
+    return items.map((item) => this.cloneItem(item));
+  }
+
+  private cloneItem(item: any): any {
+    if (!item || typeof item !== 'object') {
+      return item;
+    }
+    const clone: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(item)) {
+      clone[key] = this.cloneValue(value);
+    }
+    return clone;
+  }
+
+  private cloneValue(value: unknown): unknown {
+    if (Array.isArray(value)) {
+      return value.map((entry) => this.cloneValue(entry));
+    }
+    if (value && typeof value === 'object') {
+      return { ...(value as Record<string, unknown>) };
+    }
+    return value;
   }
 }
