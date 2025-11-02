@@ -32,45 +32,61 @@
         />
       </div>
 
-      <cdk-virtual-scroll-viewport
-        class="gantt__viewport"
-        [itemSize]="rowHeight"
-        [minBufferPx]="rowHeight * 4"
-        [maxBufferPx]="rowHeight * 6"
-        style="height: 100%; width: 100%;"
-        role="rowgroup"
-      >
-        <div
-          class="gantt__row"
-          *cdkVirtualFor="let row of rows(); trackBy: trackResource; let i = index"
-          role="row"
-        >
-          <div class="gantt__resource-cell" role="gridcell">
-            <app-gantt-resources [resource]="row.resource" />
-          </div>
+      <div class="gantt__viewport" role="rowgroup">
+        @for (row of rows(); track row.id) {
+          <div class="gantt__row" [class.gantt__row--group]="row.kind === 'group'" role="row">
+            <div class="gantt__resource-cell" role="rowheader">
+              @if (row.kind === 'group') {
+                <button
+                  type="button"
+                  class="gantt-resource-group"
+                  (click)="onGroupToggle(row.id)"
+                  [attr.aria-expanded]="row.expanded"
+                >
+                  <mat-icon
+                    class="gantt-resource-group__caret"
+                    [fontIcon]="row.expanded ? 'expand_more' : 'chevron_right'"
+                  ></mat-icon>
+                  <mat-icon class="gantt-resource-group__icon" [fontIcon]="row.icon"></mat-icon>
+                  <span class="gantt-resource-group__label">{{ row.label }}</span>
+                  <span class="gantt-resource-group__count">{{ row.resourceCount }}</span>
+                </button>
+              } @else {
+                <app-gantt-resources [resource]="row.resource" (remove)="onResourceRemove(row.resource.id)" />
+              }
+            </div>
 
-          <div
-            class="gantt__timeline-cell"
-            role="gridcell"
-            #rowScroller="appTrackHorizontalScroll"
-            [appTrackHorizontalScroll]="headerScrollerTargets()"
-            [appScrollLeft]="scrollX()"
-            (appHorizontalScroll)="onTimelineScroll($event)"
-            (wheel)="onTimelineWheel($event, rowScroller.element)"
-            (mousemove)="onTimelineMouseMove($event, rowScroller.element)"
-            (mouseleave)="onTimelineMouseLeave()"
-          >
-            <app-gantt-timeline-row
-              [bars]="row.bars"
-              [contentWidth]="contentWidth()"
-              [backgroundSegments]="timelineBackgroundSegments()"
-              [serviceRanges]="row.services"
-              [nowMarkerLeft]="nowMarkerLeft()"
-              [zebra]="i % 2 === 1"
-            />
+            @if (row.kind === 'group') {
+              <div class="gantt__timeline-cell gantt__timeline-cell--group" role="gridcell">
+                <span class="gantt-group-placeholder">
+                  {{ row.resourceCount }} Ressourcen
+                </span>
+              </div>
+            } @else {
+              <div
+                class="gantt__timeline-cell"
+                role="gridcell"
+                #rowScroller="appTrackHorizontalScroll"
+                [appTrackHorizontalScroll]="headerScrollerTargets()"
+                [appScrollLeft]="scrollX()"
+                (appHorizontalScroll)="onTimelineScroll($event)"
+                (wheel)="onTimelineWheel($event, rowScroller.element)"
+                (mousemove)="onTimelineMouseMove($event, rowScroller.element)"
+                (mouseleave)="onTimelineMouseLeave()"
+              >
+                <app-gantt-timeline-row
+                  [bars]="row.bars"
+                  [contentWidth]="contentWidth()"
+                  [backgroundSegments]="timelineBackgroundSegments()"
+                  [serviceRanges]="row.services"
+                  [nowMarkerLeft]="nowMarkerLeft()"
+                  [zebra]="row.zebra"
+                />
+              </div>
+            }
           </div>
-        </div>
-      </cdk-virtual-scroll-viewport>
+        }
+      </div>
       @if (!hasRows() && isViewportReady()) {
         <div class="gantt__empty" role="note">
           Keine Aktivitäten im aktuellen Zeitraum.

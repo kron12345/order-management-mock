@@ -1,44 +1,11 @@
-<section class="gantt-menu" role="toolbar" aria-label="Gantt-Steuerung">
-  <div class="gantt-menu__group">
-    <button mat-icon-button type="button" aria-label="Zoom Out" (click)="zoomOut.emit()">
-      <mat-icon>remove</mat-icon>
-    </button>
-    <button mat-icon-button type="button" aria-label="Zoom In" (click)="zoomIn.emit()">
-      <mat-icon>add</mat-icon>
-    </button>
-
-    <mat-form-field appearance="outline" class="gantt-menu__field gantt-menu__field--compact">
-      <mat-label>Zoomstufe</mat-label>
-      <mat-select [value]="zoomLevel" (valueChange)="onZoomLevelChange($event)">
-        @for (level of zoomLevels; track level) {
-          <mat-option [value]="level">{{ level }}</mat-option>
-        }
-      </mat-select>
-    </mat-form-field>
+<nav class="gantt-menu" role="toolbar" aria-label="Gantt-Steuerung">
+  <div class="gantt-menu__info" aria-live="polite">
+    <mat-icon fontIcon="calendar_today"></mat-icon>
+    <span>{{ viewRangeLabel }}</span>
   </div>
 
-  <div class="gantt-menu__group">
-    <button mat-stroked-button type="button" (click)="gotoToday.emit()">
-      <mat-icon>today</mat-icon>
-      Heute
-    </button>
-
-    <mat-form-field appearance="outline" class="gantt-menu__field">
-      <mat-label>Datumssprung</mat-label>
-      <input
-        matInput
-        [matDatepicker]="jumpPicker"
-        (dateChange)="onDatePicked($event.value)"
-        placeholder="Datum wählen"
-        aria-label="Datum auswählen"
-      />
-      <mat-datepicker-toggle matIconSuffix [for]="jumpPicker"></mat-datepicker-toggle>
-      <mat-datepicker #jumpPicker></mat-datepicker>
-    </mat-form-field>
-  </div>
-
-  <div class="gantt-menu__group gantt-menu__group--grow">
-    <mat-form-field appearance="outline" class="gantt-menu__field gantt-menu__field--search">
+  <div class="gantt-menu__filters">
+    <mat-form-field appearance="outline" class="gantt-menu__search">
       <mat-label>Ressourcen filtern</mat-label>
       <mat-icon matPrefix>search</mat-icon>
       <input
@@ -52,8 +19,38 @@
     </mat-form-field>
   </div>
 
-  <div class="gantt-menu__group gantt-menu__group--info" aria-live="polite">
-    <mat-icon>calendar_today</mat-icon>
-    <span>{{ viewRangeLabel }}</span>
+  <div class="gantt-menu__actions">
+    <button mat-icon-button type="button" aria-label="Zoom aus" (click)="zoomOut.emit()">
+      <mat-icon fontIcon="remove"></mat-icon>
+    </button>
+
+    <button mat-icon-button type="button" aria-label="Zoom ein" (click)="zoomIn.emit()">
+      <mat-icon fontIcon="add"></mat-icon>
+    </button>
+
+    <button mat-icon-button type="button" aria-label="Zoomstufe wechseln" [matMenuTriggerFor]="zoomMenu">
+      <mat-icon fontIcon="tune"></mat-icon>
+    </button>
+
+    <button mat-icon-button type="button" aria-label="Heute" (click)="gotoToday.emit()">
+      <mat-icon fontIcon="today"></mat-icon>
+    </button>
+
+    <button mat-icon-button type="button" aria-label="Datum wählen" [matMenuTriggerFor]="dateMenu">
+      <mat-icon fontIcon="event"></mat-icon>
+    </button>
   </div>
-</section>
+
+  <mat-menu #zoomMenu="matMenu">
+    @for (level of zoomLevels; track level) {
+      <button mat-menu-item (click)="onZoomLevelChange(level)">
+        <mat-icon *ngIf="zoomLevel === level" fontIcon="check"></mat-icon>
+        <span>{{ level }}</span>
+      </button>
+    }
+  </mat-menu>
+
+  <mat-menu #dateMenu="matMenu">
+    <mat-calendar (selectedChange)="onDatePicked($event)" [selected]="today"></mat-calendar>
+  </mat-menu>
+</nav>

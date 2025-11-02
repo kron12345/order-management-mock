@@ -1,17 +1,15 @@
 <div class="gantt-resource" role="rowheader">
-  <div class="gantt-resource__name">
-    <span class="gantt-resource__id">{{ resource.id }}</span>
+  <button
+    type="button"
+    class="gantt-resource__trigger"
+    [matMenuTriggerFor]="resourceMenu"
+    [attr.aria-label]="resource.name"
+  >
+    <mat-icon class="gantt-resource__icon" [fontIcon]="resourceIcon()"></mat-icon>
     <span class="gantt-resource__label">{{ resource.name }}</span>
-  </div>
+  </button>
 
-  @if (attributeEntries.length > 0) {
-    <div class="gantt-resource__meta" role="list">
-      @for (entry of attributeEntries; track entry.key) {
-        <span class="gantt-resource__meta-item" role="listitem">
-          <span class="gantt-resource__meta-key">{{ entry.key }}</span>
-          <span class="gantt-resource__meta-value">{{ entry.value }}</span>
-        </span>
-      }
-    </div>
-  }
+  <mat-menu #resourceMenu="matMenu">
+    <button mat-menu-item (click)="onRemoveClick()">Ressource entfernen</button>
+  </mat-menu>
 </div>

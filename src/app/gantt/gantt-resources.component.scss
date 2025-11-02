@@ -7,43 +7,30 @@
   border-bottom: 1px solid rgba(0, 0, 0, 0.08);
 }
 
-.gantt-resource__name {
+.gantt-resource__trigger {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 8px;
+  padding: 0;
+  background: none;
+  border: none;
+  width: 100%;
+  text-align: left;
   font-weight: 600;
-}
-
-.gantt-resource__id {
-  font-size: 0.75rem;
-  font-weight: 600;
-  padding: 2px 6px;
-  border-radius: 10px;
-  background: rgba(25, 118, 210, 0.12);
-  color: #0d47a1;
+  font: inherit;
+  cursor: pointer;
+  color: inherit;
 }
 
 .gantt-resource__label {
   font-size: 0.95rem;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.gantt-resource__meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  color: rgba(0, 0, 0, 0.6);
-  font-size: 0.72rem;
-}
-
-.gantt-resource__meta-item {
-  display: inline-flex;
-  gap: 4px;
-  align-items: center;
-  padding: 2px 6px;
-  border-radius: 10px;
-  background: rgba(0, 0, 0, 0.04);
-}
-
-.gantt-resource__meta-key::after {
-  content: ':';
+.gantt-resource__icon {
+  font-size: 18px;
+  opacity: 0.8;
 }

@@ -1,240 +1,229 @@
 <section class="planning-dashboard">
-  <header class="planning-dashboard__stage">
-    <mat-button-toggle-group
-      class="planning-stage-toggle"
-      [value]="activeStageId()"
-      (change)="onStageChange($event.value)"
-      name="planning-stage"
-      appearance="legacy"
-    >
-      <mat-button-toggle
-        *ngFor="let stage of stages; trackBy: trackStage"
-        [value]="stage.id"
-        class="planning-stage-toggle__item"
-      >
-        <span class="planning-stage-toggle__short">{{ stage.shortLabel }}</span>
-        <span class="planning-stage-toggle__label">{{ stage.label }}</span>
-      </mat-button-toggle>
-    </mat-button-toggle-group>
+  <header class="planning-toolbar">
+    <div class="planning-toolbar__row planning-toolbar__row--actions">
+      <span class="planning-toolbar__summary">
+        {{ boards().length }} Plantafel(n) · {{ resources().length }} Ressourcen ·
+        {{ selectionSize() }} ausgewählt
+      </span>
 
-    <mat-card class="planning-stage-card" *ngIf="activeStageMeta() as stageMeta">
-      <mat-card-header>
-        <mat-card-title>{{ stageMeta.label }}</mat-card-title>
-        <mat-card-subtitle>{{ stageMeta.description }}</mat-card-subtitle>
-      </mat-card-header>
-      <mat-card-content>
-        <section class="planning-stage-card__section">
-          <h3>{{ stageMeta.focusHeadline }}</h3>
-          <mat-chip-set>
-            <mat-chip *ngFor="let focus of stageMeta.focusPoints; trackBy: trackFocus"
-              >{{ focus }}</mat-chip
-            >
-          </mat-chip-set>
-        </section>
-        <section class="planning-stage-card__section">
-          <h3>{{ stageMeta.contextHeadline }}</h3>
-          <ul>
-            <li *ngFor="let detail of stageMeta.contextDetails">{{ detail }}</li>
-          </ul>
-        </section>
-      </mat-card-content>
-    </mat-card>
+      <button
+        mat-stroked-button
+        color="primary"
+        class="planning-toolbar__button"
+        [matMenuTriggerFor]="resourceMenu"
+      >
+        Ressourcen wählen
+      </button>
+
+      <button mat-button class="planning-toolbar__button" (click)="selectAllResources()">
+        Alle
+      </button>
+
+      <button
+        mat-button
+        class="planning-toolbar__button"
+        [disabled]="selectionSize() === 0"
+        (click)="clearSelection()"
+      >
+        Leeren
+      </button>
+
+      <button
+        mat-flat-button
+        color="primary"
+        class="planning-toolbar__button"
+        (click)="createBoardFromSelection()"
+      >
+        Plantafel aus Auswahl
+      </button>
+
+      <button
+        mat-stroked-button
+        class="planning-toolbar__button"
+        [disabled]="!hasSelection()"
+        [matMenuTriggerFor]="selectionAddMenu"
+      >
+        Auswahl hinzufügen
+      </button>
+
+      <button
+        mat-stroked-button
+        color="warn"
+        class="planning-toolbar__button"
+        [disabled]="!hasSelection()"
+        [matMenuTriggerFor]="selectionReplaceMenu"
+      >
+        Plantafel ersetzen
+      </button>
+
+      <button
+        mat-icon-button
+        class="planning-toolbar__info"
+        matTooltip="Phasenbeschreibung anzeigen"
+        [matMenuTriggerFor]="stageInfoMenu"
+      >
+        <mat-icon fontIcon="info"></mat-icon>
+      </button>
+    </div>
   </header>
 
-  <div class="planning-dashboard__layout">
-    <aside class="planning-dashboard__sidebar">
-      <section class="planning-sidebar__summary">
-        <h2>Ressourcenauswahl</h2>
-        <p>
-          {{ selectionSize() }} / {{ resources().length }} Ressourcen für die aktuelle Phase
-          ausgewählt
-        </p>
-        <div class="planning-sidebar__summary-actions">
+  <mat-menu #stageInfoMenu="matMenu" class="planning-stage-info-menu" [overlapTrigger]="false">
+    <ng-template matMenuContent>
+      <ng-container *ngIf="activeStageMeta() as stageMeta">
+        <div class="planning-stage-info">
+          <h3>{{ stageMeta.label }}</h3>
+          <p class="planning-stage-info__description">{{ stageMeta.description }}</p>
+          <section>
+            <h4>{{ stageMeta.focusHeadline }}</h4>
+            <mat-chip-set>
+              <mat-chip *ngFor="let focus of stageMeta.focusPoints; trackBy: trackFocus">
+                {{ focus }}
+              </mat-chip>
+            </mat-chip-set>
+          </section>
+          <section>
+            <h4>{{ stageMeta.contextHeadline }}</h4>
+            <ul>
+              <li *ngFor="let detail of stageMeta.contextDetails">{{ detail }}</li>
+            </ul>
+          </section>
+        </div>
+      </ng-container>
+    </ng-template>
+  </mat-menu>
+
+  <mat-menu
+    #resourceMenu="matMenu"
+    class="planning-resource-menu"
+    [hasBackdrop]="true"
+    [overlapTrigger]="false"
+  >
+    <ng-template matMenuContent>
+      <div class="planning-resource-menu__content">
+        <div class="planning-resource-menu__actions">
           <button mat-stroked-button color="primary" (click)="selectAllResources()">
             Alle auswählen
           </button>
           <button mat-button (click)="clearSelection()">Auswahl leeren</button>
         </div>
-      </section>
-
-      <section class="planning-sidebar__groups">
-        <mat-card class="planning-group-card" *ngFor="let group of resourceGroups()">
-          <mat-card-header>
-            <mat-icon mat-card-avatar fontIcon="{{ group.icon }}"></mat-icon>
-            <mat-card-title>
-              {{ group.label }}
-              <span class="planning-group-card__count">({{ group.resources.length }})</span>
-            </mat-card-title>
-            <mat-card-subtitle>{{ group.description }}</mat-card-subtitle>
-          </mat-card-header>
-          <mat-card-content>
-            <ng-container *ngIf="group.resources.length > 0; else emptyGroup">
-              <div class="planning-group-card__list">
-                <div
-                  class="planning-resource"
-                  *ngFor="let resource of group.resources; trackBy: trackResource"
-                >
-                  <mat-checkbox
-                    [checked]="isResourceSelected(resource.id)"
-                    (change)="onSelectionToggle(resource.id, $event.checked)"
-                  >
-                    <span class="planning-resource__name">{{ resource.name }}</span>
-                    <span class="planning-resource__meta">{{ resource.id }}</span>
-                  </mat-checkbox>
-                </div>
+        <div class="planning-resource-menu__groups">
+          <section *ngFor="let group of resourceGroups()">
+            <header class="planning-resource-menu__group-header">
+              <mat-icon fontIcon="{{ group.icon }}"></mat-icon>
+              <div>
+                <span class="planning-resource-menu__group-label">{{ group.label }}</span>
+                <span class="planning-resource-menu__group-meta">
+                  {{ group.resources.length }} Ressourcen
+                </span>
+                <p>{{ group.description }}</p>
               </div>
-            </ng-container>
-            <ng-template #emptyGroup>
-              <p class="planning-group-card__empty">Keine Ressourcen in dieser Gruppe.</p>
+            </header>
+            <div class="planning-resource-menu__list">
+              <mat-checkbox
+                *ngFor="let resource of group.resources; trackBy: trackResource"
+                [checked]="isResourceSelected(resource.id)"
+                (change)="onSelectionToggle(resource.id, $event.checked)"
+              >
+                <span class="planning-resource-menu__resource-name">{{ resource.name }}</span>
+                <span class="planning-resource-menu__resource-id">{{ resource.id }}</span>
+              </mat-checkbox>
+            </div>
+          </section>
+        </div>
+      </div>
+    </ng-template>
+  </mat-menu>
+
+  <mat-menu #selectionAddMenu="matMenu">
+    <button
+      mat-menu-item
+      *ngFor="let board of boards(); trackBy: trackBoard"
+      (click)="addSelectionToBoard(board.id)"
+    >
+      {{ board.title }}
+    </button>
+  </mat-menu>
+
+  <mat-menu #selectionReplaceMenu="matMenu">
+    <button
+      mat-menu-item
+      *ngFor="let board of boards(); trackBy: trackBoard"
+      (click)="replaceBoardWithSelection(board.id)"
+    >
+      {{ board.title }}
+    </button>
+  </mat-menu>
+
+  <section class="planning-main">
+    <mat-card class="planning-main__card">
+      <mat-card-content>
+        <mat-tab-group
+          class="planning-board-tabs"
+          [selectedIndex]="selectedBoardIndex()"
+          (selectedIndexChange)="handleBoardIndexChange($event)"
+          animationDuration="250ms"
+        >
+          <mat-tab *ngFor="let board of boards(); trackBy: trackBoard">
+            <ng-template mat-tab-label>
+              <span [class.is-active]="isActiveBoard(board.id)">{{ board.title }}</span>
+              <button
+                *ngIf="boards().length > 1"
+                mat-icon-button
+                matTooltip="Plantafel schließen"
+                (click)="removeBoard(board.id); $event.stopPropagation()"
+              >
+                <mat-icon fontIcon="close"></mat-icon>
+              </button>
             </ng-template>
-          </mat-card-content>
-        </mat-card>
-      </section>
 
-      <section class="planning-sidebar__boards">
-        <h3>Plantafel-Aktionen</h3>
-        <p>Nutze die aktuelle Auswahl, um Plantafeln anzulegen oder zu aktualisieren.</p>
-        <div class="planning-sidebar__board-buttons">
-          <button mat-flat-button color="primary" (click)="createBoardFromSelection()">
-            Neue Plantafel mit Auswahl
-          </button>
-
-          <button
-            mat-stroked-button
-            [disabled]="!hasSelection()"
-            [matMenuTriggerFor]="selectionAddMenu"
-          >
-            Auswahl zu Plantafel hinzufügen
-          </button>
-          <mat-menu #selectionAddMenu="matMenu">
-            <button
-              mat-menu-item
-              *ngFor="let board of boards(); trackBy: trackBoard"
-              (click)="addSelectionToBoard(board.id)"
-            >
-              {{ board.title }}
-            </button>
-          </mat-menu>
-
-          <button
-            mat-stroked-button
-            color="warn"
-            [disabled]="!hasSelection()"
-            [matMenuTriggerFor]="selectionReplaceMenu"
-          >
-            Plantafel mit Auswahl ersetzen
-          </button>
-          <mat-menu #selectionReplaceMenu="matMenu">
-            <button
-              mat-menu-item
-              *ngFor="let board of boards(); trackBy: trackBoard"
-              (click)="replaceBoardWithSelection(board.id)"
-            >
-              {{ board.title }}
-            </button>
-          </mat-menu>
-        </div>
-      </section>
-    </aside>
-
-    <main class="planning-dashboard__content">
-      <section class="planning-content__header" *ngIf="activeStageMeta() as stageMeta">
-        <div>
-          <h2>{{ stageMeta.label }} · Plantafeln</h2>
-          <p>
-            {{ boards().length }} Plantafel(n) · {{ resources().length }} Ressourcen ·
-            {{ selectionSize() }} ausgewählt
-          </p>
-        </div>
-      </section>
-
-      <mat-card class="planning-content__card">
-        <mat-card-content>
-          <mat-tab-group
-            class="planning-board-tabs"
-            [selectedIndex]="selectedBoardIndex()"
-            (selectedIndexChange)="handleBoardIndexChange($event)"
-            animationDuration="250ms"
-          >
-            <mat-tab *ngFor="let board of boards(); trackBy: trackBoard">
-              <ng-template mat-tab-label>
-                <span [class.is-active]="isActiveBoard(board.id)">{{ board.title }}</span>
-                <button
-                  *ngIf="boards().length > 1"
-                  mat-icon-button
-                  matTooltip="Plantafel schließen"
-                  (click)="removeBoard(board.id); $event.stopPropagation()"
-                >
-                  <mat-icon fontIcon="close"></mat-icon>
-                </button>
-              </ng-template>
-
-              <div class="planning-board">
-                <header class="planning-board__header">
-                  <div class="planning-board__meta">
-                    <span>
-                      {{ board.resourceIds.length }} Ressourcen ·
-                      {{ boardActivities(board).length }} Aktivitäten
-                    </span>
-                  </div>
-                  <div class="planning-board__actions">
-                    <button mat-stroked-button (click)="setSelectionFromBoard(board.id)">
-                      Auswahl aus Plantafel übernehmen
-                    </button>
-                    <button
-                      mat-stroked-button
-                      color="primary"
-                      [disabled]="!hasSelection()"
-                      (click)="addSelectionToBoard(board.id)"
-                    >
-                      Auswahl hinzufügen
-                    </button>
-                    <button
-                      mat-button
-                      color="warn"
-                      [disabled]="!hasSelection()"
-                      (click)="replaceBoardWithSelection(board.id)"
-                    >
-                      Auswahl übernimmt Plantafel
-                    </button>
-                  </div>
-                </header>
-
-                <div class="planning-board__chips" *ngIf="board.resourceIds.length > 0">
-                  <mat-chip-set>
-                    <mat-chip
-                      *ngFor="let resource of boardResources(board); trackBy: trackResource"
-                      [removable]="true"
-                      (removed)="removeResourceFromBoard(board.id, resource.id)"
-                    >
-                      {{ resource.name }}
-                      <mat-icon matChipRemove fontIcon="close"></mat-icon>
-                    </mat-chip>
-                  </mat-chip-set>
+            <div class="planning-board">
+              <header class="planning-board__header">
+                <div class="planning-board__meta">
+                  {{ board.resourceIds.length }} Ressourcen ·
+                  {{ boardActivities(board).length }} Aktivitäten
                 </div>
-
-                <div
-                  class="planning-board__gantt"
-                  *ngIf="board.resourceIds.length > 0; else emptyBoard"
-                >
-                  <app-gantt
-                    [resources]="boardResources(board)"
-                    [activities]="boardActivities(board)"
-                    [timelineRange]="timelineRange()"
-                  />
+                <div class="planning-board__actions">
+                  <button mat-button (click)="setSelectionFromBoard(board.id)">
+                    Auswahl übernehmen
+                  </button>
+                  <button
+                    mat-button
+                    color="primary"
+                    [disabled]="!hasSelection()"
+                    (click)="addSelectionToBoard(board.id)"
+                  >
+                    Auswahl hinzufügen
+                  </button>
+                  <button
+                    mat-button
+                    color="warn"
+                    [disabled]="!hasSelection()"
+                    (click)="replaceBoardWithSelection(board.id)"
+                  >
+                    Ersetzen
+                  </button>
                 </div>
+              </header>
 
-                <ng-template #emptyBoard>
-                  <div class="planning-board__empty">
-                    <mat-icon fontIcon="dashboard"></mat-icon>
-                    <p>Diese Plantafel enthält noch keine Ressourcen. Bitte Auswahl hinzufügen.</p>
-                  </div>
-                </ng-template>
+              <div class="planning-board__gantt" *ngIf="board.resourceIds.length > 0; else emptyBoard">
+                <app-gantt
+                  [resources]="boardResources(board)"
+                  [activities]="boardActivities(board)"
+                  [timelineRange]="timelineRange()"
+                  (removeResource)="removeResourceFromBoard(board.id, $event)"
+                />
               </div>
-            </mat-tab>
-          </mat-tab-group>
-        </mat-card-content>
-      </mat-card>
-    </main>
-  </div>
+
+              <ng-template #emptyBoard>
+                <div class="planning-board__empty">
+                  <mat-icon fontIcon="dashboard"></mat-icon>
+                  <p>Diese Plantafel enthält noch keine Ressourcen. Bitte Auswahl hinzufügen.</p>
+                </div>
+              </ng-template>
+            </div>
+          </mat-tab>
+        </mat-tab-group>
+      </mat-card-content>
+    </mat-card>
+  </section>
 </section>

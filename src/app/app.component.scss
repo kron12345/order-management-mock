@@ -66,15 +66,20 @@
   display: flex;
   gap: 4px;
 
-  a {
+  a,
+  button {
     font-weight: 500;
     text-transform: none;
     border-radius: 20px;
     padding: 6px 18px;
+    color: inherit;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
 
-    &.active {
-      background: rgba(255, 255, 255, 0.18);
-    }
+  .active {
+    background: rgba(255, 255, 255, 0.18);
   }
 }
 

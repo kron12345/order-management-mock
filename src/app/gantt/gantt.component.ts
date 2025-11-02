@@ -6,6 +6,8 @@ import {
   HostListener,
   Injector,
   Input,
+  Output,
+  EventEmitter,
   DestroyRef,
   ViewChild,
   ViewChildren,
@@ -17,7 +19,8 @@ import {
   signal,
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { CdkVirtualScrollViewport, ScrollingModule } from '@angular/cdk/scrolling';
+import { ScrollingModule } from '@angular/cdk/scrolling';
+import { MatIconModule } from '@angular/material/icon';
 import { Resource } from '../models/resource';
 import { Activity } from '../models/activity';
 import { ZoomLevel } from '../models/time-scale';
@@ -42,13 +45,49 @@ interface PreparedActivity extends Activity {
   endMs: number;
 }
 
-interface GanttRow {
+interface GanttGroupRow {
+  kind: 'group';
+  id: string;
+  label: string;
+  icon: string;
+  resourceIds: string[];
+  resourceCount: number;
+  expanded: boolean;
+  category: string | null;
+}
+
+interface GanttResourceRow {
+  kind: 'resource';
+  id: string;
   resource: Resource;
   bars: GanttBar[];
   services: GanttServiceRange[];
+  groupId: string;
+  zebra: boolean;
 }
 
-const ROW_HEIGHT = 64;
+type GanttDisplayRow = GanttGroupRow | GanttResourceRow;
+
+interface GanttGroupDefinition {
+  id: string;
+  label: string;
+  icon: string;
+  category: string | null;
+  resources: Resource[];
+}
+
+function arraysEqual<T>(a: T[], b: T[]): boolean {
+  if (a.length !== b.length) {
+    return false;
+  }
+  for (let i = 0; i < a.length; i += 1) {
+    if (a[i] !== b[i]) {
+      return false;
+    }
+  }
+  return true;
+}
+
 const ZOOM_LEVELS: ZoomLevel[] = ['month', 'week', 'day', 'hour', '15min'];
 
 @Component({
@@ -57,6 +96,7 @@ const ZOOM_LEVELS: ZoomLevel[] = ['month', 'week', 'day', 'hour', '15min'];
   imports: [
     CommonModule,
     ScrollingModule,
+    MatIconModule,
     GanttMenuComponent,
     GanttResourcesComponent,
     GanttTimelineRowComponent,
@@ -73,17 +113,18 @@ export class GanttComponent implements AfterViewInit {
   private readonly hostElement = inject(ElementRef<HTMLElement>);
   private readonly injector = inject(Injector);
   private readonly destroyRef = inject(DestroyRef);
-  private viewportResizeObserver: ResizeObserver | null = null;
-  private lastScrollbarWidth = -1;
-
-  private viewport!: TimeViewport;
-  private viewportInitialized = false;
-
   private readonly resourcesSignal = signal<Resource[]>([]);
   private readonly activitiesSignal = signal<PreparedActivity[]>([]);
   private readonly filterTerm = signal('');
   private readonly cursorTimeSignal = signal<Date | null>(null);
   private readonly viewportReady = signal(false);
+  private readonly expandedGroups = signal<Set<string>>(new Set());
+
+  private viewport!: TimeViewport;
+  private viewportInitialized = false;
+  private lastTimelineRange: { start: number; end: number } | null = null;
+  private previousResourceIds: string[] | null = null;
+  private previousActivityIds: string[] | null = null;
 
   @ViewChild('headerScroller', { read: TrackHorizontalScrollDirective })
   private headerScrollerDir?: TrackHorizontalScrollDirective;
@@ -91,12 +132,18 @@ export class GanttComponent implements AfterViewInit {
   @ViewChildren('rowScroller', { read: TrackHorizontalScrollDirective })
   private rowScrollerDirs?: QueryList<TrackHorizontalScrollDirective>;
 
-  @ViewChild(CdkVirtualScrollViewport)
-  private virtualViewport?: CdkVirtualScrollViewport;
+  @Output() removeResource = new EventEmitter<Resource['id']>();
 
   @Input({ required: true })
   set resources(value: Resource[]) {
-    this.resourcesSignal.set(value ?? []);
+    const list = value ?? [];
+    const nextIds = list.map((resource) => resource.id);
+    if (this.previousResourceIds && arraysEqual(this.previousResourceIds, nextIds)) {
+      return;
+    }
+    this.previousResourceIds = nextIds;
+    this.resourcesSignal.set(list);
+    this.resetExpandedGroups(list);
   }
 
   @Input({ required: true })
@@ -106,6 +153,11 @@ export class GanttComponent implements AfterViewInit {
       startMs: new Date(activity.start).getTime(),
       endMs: new Date(activity.end).getTime(),
     }));
+    const nextIds = prepared.map((activity) => activity.id);
+    if (this.previousActivityIds && arraysEqual(this.previousActivityIds, nextIds)) {
+      return;
+    }
+    this.previousActivityIds = nextIds;
     this.activitiesSignal.set(prepared);
   }
 
@@ -120,11 +172,22 @@ export class GanttComponent implements AfterViewInit {
       normalizedEndBase.getTime() <= normalizedStart.getTime()
         ? addDays(normalizedStart, 1)
         : addDays(normalizedEndBase, 1);
-    this.initializeViewport(normalizedStart, normalizedEnd);
+    const nextRange = {
+      start: normalizedStart.getTime(),
+      end: normalizedEnd.getTime(),
+    };
+    if (this.lastTimelineRange && this.lastTimelineRange.start === nextRange.start && this.lastTimelineRange.end === nextRange.end) {
+      return;
+    }
+    this.lastTimelineRange = nextRange;
+    if (this.viewportInitialized) {
+      this.resetViewport(normalizedStart, normalizedEnd);
+    } else {
+      this.initializeViewport(normalizedStart, normalizedEnd);
+    }
   }
 
   readonly zoomLevels = ZOOM_LEVELS;
-  readonly rowHeight = ROW_HEIGHT;
 
   readonly filteredResources = computed(() => {
     const term = this.filterTerm().trim().toLowerCase();
@@ -156,68 +219,49 @@ export class GanttComponent implements AfterViewInit {
     return map;
   });
 
-  readonly rows = computed<GanttRow[]>(() => {
-    if (!this.viewportReady()) {
-      return [];
-    }
-    const start = this.viewport.viewStart();
-    const end = this.viewport.viewEnd();
-    const visible: GanttRow[] = [];
-    const startMs = start.getTime();
-    const endMs = end.getTime();
-    const pxPerMs = this.timeScale.pixelsPerMs();
+  readonly rows = computed<GanttDisplayRow[]>(() => {
+    const resources = this.filteredResources();
+    const groups = this.buildGroups(resources);
+    const expanded = this.expandedGroups();
+    const rows: GanttDisplayRow[] = [];
+    let resourceIndex = 0;
 
-    this.filteredResources().forEach((resource) => {
-      const list = this.activitiesByResource().get(resource.id) ?? [];
-      const bars: GanttBar[] = [];
-      const serviceMap = new Map<
-        string,
-        { id: string; left: number; right: number; startMs: number; endMs: number }
-      >();
-      for (const activity of list) {
-        if (activity.endMs < startMs - 2 * 60 * 60 * 1000 || activity.startMs > endMs + 2 * 60 * 60 * 1000) {
-          continue;
-        }
-        const rawLeft = this.timeScale.timeToPx(activity.startMs);
-        const rawRight = this.timeScale.timeToPx(activity.endMs);
-        const left = Math.round(rawLeft);
-        const right = Math.round(rawRight);
-        const width = Math.max(1, right - left);
-        bars.push({
-          activity,
-          left,
-          width,
-          classes: this.resolveBarClasses(activity),
-        });
-        const serviceId = activity.serviceId;
-        if (serviceId) {
-          const existing = serviceMap.get(serviceId);
-          if (existing) {
-            existing.left = Math.min(existing.left, left);
-            existing.right = Math.max(existing.right, right);
-            existing.startMs = Math.min(existing.startMs, activity.startMs);
-            existing.endMs = Math.max(existing.endMs, activity.endMs);
-          } else {
-            serviceMap.set(serviceId, {
-              id: serviceId,
-              left,
-              right,
-              startMs: activity.startMs,
-              endMs: activity.endMs,
-            });
-          }
-        }
+    const timelineData = this.viewportReady() ? this.buildTimelineData(resources) : new Map<string, { bars: GanttBar[]; services: GanttServiceRange[] }>();
+
+    groups.forEach((group) => {
+      const isExpanded = expanded.has(group.id);
+      rows.push({
+        kind: 'group',
+        id: group.id,
+        label: group.label,
+        icon: group.icon,
+        category: group.category,
+        resourceIds: group.resources.map((resource) => resource.id),
+        resourceCount: group.resources.length,
+        expanded: isExpanded,
+      });
+
+      if (!isExpanded) {
+        return;
       }
-      const services = Array.from(serviceMap.values()).map((entry) => ({
-        id: entry.id,
-        label: `Dienst ${this.serviceLabelFormatter.format(new Date(entry.startMs))} – ${this.serviceLabelFormatter.format(new Date(entry.endMs))}`,
-        left: entry.left,
-        width: Math.max(1, entry.right - entry.left),
-      }));
-      visible.push({ resource, bars, services });
+
+      group.resources.forEach((resource) => {
+        const data = timelineData.get(resource.id) ?? { bars: [], services: [] };
+        const zebra = resourceIndex % 2 === 1;
+        resourceIndex += 1;
+        rows.push({
+          kind: 'resource',
+          id: resource.id,
+          resource,
+          bars: data.bars,
+          services: data.services,
+          groupId: group.id,
+          zebra,
+        });
+      });
     });
 
-    return visible;
+    return rows;
   });
 
   readonly ticks = computed(() => {
@@ -312,9 +356,14 @@ export class GanttComponent implements AfterViewInit {
     ...this.tickBackgroundSegments(),
   ]);
 
-  readonly visibleResourceCount = computed(() => this.filteredResources().length);
+  readonly visibleResourceCount = computed(() =>
+    this.rows().reduce((count, row) => (row.kind === 'resource' ? count + 1 : count), 0),
+  );
   readonly visibleActivityCount = computed(() =>
-    this.rows().reduce((sum, row) => sum + row.bars.length, 0),
+    this.rows().reduce(
+      (sum, row) => (row.kind === 'resource' ? sum + row.bars.length : sum),
+      0,
+    ),
   );
   readonly totalActivityCount = computed(() => this.activitiesSignal().length);
   readonly cursorTime = computed(() => this.cursorTimeSignal());
@@ -345,25 +394,18 @@ export class GanttComponent implements AfterViewInit {
 
   ngAfterViewInit(): void {
     this.setupScrollSyncEffects();
-    this.setupViewportScrollbarObserver();
     if (this.rowScrollerDirs) {
       queueMicrotask(() => {
         const scrollLeft = this.scrollX();
         this.rowScrollerDirs?.forEach((dir) => dir.setScrollLeft(scrollLeft));
-        this.updateScrollbarCompensation();
       });
       this.rowScrollerDirs.changes
         .pipe(takeUntilDestroyed(this.destroyRef))
         .subscribe(() => {
           const scrollLeft = this.scrollX();
           this.rowScrollerDirs?.forEach((dir) => dir.setScrollLeft(scrollLeft));
-          queueMicrotask(() => this.updateScrollbarCompensation());
         });
     }
-  }
-
-  trackResource(_: number, row: GanttRow) {
-    return row.resource.id;
   }
 
   onZoomIn() {
@@ -389,7 +431,6 @@ export class GanttComponent implements AfterViewInit {
 
   onFilterChange(value: string) {
     this.filterTerm.set(value);
-    this.virtualViewport?.checkViewportSize();
   }
 
   onGotoToday() {
@@ -397,7 +438,6 @@ export class GanttComponent implements AfterViewInit {
       return;
     }
     this.viewport.gotoToday();
-    this.scrollViewportToCurrent();
   }
 
   onGotoDate(date: Date) {
@@ -405,7 +445,6 @@ export class GanttComponent implements AfterViewInit {
       return;
     }
     this.viewport.goto(date);
-    this.scrollViewportToCurrent();
   }
 
   onTimelineScroll(scrollLeft: number) {
@@ -450,6 +489,20 @@ export class GanttComponent implements AfterViewInit {
 
   onTimelineMouseLeave() {
     this.cursorTimeSignal.set(null);
+  }
+
+  onGroupToggle(groupId: string) {
+    const next = new Set(this.expandedGroups());
+    if (next.has(groupId)) {
+      next.delete(groupId);
+    } else {
+      next.add(groupId);
+    }
+    this.expandedGroups.set(next);
+  }
+
+  onResourceRemove(resourceId: string) {
+    this.removeResource.emit(resourceId);
   }
 
   @HostListener('window:keydown', ['$event'])
@@ -502,6 +555,21 @@ export class GanttComponent implements AfterViewInit {
     this.registerViewportReactions();
   }
 
+  private resetViewport(start: Date, end: Date) {
+    const previousZoom = this.viewport?.zoomLevel() ?? 'week';
+    const previousCenter = this.viewport?.viewCenter() ?? start;
+    this.viewportReady.set(false);
+    this.timeScale.setTimelineRange(start, end);
+    this.viewport = createTimeViewport({
+      timelineStart: start,
+      timelineEnd: end,
+      initialZoom: previousZoom,
+      initialCenter: this.clampCenter(previousCenter, start, end),
+    });
+    this.viewport.setPixelsPerMs(this.timeScale.pixelsPerMs());
+    this.viewportReady.set(true);
+  }
+
   private registerViewportReactions() {
     runInInjectionContext(this.injector, () => {
       effect(
@@ -530,60 +598,6 @@ export class GanttComponent implements AfterViewInit {
     });
   }
 
-  private setupViewportScrollbarObserver() {
-    const viewportElement = this.virtualViewport?.elementRef.nativeElement ?? null;
-    if (!viewportElement) {
-      return;
-    }
-
-    this.updateScrollbarCompensation();
-    if (typeof queueMicrotask === 'function') {
-      queueMicrotask(() => this.updateScrollbarCompensation());
-    }
-
-    if (typeof ResizeObserver !== 'undefined') {
-      this.viewportResizeObserver = new ResizeObserver(() => this.updateScrollbarCompensation());
-      this.viewportResizeObserver.observe(viewportElement);
-      const headerElement = this.headerScrollerDir?.element ?? null;
-      if (headerElement) {
-        this.viewportResizeObserver.observe(headerElement);
-      }
-      this.destroyRef.onDestroy(() => this.viewportResizeObserver?.disconnect());
-    } else if (typeof window !== 'undefined') {
-      const onResize = () => this.updateScrollbarCompensation();
-      window.addEventListener('resize', onResize);
-      this.destroyRef.onDestroy(() => window.removeEventListener('resize', onResize));
-    }
-  }
-
-  private updateScrollbarCompensation() {
-    const viewportElement = this.virtualViewport?.elementRef.nativeElement ?? null;
-    const headerElement = this.headerScrollerDir?.element ?? null;
-    const firstRowElement = this.rowScrollerDirs?.first?.element ?? null;
-    let width = 0;
-
-    if (viewportElement) {
-      width = Math.max(width, viewportElement.offsetWidth - viewportElement.clientWidth);
-    }
-    if (headerElement && firstRowElement) {
-      const diff = headerElement.clientWidth - firstRowElement.clientWidth;
-      width = Math.max(width, diff > 0 ? diff : 0);
-    }
-
-    const roundedWidth = Math.round(width);
-    if (roundedWidth !== this.lastScrollbarWidth) {
-      this.lastScrollbarWidth = roundedWidth;
-      this.hostElement.nativeElement.style.setProperty(
-        '--gantt-scrollbar-width',
-        `${roundedWidth}px`,
-      );
-    }
-  }
-
-  private scrollViewportToCurrent() {
-    this.virtualViewport?.checkViewportSize();
-  }
-
   private getPointerTime(clientX: number, container: HTMLElement | null): Date {
     if (!container) {
       return this.viewport.viewCenter();
@@ -601,6 +615,196 @@ export class GanttComponent implements AfterViewInit {
     return new Date(inclusiveMs);
   }
 
+  private buildTimelineData(
+    resources: Resource[],
+  ): Map<string, { bars: GanttBar[]; services: GanttServiceRange[] }> {
+    const map = new Map<string, { bars: GanttBar[]; services: GanttServiceRange[] }>();
+    if (!this.viewportReady()) {
+      resources.forEach((resource) => map.set(resource.id, { bars: [], services: [] }));
+      return map;
+    }
+
+    const start = this.viewport.viewStart();
+    const end = this.viewport.viewEnd();
+    const startMs = start.getTime();
+    const endMs = end.getTime();
+    const pxPerMs = this.timeScale.pixelsPerMs();
+
+    resources.forEach((resource) => {
+      const list = this.activitiesByResource().get(resource.id) ?? [];
+      const bars: GanttBar[] = [];
+      const serviceMap = new Map<
+        string,
+        { id: string; left: number; right: number; startMs: number; endMs: number }
+      >();
+      for (const activity of list) {
+        if (activity.endMs < startMs - 2 * 60 * 60 * 1000 || activity.startMs > endMs + 2 * 60 * 60 * 1000) {
+          continue;
+        }
+        const rawLeft = this.timeScale.timeToPx(activity.startMs);
+        const rawRight = this.timeScale.timeToPx(activity.endMs);
+        const left = Math.round(rawLeft);
+        const right = Math.round(rawRight);
+        const width = Math.max(1, right - left);
+        bars.push({
+          activity,
+          left,
+          width,
+          classes: this.resolveBarClasses(activity),
+        });
+        const serviceId = activity.serviceId;
+        if (!serviceId) {
+          continue;
+        }
+        const existing = serviceMap.get(serviceId);
+        if (existing) {
+          existing.left = Math.min(existing.left, left);
+          existing.right = Math.max(existing.right, right);
+          existing.startMs = Math.min(existing.startMs, activity.startMs);
+          existing.endMs = Math.max(existing.endMs, activity.endMs);
+        } else {
+          serviceMap.set(serviceId, {
+            id: serviceId,
+            left,
+            right,
+            startMs: activity.startMs,
+            endMs: activity.endMs,
+          });
+        }
+      }
+      const services = Array.from(serviceMap.values()).map((entry) => ({
+        id: entry.id,
+        label: `Dienst ${this.serviceLabelFormatter.format(new Date(entry.startMs))} – ${this.serviceLabelFormatter.format(new Date(entry.endMs))}`,
+        left: entry.left,
+        width: Math.max(1, entry.right - entry.left),
+      }));
+      map.set(resource.id, { bars, services });
+    });
+
+    return map;
+  }
+
+  private buildGroups(resources: Resource[]): GanttGroupDefinition[] {
+    const groups = new Map<string, GanttGroupDefinition>();
+    resources.forEach((resource) => {
+      const category = this.resolveCategory(resource);
+      const poolId = this.resolvePoolId(resource);
+      const poolName = this.resolvePoolName(resource);
+      const groupId = this.groupIdForParts(category, poolId);
+      const label = poolName ?? this.defaultGroupLabel(category, poolId);
+      const icon = this.iconForCategory(category);
+      const existing = groups.get(groupId);
+      if (existing) {
+        existing.resources.push(resource);
+      } else {
+        groups.set(groupId, {
+          id: groupId,
+          label,
+          icon,
+          category,
+          resources: [resource],
+        });
+      }
+    });
+
+    return Array.from(groups.values())
+      .map((group) => ({
+        ...group,
+        resources: [...group.resources].sort((a, b) => a.name.localeCompare(b.name)),
+      }))
+      .sort((a, b) => {
+        const categoryDiff = this.categorySortKey(a.category) - this.categorySortKey(b.category);
+        if (categoryDiff !== 0) {
+          return categoryDiff;
+        }
+        return a.label.localeCompare(b.label);
+      });
+  }
+
+  private resolveCategory(resource: Resource): string | null {
+    const attributes = resource.attributes as Record<string, unknown> | undefined;
+    const category = attributes?.['category'];
+    return typeof category === 'string' ? category : null;
+  }
+
+  private resolvePoolId(resource: Resource): string | null {
+    const attributes = resource.attributes as Record<string, unknown> | undefined;
+    const poolId = attributes?.['poolId'];
+    return typeof poolId === 'string' ? poolId : null;
+  }
+
+  private resolvePoolName(resource: Resource): string | null {
+    const attributes = resource.attributes as Record<string, unknown> | undefined;
+    const poolName = attributes?.['poolName'];
+    return typeof poolName === 'string' && poolName.length > 0 ? poolName : null;
+  }
+
+  private groupIdForParts(category: string | null, poolId: string | null): string {
+    return `${category ?? 'uncategorized'}|${poolId ?? 'none'}`;
+  }
+
+  private iconForCategory(category: string | null): string {
+    switch (category) {
+      case 'vehicle-service':
+        return 'route';
+      case 'personnel-service':
+        return 'badge';
+      case 'vehicle':
+        return 'directions_transit';
+      case 'personnel':
+        return 'groups';
+      default:
+        return 'inventory_2';
+    }
+  }
+
+  private defaultGroupLabel(category: string | null, poolId: string | null): string {
+    switch (category) {
+      case 'vehicle-service':
+        return poolId ? `Fahrzeugdienst-Pool ${poolId}` : 'Fahrzeugdienste';
+      case 'personnel-service':
+        return poolId ? `Personaldienst-Pool ${poolId}` : 'Personaldienste';
+      case 'vehicle':
+        return poolId ? `Fahrzeugpool ${poolId}` : 'Fahrzeuge';
+      case 'personnel':
+        return poolId ? `Personalpool ${poolId}` : 'Personal';
+      default:
+        return 'Weitere Ressourcen';
+    }
+  }
+
+  private resetExpandedGroups(_resources: Resource[]): void {
+    this.expandedGroups.set(new Set());
+  }
+
+  private categorySortKey(category: string | null): number {
+    switch (category) {
+      case 'vehicle-service':
+        return 0;
+      case 'personnel-service':
+        return 1;
+      case 'vehicle':
+        return 2;
+      case 'personnel':
+        return 3;
+      default:
+        return 99;
+    }
+  }
+
+  private clampCenter(center: Date, start: Date, end: Date): Date {
+    const startMs = start.getTime();
+    const endMs = end.getTime();
+    const value = center.getTime();
+    if (value <= startMs) {
+      return new Date(start);
+    }
+    if (value >= endMs) {
+      return new Date(end);
+    }
+    return new Date(center);
+  }
+
   private resolveBarClasses(activity: PreparedActivity): string[] {
     const classes: string[] = [];
     if (activity.serviceId) {
@@ -615,4 +819,5 @@ export class GanttComponent implements AfterViewInit {
     }
     return classes;
   }
+
 }

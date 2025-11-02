@@ -7,7 +7,6 @@ import { MatMenuModule } from '@angular/material/menu';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatCheckboxModule } from '@angular/material/checkbox';
 import { MatChipsModule } from '@angular/material/chips';
-import { MatButtonToggleModule } from '@angular/material/button-toggle';
 import { MatCardModule } from '@angular/material/card';
 import { GanttComponent } from '../../gantt/gantt.component';
 import { PlanningDataService } from './planning-data.service';
@@ -19,6 +18,8 @@ import {
   PlanningStageId,
   PlanningStageMeta,
 } from './planning-stage.model';
+import { ActivatedRoute, Router } from '@angular/router';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 
 interface PlanningBoard {
   id: string;
@@ -113,7 +114,6 @@ const STAGE_RESOURCE_GROUPS: Record<PlanningStageId, StageResourceGroupConfig[]>
     MatTooltipModule,
     MatCheckboxModule,
     MatChipsModule,
-    MatButtonToggleModule,
     MatCardModule,
     GanttComponent,
   ],
@@ -122,6 +122,8 @@ const STAGE_RESOURCE_GROUPS: Record<PlanningStageId, StageResourceGroupConfig[]>
 })
 export class PlanningDashboardComponent {
   private readonly data = inject(PlanningDataService);
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
 
   readonly stages = PLANNING_STAGE_METAS;
   private readonly stageMetaMap: Record<PlanningStageId, PlanningStageMeta> = this.stages.reduce(
@@ -167,6 +169,19 @@ export class PlanningDashboardComponent {
   };
 
   constructor() {
+    const initialStage = this.normalizeStageId(this.route.snapshot.queryParamMap.get('stage'));
+    this.setActiveStage(initialStage, false);
+    if (this.route.snapshot.queryParamMap.get('stage') !== initialStage) {
+      this.updateStageQueryParam(initialStage);
+    }
+
+    this.route.queryParamMap
+      .pipe(takeUntilDestroyed())
+      .subscribe((params) => {
+        const stage = this.normalizeStageId(params.get('stage'));
+        this.setActiveStage(stage, false);
+      });
+
     this.stageOrder.forEach((stage) => {
       effect(
         () => {
@@ -226,10 +241,6 @@ export class PlanningDashboardComponent {
     return Math.max(0, state.boards.findIndex((board) => board.id === state.activeBoardId));
   });
 
-  protected trackStage(_: number, stage: PlanningStageMeta | undefined): string {
-    return stage?.id ?? `stage-${_}`;
-  }
-
   protected trackResource(_: number, resource: Resource): string {
     return resource.id;
   }
@@ -247,10 +258,7 @@ export class PlanningDashboardComponent {
       return;
     }
     const nextStage = stage as PlanningStageId;
-    if (nextStage === this.activeStageSignal()) {
-      return;
-    }
-    this.activeStageSignal.set(nextStage);
+    this.setActiveStage(nextStage, true);
   }
 
   protected onSelectionToggle(resourceId: string, selected: boolean): void {
@@ -488,14 +496,20 @@ export class PlanningDashboardComponent {
     let mutated = false;
 
     if (state.boards.length === 0) {
-      const board = this.createBoardState(
-        stage,
-        this.nextBoardTitle(stage, 'Grundlage'),
-        resources.map((resource) => resource.id),
-        orderMap,
-      );
-      state.boards = [board];
-      state.activeBoardId = board.id;
+      const defaultBoards = this.createDefaultBoardsForStage(stage, resources, orderMap);
+      if (defaultBoards.length === 0) {
+        const fallback = this.createBoardState(
+          stage,
+          this.nextBoardTitle(stage, 'Grundlage'),
+          resources.map((resource) => resource.id),
+          orderMap,
+        );
+        state.boards = [fallback];
+        state.activeBoardId = fallback.id;
+      } else {
+        state.boards = defaultBoards;
+        state.activeBoardId = defaultBoards[0]?.id ?? '';
+      }
       mutated = true;
     } else {
       const normalizedBoards = state.boards.map((board) => {
@@ -598,5 +612,83 @@ export class PlanningDashboardComponent {
       resourceIds: this.normalizeResourceIds(resourceIds, stage, order),
       createdAt: Date.now(),
     };
+  }
+
+  private createDefaultBoardsForStage(
+    stage: PlanningStageId,
+    resources: Resource[],
+    orderMap: Map<string, number>,
+  ): PlanningBoard[] {
+    const configs = STAGE_RESOURCE_GROUPS[stage] ?? [];
+    const boards: PlanningBoard[] = [];
+    const categorized = new Set<PlanningResourceCategory>();
+
+    configs.forEach((config) => {
+      const ids = resources
+        .filter((resource) => this.getResourceCategory(resource) === config.category)
+        .map((resource) => resource.id);
+      if (ids.length === 0) {
+        return;
+      }
+      boards.push(
+        this.createBoardState(
+          stage,
+          `${this.stageMetaMap[stage].shortLabel} · ${config.label}`,
+          ids,
+          orderMap,
+        ),
+      );
+      categorized.add(config.category);
+    });
+
+    const remaining = resources.filter((resource) => {
+      const category = this.getResourceCategory(resource);
+      if (!category) {
+        return true;
+      }
+      return !categorized.has(category);
+    });
+    if (remaining.length > 0) {
+      boards.push(
+        this.createBoardState(
+          stage,
+          `${this.stageMetaMap[stage].shortLabel} · Weitere Ressourcen`,
+          remaining.map((resource) => resource.id),
+          orderMap,
+        ),
+      );
+    }
+
+    return boards;
+  }
+
+  private setActiveStage(stage: PlanningStageId, updateUrl: boolean): void {
+    const current = this.activeStageSignal();
+    if (current === stage) {
+      if (updateUrl) {
+        this.updateStageQueryParam(stage);
+      }
+      return;
+    }
+    this.activeStageSignal.set(stage);
+    if (updateUrl) {
+      this.updateStageQueryParam(stage);
+    }
+  }
+
+  private updateStageQueryParam(stage: PlanningStageId): void {
+    void this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: { stage },
+      queryParamsHandling: 'merge',
+      replaceUrl: true,
+    });
+  }
+
+  private normalizeStageId(value: string | null): PlanningStageId {
+    if (value && value in this.stageMetaMap) {
+      return value as PlanningStageId;
+    }
+    return 'base';
   }
 }
