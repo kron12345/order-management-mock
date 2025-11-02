@@ -25,6 +25,7 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { MatSelectModule } from '@angular/material/select';
+import { MatTooltipModule } from '@angular/material/tooltip';
 import {
   MasterDataCategoryConfig,
   MasterDataFieldConfig,
@@ -43,6 +44,7 @@ import {
     MatFormFieldModule,
     MatInputModule,
     MatSelectModule,
+    MatTooltipModule,
   ],
   templateUrl: './master-data-category.component.html',
   styleUrl: './master-data-category.component.scss',
@@ -182,6 +184,63 @@ export class MasterDataCategoryComponent<T extends { id: string }> implements On
     return field.options ?? [];
   }
 
+  protected canClearField(field: MasterDataFieldConfig): boolean {
+    if (field.temporal || field.readonly || field.type === 'boolean') {
+      return false;
+    }
+    const control = this.form?.get(field.key);
+    return !!control;
+  }
+
+  protected isFieldEmpty(field: MasterDataFieldConfig): boolean {
+    const control = this.form?.get(field.key);
+    if (!control) {
+      return true;
+    }
+    const value = control.value;
+    if (field.type === 'multiselect') {
+      return !Array.isArray(value) || value.length === 0;
+    }
+    if (field.type === 'number') {
+      return value === null || value === undefined || value === '';
+    }
+    if (field.type === 'boolean') {
+      return value === null || value === undefined;
+    }
+    return value === null || value === undefined || String(value).length === 0;
+  }
+
+  protected clearField(field: MasterDataFieldConfig): void {
+    const control = this.form?.get(field.key);
+    if (!control) {
+      return;
+    }
+
+    let nextValue: unknown;
+    switch (field.type) {
+      case 'multiselect':
+        nextValue = [];
+        break;
+      case 'number':
+        nextValue = null;
+        break;
+      case 'date':
+      case 'time':
+      case 'text':
+      case 'textarea':
+      case 'select':
+        nextValue = '';
+        break;
+      default:
+        nextValue = this.defaultValueForField(field);
+        break;
+    }
+
+    control.setValue(nextValue);
+    control.markAsDirty();
+    control.markAsTouched();
+  }
+
   protected trackById(_index: number, item: T): string {
     return item.id;
   }
@@ -249,12 +308,10 @@ export class MasterDataCategoryComponent<T extends { id: string }> implements On
       if (field.temporal) {
         groupConfig[field.key] = this.createTemporalFormArray(field);
       } else {
-        groupConfig[field.key] = this.fb.control(
-          {
-            value: field.type === 'multiselect' ? [] : '',
-            disabled: field.readonly ?? false,
-          },
-        );
+        groupConfig[field.key] = this.fb.control({
+          value: this.defaultValueForField(field),
+          disabled: field.readonly ?? false,
+        });
       }
     }
 
@@ -266,7 +323,7 @@ export class MasterDataCategoryComponent<T extends { id: string }> implements On
       if (field.temporal) {
         acc[field.key] = [];
       } else {
-        acc[field.key] = field.type === 'multiselect' ? [] : '';
+        acc[field.key] = this.defaultValueForField(field);
       }
       return acc;
     }, {});
@@ -338,9 +395,18 @@ export class MasterDataCategoryComponent<T extends { id: string }> implements On
     }
   }
 
-  private createTemporalFormArray(field: MasterDataFieldConfig): FormArray<FormGroup> {
+  private createTemporalFormArray(
+    field: MasterDataFieldConfig,
+    values?: MasterDataTemporalValue[] | undefined,
+  ): FormArray<FormGroup> {
     const array = new FormArray<FormGroup>([]);
-    array.push(this.createTemporalEntryGroup(field));
+    const sortedValues = values && values.length > 0 ? this.sortTemporalEntries(values) : [];
+    const entries = sortedValues.length > 0 ? sortedValues : [undefined];
+
+    for (const entry of entries) {
+      array.push(this.createTemporalEntryGroup(field, entry as MasterDataTemporalValue | undefined));
+    }
+
     return array;
   }
 
@@ -474,20 +540,10 @@ export class MasterDataCategoryComponent<T extends { id: string }> implements On
     field: MasterDataFieldConfig,
     values: MasterDataTemporalValue[] | undefined,
   ): void {
-    const array = this.temporalControls(field.key);
     this.hideTemporalHistory(field.key);
-    while (array.length > 0) {
-      array.removeAt(array.length - 1);
-    }
-
-    const sortedValues =
-      values && values.length > 0 ? this.sortTemporalEntries(values) : [];
-    const entries = sortedValues.length > 0 ? sortedValues : [undefined];
-
-    for (const entry of entries) {
-      array.push(this.createTemporalEntryGroup(field, entry as MasterDataTemporalValue | undefined));
-    }
-    if (array.length <= 1) {
+    const nextArray = this.createTemporalFormArray(field, values);
+    this.form.setControl(field.key, nextArray, { emitEvent: false });
+    if (nextArray.length <= 1) {
       this.hideTemporalHistory(field.key);
     }
     this.markTemporalArrayValidities(field.key);
@@ -503,6 +559,9 @@ export class MasterDataCategoryComponent<T extends { id: string }> implements On
       }
       const numeric = Number(value);
       return Number.isFinite(numeric) ? numeric : null;
+    }
+    if (field.type === 'boolean') {
+      return !!value;
     }
     if (value === null || value === undefined) {
       return '';
@@ -654,5 +713,18 @@ export class MasterDataCategoryComponent<T extends { id: string }> implements On
           : '',
       ])
       .join(';');
+  }
+
+  private defaultValueForField(field: MasterDataFieldConfig): unknown {
+    switch (field.type) {
+      case 'multiselect':
+        return [];
+      case 'number':
+        return null;
+      case 'boolean':
+        return false;
+      default:
+        return '';
+    }
   }
 }

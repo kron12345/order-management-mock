@@ -4,9 +4,9 @@
     <span class="gantt-resource__label">{{ resource.name }}</span>
   </div>
 
-  @if (resource.attributes) {
+  @if (attributeEntries.length > 0) {
     <div class="gantt-resource__meta" role="list">
-      @for (entry of resource.attributes | keyvalue; track entry.key) {
+      @for (entry of attributeEntries; track entry.key) {
         <span class="gantt-resource__meta-item" role="listitem">
           <span class="gantt-resource__meta-key">{{ entry.key }}</span>
           <span class="gantt-resource__meta-value">{{ entry.value }}</span>

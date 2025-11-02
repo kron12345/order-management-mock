@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { MasterDataLayoutComponent } from './components/master-data-layout/master-data-layout.component';
 import {
@@ -6,6 +6,8 @@ import {
   MasterDataHierarchyConfig,
   MasterDataOption,
   MasterDataTemporalValue,
+  MasterDataFieldConfig,
+  MasterDataFieldType,
   MasterDataTabConfig,
 } from './master-data.types';
 import { DEMO_MASTER_DATA } from '../../data/demo-master-data';
@@ -22,6 +24,12 @@ import {
   VehicleComposition,
   VehicleCompositionEntry,
 } from '../../models/master-data';
+import {
+  CustomAttributePrimitiveType,
+  CustomAttributeService,
+  CustomAttributeState,
+} from '../../core/services/custom-attribute.service';
+import { PlanningMasterComponent } from '../../planning/planning-master.component';
 
 @Component({
   selector: 'app-master-data-landing',
@@ -76,62 +84,89 @@ export class MasterDataLandingComponent {
     value: type.id,
   }));
 
-  protected readonly tabs: MasterDataTabConfig[] = [
-    {
-      id: 'personnel',
-      icon: 'badge',
-      title: 'Personal',
-      description:
-        'Dienste und Mitarbeitende werden hierarchisch nach Pools organisiert – zuerst den Pool anlegen, dann die zugehörigen Ressourcen pflegen.',
-      sections: [
-        {
-          type: 'hierarchy',
-          id: 'personnel-services',
-          config: this.buildPersonnelServicesHierarchy(),
-        },
-        {
-          type: 'hierarchy',
-          id: 'personnel-pools',
-          config: this.buildPersonnelHierarchy(),
-        },
-      ],
-    },
-    {
-      id: 'vehicles',
-      icon: 'directions_transit',
-      title: 'Fahrzeuge',
-      description:
-        'Fahrzeugdienste, Pools und Fahrzeugtypen lassen sich in klarer Reihenfolge anlegen: erst Pools, dann Fahrzeuge und Begleitdaten.',
-      sections: [
-        {
-          type: 'hierarchy',
-          id: 'vehicle-services',
-          config: this.buildVehicleServicesHierarchy(),
-        },
-        {
-          type: 'category',
-          id: 'vehicle-types',
-          title: 'Fahrzeugtypen',
-          description: 'Typkatalog mit Kategorien und Kapazitäten für die Einsatzplanung.',
-          config: this.buildVehicleTypesCategory(),
-        },
-        {
-          type: 'hierarchy',
-          id: 'vehicle-pools',
-          config: this.buildVehicleHierarchy(),
-        },
-        {
-          type: 'category',
-          id: 'vehicle-compositions',
-          title: 'Fahrzeugkompositionen',
-          description: 'Standardisierte Garnituren für Umläufe und Verkehrsverträge.',
-          config: this.buildVehicleCompositionsCategory(),
-        },
-      ],
-    },
-  ];
+  private readonly customAttributes = inject(CustomAttributeService);
 
-  private buildPersonnelServicesHierarchy(): MasterDataHierarchyConfig<
+  protected readonly tabs = computed<MasterDataTabConfig[]>(() =>
+    this.buildTabs(this.customAttributes.definitions()),
+  );
+
+  private buildTabs(definitions: CustomAttributeState): MasterDataTabConfig[] {
+    return [
+      {
+        id: 'personnel',
+        icon: 'badge',
+        title: 'Personal',
+        description:
+          'Dienste und Mitarbeitende werden hierarchisch nach Pools organisiert – zuerst den Pool anlegen, dann die zugehörigen Ressourcen pflegen.',
+        sections: [
+          {
+            type: 'hierarchy',
+            id: 'personnel-services',
+            config: this.buildPersonnelServicesHierarchy(definitions),
+          },
+          {
+            type: 'hierarchy',
+            id: 'personnel-pools',
+            config: this.buildPersonnelHierarchy(definitions),
+          },
+        ],
+      },
+      {
+        id: 'vehicles',
+        icon: 'directions_transit',
+        title: 'Fahrzeuge',
+        description:
+          'Fahrzeugdienste, Pools und Fahrzeugtypen lassen sich in klarer Reihenfolge anlegen: erst Pools, dann Fahrzeuge und Begleitdaten.',
+        sections: [
+          {
+            type: 'hierarchy',
+            id: 'vehicle-services',
+            config: this.buildVehicleServicesHierarchy(definitions),
+          },
+          {
+            type: 'category',
+            id: 'vehicle-types',
+            title: 'Fahrzeugtypen',
+            description: 'Typkatalog mit Kategorien und Kapazitäten für die Einsatzplanung.',
+            config: this.buildVehicleTypesCategory(definitions),
+          },
+          {
+            type: 'hierarchy',
+            id: 'vehicle-pools',
+            config: this.buildVehicleHierarchy(definitions),
+          },
+          {
+            type: 'category',
+            id: 'vehicle-compositions',
+            title: 'Fahrzeugkompositionen',
+            description: 'Standardisierte Garnituren für Umläufe und Verkehrsverträge.',
+            config: this.buildVehicleCompositionsCategory(definitions),
+          },
+        ],
+      },
+      {
+        id: 'topology',
+        icon: 'share_location',
+        title: 'Topologie',
+        description:
+          'Planungs-Masterdaten wie Betriebsstellen, Strecken und Ersatzverkehre zentral pflegen.',
+        sections: [
+          {
+            type: 'component',
+            id: 'planning-topology',
+            title: 'Planungs-Masterdaten',
+            description:
+              'Der Topologie-Editor bündelt alle Netz- und Ersatzverkehrsstrukturen für die Planung.',
+            component: PlanningMasterComponent,
+          },
+        ],
+      },
+    ];
+  }
+
+  private buildPersonnelServicesHierarchy(
+    definitions: CustomAttributeState,
+  ): MasterDataHierarchyConfig<
     PersonnelServicePool,
     PersonnelService
   > {
@@ -145,63 +180,61 @@ export class MasterDataLandingComponent {
         id: 'personnel-service-pools',
         icon: 'group_work',
         title: 'Personaldienstpools',
-        description: 'Thematische Dienstpools, z. B. nach Linie oder Einsatzgebiet.',
-        entityLabel: 'Dienstpool',
-        columns: [
-          { key: 'name', label: 'Pool' },
-          {
-            key: 'serviceIds',
-            label: 'Dienste',
-            valueAccessor: (pool) =>
-              this.formatCount(pool.serviceIds?.length ?? 0, 'Dienst', 'Dienste'),
-          },
-        ],
-        fields: [
-          { key: 'name', label: 'Poolname', type: 'text', placeholder: 'RE1 Berliner Osten' },
-          { key: 'description', label: 'Beschreibung', type: 'textarea' },
-        ],
-        items: this.data.personnelServicePools,
-        defaultValues: () => ({ serviceIds: [] }),
-      },
-      child: {
-        id: 'personnel-services',
+      description: 'Thematische Dienstpools, z. B. nach Linie oder Einsatzgebiet.',
+      entityLabel: 'Dienstpool',
+      columns: [
+        { key: 'name', label: 'Pool' },
+      ],
+        fields: this.extendFields(
+          [
+            { key: 'name', label: 'Poolname', type: 'text', placeholder: 'RE1 Berliner Osten' },
+            { key: 'description', label: 'Beschreibung', type: 'textarea' },
+          ],
+        'personnel-service-pools',
+        definitions,
+      ),
+      items: this.data.personnelServicePools,
+      defaultValues: () => ({ serviceIds: [] }),
+    },
+    child: {
+      id: 'personnel-services',
         icon: 'event',
         title: 'Personaldienste',
         description: 'Standardisierte Dienste, die einem Pool zugewiesen sind.',
         entityLabel: 'Personaldienst',
         columns: [
           { key: 'name', label: 'Dienst' },
-          {
-            key: 'requiredQualifications',
-            label: 'Qualifikationen',
-            valueAccessor: (service) =>
-              (service.requiredQualifications ?? []).join(', ') || '—',
-          },
         ],
-        fields: [
-          { key: 'name', label: 'Dienstname', type: 'text', placeholder: 'Frühschicht RE1' },
-          { key: 'description', label: 'Beschreibung', type: 'textarea' },
-          {
-            key: 'requiredQualifications',
-            label: 'Qualifikationen',
-            type: 'multiselect',
-            hint: 'Sammeln Sie alle benötigten Berechtigungen für den Dienst.',
-            options: this.qualificationOptions,
-          },
-          {
-            key: 'poolId',
-            label: 'Pool',
-            type: 'text',
-            readonly: true,
-            hint: 'Wird automatisch über die Pool-Auswahl gesetzt.',
-          },
-        ],
+        fields: this.extendFields(
+          [
+            { key: 'name', label: 'Dienstname', type: 'text', placeholder: 'Frühschicht RE1' },
+            { key: 'description', label: 'Beschreibung', type: 'textarea' },
+            {
+              key: 'requiredQualifications',
+              label: 'Qualifikationen',
+              type: 'multiselect',
+              hint: 'Sammeln Sie alle benötigten Berechtigungen für den Dienst.',
+              options: this.qualificationOptions,
+            },
+            {
+              key: 'poolId',
+              label: 'Pool',
+              type: 'text',
+              readonly: true,
+              hint: 'Wird automatisch über die Pool-Auswahl gesetzt.',
+            },
+          ],
+          'personnel-services',
+          definitions,
+        ),
         items: this.data.personnelServices,
       },
     };
   }
 
-  private buildPersonnelHierarchy(): MasterDataHierarchyConfig<PersonnelPool, Personnel> {
+  private buildPersonnelHierarchy(
+    definitions: CustomAttributeState,
+  ): MasterDataHierarchyConfig<PersonnelPool, Personnel> {
     return {
       id: 'personnel-pool-hierarchy',
       title: 'Personalpools & Mitarbeitende',
@@ -216,17 +249,15 @@ export class MasterDataLandingComponent {
         entityLabel: 'Personalpool',
         columns: [
           { key: 'name', label: 'Pool' },
-          {
-            key: 'personnelIds',
-            label: 'Mitarbeitende',
-            valueAccessor: (pool) =>
-              this.formatCount(pool.personnelIds?.length ?? 0, 'Person', 'Personen'),
-          },
         ],
-        fields: [
-          { key: 'name', label: 'Poolname', type: 'text' },
-          { key: 'description', label: 'Beschreibung', type: 'textarea' },
-        ],
+        fields: this.extendFields(
+          [
+            { key: 'name', label: 'Poolname', type: 'text' },
+            { key: 'description', label: 'Beschreibung', type: 'textarea' },
+          ],
+          'personnel-pools',
+          definitions,
+        ),
         items: this.data.personnelPools,
         defaultValues: () => ({ personnelIds: [] }),
       },
@@ -242,54 +273,49 @@ export class MasterDataLandingComponent {
             label: 'Name',
             valueAccessor: (person) => this.resolvePersonnelFullName(person),
           },
-          {
-            key: 'qualifications',
-            label: 'Qualifikationen',
-            valueAccessor: (person) => (person.qualifications ?? []).join(', ') || '—',
-          },
-          {
-            key: 'serviceIds',
-            label: 'Dienste',
-            valueAccessor: (person) =>
-              this.formatCount(person.serviceIds?.length ?? 0, 'Dienst', 'Dienste'),
-          },
         ],
-        fields: [
-          {
-            key: 'firstName',
-            label: 'Vorname',
-            type: 'text',
-            temporal: true,
-            hint: 'Mehrere Namen mit zeitlicher Gültigkeit pflegen.',
-          },
-          { key: 'lastName', label: 'Nachname', type: 'text' },
-          { key: 'preferredName', label: 'Rufname', type: 'text', placeholder: 'Optional' },
-          {
-            key: 'qualifications',
-            label: 'Qualifikationen',
-            type: 'multiselect',
-            options: this.qualificationOptions,
-          },
-          {
-            key: 'serviceIds',
-            label: 'Zugewiesene Dienste',
-            type: 'multiselect',
-            options: this.personnelServiceOptions,
-          },
-          {
-            key: 'poolId',
-            label: 'Pool',
-            type: 'text',
-            readonly: true,
-            hint: 'Wird automatisch über die Pool-Auswahl gesetzt.',
-          },
-        ],
+        fields: this.extendFields(
+          [
+            {
+              key: 'firstName',
+              label: 'Vorname',
+              type: 'text',
+              temporal: true,
+              hint: 'Mehrere Namen mit zeitlicher Gültigkeit pflegen.',
+            },
+            { key: 'lastName', label: 'Nachname', type: 'text' },
+            { key: 'preferredName', label: 'Rufname', type: 'text', placeholder: 'Optional' },
+            {
+              key: 'qualifications',
+              label: 'Qualifikationen',
+              type: 'multiselect',
+              options: this.qualificationOptions,
+            },
+            {
+              key: 'serviceIds',
+              label: 'Zugewiesene Dienste',
+              type: 'multiselect',
+              options: this.personnelServiceOptions,
+            },
+            {
+              key: 'poolId',
+              label: 'Pool',
+              type: 'text',
+              readonly: true,
+              hint: 'Wird automatisch über die Pool-Auswahl gesetzt.',
+            },
+          ],
+          'personnel',
+          definitions,
+        ),
         items: this.data.personnel,
       },
     };
   }
 
-  private buildVehicleServicesHierarchy(): MasterDataHierarchyConfig<
+  private buildVehicleServicesHierarchy(
+    definitions: CustomAttributeState,
+  ): MasterDataHierarchyConfig<
     VehicleServicePool,
     VehicleService
   > {
@@ -307,17 +333,15 @@ export class MasterDataLandingComponent {
         entityLabel: 'Dienstpool',
         columns: [
           { key: 'name', label: 'Pool' },
-          {
-            key: 'serviceIds',
-            label: 'Dienste',
-            valueAccessor: (pool) =>
-              this.formatCount(pool.serviceIds?.length ?? 0, 'Dienst', 'Dienste'),
-          },
         ],
-        fields: [
-          { key: 'name', label: 'Poolname', type: 'text' },
-          { key: 'description', label: 'Beschreibung', type: 'textarea' },
-        ],
+        fields: this.extendFields(
+          [
+            { key: 'name', label: 'Poolname', type: 'text' },
+            { key: 'description', label: 'Beschreibung', type: 'textarea' },
+          ],
+          'vehicle-service-pools',
+          definitions,
+        ),
         items: this.data.vehicleServicePools,
         defaultValues: () => ({ serviceIds: [] }),
       },
@@ -329,38 +353,36 @@ export class MasterDataLandingComponent {
         entityLabel: 'Fahrzeugdienst',
         columns: [
           { key: 'name', label: 'Dienst' },
-          {
-            key: 'requiredVehicleTypeIds',
-            label: 'Fahrzeugtypen',
-            valueAccessor: (service) =>
-              (service.requiredVehicleTypeIds ?? [])
-                .map((typeId) => this.vehicleTypeMap.get(typeId) ?? typeId)
-                .join(', ') || '—',
-          },
         ],
-        fields: [
-          { key: 'name', label: 'Dienstname', type: 'text' },
-          { key: 'description', label: 'Beschreibung', type: 'textarea' },
-          {
-            key: 'requiredVehicleTypeIds',
-            label: 'Zulässige Fahrzeugtypen',
-            type: 'multiselect',
-            options: this.vehicleTypeOptions,
-          },
-          {
-            key: 'poolId',
-            label: 'Pool',
-            type: 'text',
-            readonly: true,
-            hint: 'Wird automatisch über die Pool-Auswahl gesetzt.',
-          },
-        ],
+        fields: this.extendFields(
+          [
+            { key: 'name', label: 'Dienstname', type: 'text' },
+            { key: 'description', label: 'Beschreibung', type: 'textarea' },
+            {
+              key: 'requiredVehicleTypeIds',
+              label: 'Zulässige Fahrzeugtypen',
+              type: 'multiselect',
+              options: this.vehicleTypeOptions,
+            },
+            {
+              key: 'poolId',
+              label: 'Pool',
+              type: 'text',
+              readonly: true,
+              hint: 'Wird automatisch über die Pool-Auswahl gesetzt.',
+            },
+          ],
+          'vehicle-services',
+          definitions,
+        ),
         items: this.data.vehicleServices,
       },
     };
   }
 
-  private buildVehicleHierarchy(): MasterDataHierarchyConfig<VehiclePool, Vehicle> {
+  private buildVehicleHierarchy(
+    definitions: CustomAttributeState,
+  ): MasterDataHierarchyConfig<VehiclePool, Vehicle> {
     return {
       id: 'vehicle-pool-hierarchy',
       title: 'Fahrzeugpools & Fahrzeuge',
@@ -375,17 +397,15 @@ export class MasterDataLandingComponent {
         entityLabel: 'Fahrzeugpool',
         columns: [
           { key: 'name', label: 'Pool' },
-          {
-            key: 'vehicleIds',
-            label: 'Fahrzeuge',
-            valueAccessor: (pool) =>
-              this.formatCount(pool.vehicleIds?.length ?? 0, 'Fahrzeug', 'Fahrzeuge'),
-          },
         ],
-        fields: [
-          { key: 'name', label: 'Poolname', type: 'text' },
-          { key: 'description', label: 'Beschreibung', type: 'textarea' },
-        ],
+        fields: this.extendFields(
+          [
+            { key: 'name', label: 'Poolname', type: 'text' },
+            { key: 'description', label: 'Beschreibung', type: 'textarea' },
+          ],
+          'vehicle-pools',
+          definitions,
+        ),
         items: this.data.vehiclePools,
         defaultValues: () => ({ vehicleIds: [] }),
       },
@@ -397,43 +417,43 @@ export class MasterDataLandingComponent {
         entityLabel: 'Fahrzeug',
         columns: [
           { key: 'vehicleNumber', label: 'Fahrzeugnummer' },
-          {
-            key: 'typeId',
-            label: 'Fahrzeugtyp',
-            valueAccessor: (vehicle) => this.vehicleTypeMap.get(vehicle.typeId) ?? vehicle.typeId,
-          },
-          { key: 'depot', label: 'Depot' },
         ],
-        fields: [
-          { key: 'vehicleNumber', label: 'Fahrzeugnummer', type: 'text' },
-          {
-            key: 'typeId',
-            label: 'Fahrzeugtyp',
-            type: 'select',
-            options: this.vehicleTypeOptions,
-          },
-          { key: 'depot', label: 'Heimatdepot', type: 'text' },
-          {
-            key: 'serviceIds',
-            label: 'Einsatzdienste',
-            type: 'multiselect',
-            options: this.vehicleServiceOptions,
-          },
-          { key: 'description', label: 'Notiz', type: 'textarea', placeholder: 'Optional' },
-          {
-            key: 'poolId',
-            label: 'Pool',
-            type: 'text',
-            readonly: true,
-            hint: 'Wird automatisch über die Pool-Auswahl gesetzt.',
-          },
-        ],
+        fields: this.extendFields(
+          [
+            { key: 'vehicleNumber', label: 'Fahrzeugnummer', type: 'text' },
+            {
+              key: 'typeId',
+              label: 'Fahrzeugtyp',
+              type: 'select',
+              options: this.vehicleTypeOptions,
+            },
+            { key: 'depot', label: 'Heimatdepot', type: 'text' },
+            {
+              key: 'serviceIds',
+              label: 'Einsatzdienste',
+              type: 'multiselect',
+              options: this.vehicleServiceOptions,
+            },
+            { key: 'description', label: 'Notiz', type: 'textarea', placeholder: 'Optional' },
+            {
+              key: 'poolId',
+              label: 'Pool',
+              type: 'text',
+              readonly: true,
+              hint: 'Wird automatisch über die Pool-Auswahl gesetzt.',
+            },
+          ],
+          'vehicles',
+          definitions,
+        ),
         items: this.data.vehicles,
       },
     };
   }
 
-  private buildVehicleTypesCategory(): MasterDataCategoryConfig<VehicleType> {
+  private buildVehicleTypesCategory(
+    definitions: CustomAttributeState,
+  ): MasterDataCategoryConfig<VehicleType> {
     return {
       id: 'vehicle-types',
       icon: 'train',
@@ -442,38 +462,41 @@ export class MasterDataLandingComponent {
       entityLabel: 'Fahrzeugtyp',
       columns: [
         { key: 'label', label: 'Typ' },
-        { key: 'category', label: 'Kategorie' },
-        {
-          key: 'capacity',
-          label: 'Kapazität',
-          valueAccessor: (type) => (type.capacity != null ? `${type.capacity}` : '—'),
-        },
       ],
-      fields: [
-        { key: 'label', label: 'Bezeichnung', type: 'text' },
-        {
-          key: 'category',
-          label: 'Kategorie',
-          type: 'select',
-          options: [
-            { label: 'Lokomotive', value: 'Lokomotive' },
-            { label: 'Wagen', value: 'Wagen' },
-            { label: 'Triebzug', value: 'Triebzug' },
-          ],
-        },
-        { key: 'capacity', label: 'Kapazität (Sitzplätze)', type: 'number' },
-      ],
+      fields: this.extendFields(
+        [
+          { key: 'label', label: 'Bezeichnung', type: 'text' },
+          {
+            key: 'category',
+            label: 'Kategorie',
+            type: 'select',
+            options: [
+              { label: 'Lokomotive', value: 'Lokomotive' },
+              { label: 'Wagen', value: 'Wagen' },
+              { label: 'Triebzug', value: 'Triebzug' },
+            ],
+          },
+          { key: 'capacity', label: 'Kapazität (Sitzplätze)', type: 'number' },
+        ],
+        'vehicle-types',
+        definitions,
+      ),
       items: this.data.vehicleTypes,
     };
   }
 
-  private buildVehicleCompositionsCategory(): MasterDataCategoryConfig<
+  private buildVehicleCompositionsCategory(
+    definitions: CustomAttributeState,
+  ): MasterDataCategoryConfig<
     VehicleComposition & { entriesSerialized: string }
   > {
     const items = this.data.vehicleCompositions.map((composition) => ({
       ...composition,
       entriesSerialized: this.serializeCompositionEntries(composition.entries),
     }));
+
+    const customFields = this.mapCustomFields('vehicle-compositions', definitions);
+    const customKeys = customFields.map((field) => field.key);
 
     return {
       id: 'vehicle-compositions',
@@ -498,11 +521,13 @@ export class MasterDataLandingComponent {
           type: 'textarea',
           hint: 'Format: <Typ-ID>:<Anzahl> pro Zeile, z. B. VT-TRAXX-AC3:1',
         },
+        ...customFields,
       ],
       items,
       toFormValue: (item) => ({
         ...item,
         entriesSerialized: item.entriesSerialized,
+        ...this.extractCustomValues(item as unknown as Record<string, unknown>, customKeys),
       }),
       fromFormValue: (value, previous) => {
         const entriesSerialized = String(value['entriesSerialized'] ?? '');
@@ -512,6 +537,7 @@ export class MasterDataLandingComponent {
           name: String(value['name'] ?? ''),
           entries,
           entriesSerialized,
+          ...this.pickCustomValues(value, customKeys),
         };
       },
     };
@@ -608,5 +634,84 @@ export class MasterDataLandingComponent {
         };
       })
       .filter((entry) => entry.typeId.length > 0);
+  }
+
+  private extendFields(
+    baseFields: MasterDataFieldConfig[],
+    entityId: string,
+    definitions: CustomAttributeState,
+  ): MasterDataFieldConfig[] {
+    const customFields = this.mapCustomFields(entityId, definitions);
+    if (customFields.length === 0) {
+      return baseFields;
+    }
+    return [...baseFields, ...customFields];
+  }
+
+  private mapCustomFields(
+    entityId: string,
+    definitions: CustomAttributeState,
+  ): MasterDataFieldConfig[] {
+    const entries = definitions[entityId] ?? [];
+    return entries.map((definition) => ({
+      key: definition.key,
+      label: definition.label,
+      type: this.mapPrimitiveToFieldType(definition.type),
+      hint: definition.description,
+      placeholder: this.placeholderForCustomType(definition.type),
+      custom: true,
+    }));
+  }
+
+  private mapPrimitiveToFieldType(type: CustomAttributePrimitiveType): MasterDataFieldType {
+    switch (type) {
+      case 'number':
+        return 'number';
+      case 'boolean':
+        return 'boolean';
+      case 'date':
+        return 'date';
+      case 'time':
+        return 'time';
+      default:
+        return 'text';
+    }
+  }
+
+  private placeholderForCustomType(type: CustomAttributePrimitiveType): string | undefined {
+    switch (type) {
+      case 'time':
+        return 'HH:MM';
+      case 'date':
+        return 'JJJJ-MM-TT';
+      case 'number':
+        return '0';
+      default:
+        return undefined;
+    }
+  }
+
+  private extractCustomValues(
+    source: Record<string, unknown>,
+    keys: string[],
+  ): Record<string, unknown> {
+    return keys.reduce<Record<string, unknown>>((accumulator, key) => {
+      if (Object.prototype.hasOwnProperty.call(source, key)) {
+        accumulator[key] = source[key];
+      }
+      return accumulator;
+    }, {});
+  }
+
+  private pickCustomValues(
+    source: Record<string, unknown>,
+    keys: string[],
+  ): Record<string, unknown> {
+    return keys.reduce<Record<string, unknown>>((accumulator, key) => {
+      if (Object.prototype.hasOwnProperty.call(source, key)) {
+        accumulator[key] = source[key];
+      }
+      return accumulator;
+    }, {});
   }
 }

@@ -3,8 +3,8 @@ import { OrderListComponent } from './features/orders/order-list/order-list.comp
 import { BusinessListComponent } from './features/business/business-list.component';
 import { TrainPlanListComponent } from './features/train-plans/train-plan-list.component';
 import { TemplatesPageComponent } from './features/templates/templates-page.component';
-import { PlanningDashboardComponent } from './features/planning/planning-dashboard.component';
 import { MasterDataLandingComponent } from './features/master-data/master-data-landing.component';
+import { CustomAttributeSettingsComponent } from './features/settings/custom-attribute-settings.component';
 
 export const routes: Routes = [
   {
@@ -33,7 +33,10 @@ export const routes: Routes = [
   },
   {
     path: 'planning',
-    component: PlanningDashboardComponent,
+    loadComponent: () =>
+      import('./features/planning/planning-dashboard.component').then(
+        (m) => m.PlanningDashboardComponent,
+      ),
     title: 'Planung',
     data: { section: 'planning' },
   },
@@ -42,6 +45,20 @@ export const routes: Routes = [
     component: MasterDataLandingComponent,
     title: 'Stammdaten',
     data: { section: 'master-data' },
+  },
+  {
+    path: 'settings',
+    component: CustomAttributeSettingsComponent,
+    title: 'Einstellungen',
+    data: { section: 'settings' },
+  },
+  {
+    path: 'master',
+    redirectTo: 'master-data',
+  },
+  {
+    path: 'legacy-master',
+    redirectTo: 'master-data',
   },
   { path: '**', redirectTo: '' },
 ];

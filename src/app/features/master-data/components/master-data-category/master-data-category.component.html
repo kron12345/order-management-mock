@@ -47,7 +47,7 @@
       <tr mat-header-row *matHeaderRowDef="displayedColumns()"></tr>
       <tr
         mat-row
-        *matRowDef="let row; columns: displayedColumns(); trackBy: trackById"
+        *matRowDef="let row; columns: displayedColumns()"
         (click)="handleSelect(row.id)"
         [class.is-active]="row.id === selectedId()"
       ></tr>
@@ -109,23 +109,59 @@
                 </div>
               </ng-template>
 
-              <ng-container
-                [ngTemplateOutlet]="timelineEntry"
-                [ngTemplateOutletContext]="{
-                  index: 0,
-                  removable: timelineControls.length > 1
-                }"
-              ></ng-container>
+              <div class="md-category__timeline-row">
+                <ng-container
+                  [ngTemplateOutlet]="timelineEntry"
+                  [ngTemplateOutletContext]="{
+                    index: 0,
+                    removable: timelineControls.length > 1
+                  }"
+                ></ng-container>
 
-              <div
-                class="md-category__timeline-history-toggle"
-                *ngIf="timelineControls.length > 1"
-              >
-                <button mat-button type="button" (click)="toggleTemporalHistory(field.key)">
-                  <mat-icon fontIcon="history"></mat-icon>
-                  {{ isTemporalHistoryVisible(field.key) ? 'Historie verbergen' : 'Historie anzeigen' }}
-                </button>
+                <div class="md-category__timeline-actions">
+                  <button
+                    mat-icon-button
+                    type="button"
+                    class="md-category__timeline-action"
+                    [disabled]="timelineControls.length <= 1"
+                    (click)="toggleTemporalHistory(field.key)"
+                    [attr.aria-label]="
+                      isTemporalHistoryVisible(field.key)
+                        ? 'Historie verbergen'
+                        : 'Historie anzeigen'
+                    "
+                    [matTooltip]="
+                      timelineControls.length <= 1
+                        ? 'Keine Historie vorhanden'
+                        : isTemporalHistoryVisible(field.key)
+                          ? 'Historie verbergen'
+                          : 'Historie anzeigen'
+                    "
+                    [matTooltipDisabled]="timelineControls.length <= 1"
+                  >
+                    <mat-icon
+                      [fontIcon]="
+                        isTemporalHistoryVisible(field.key)
+                          ? 'history_toggle_off'
+                          : 'history'
+                      "
+                    ></mat-icon>
+                  </button>
+
+                  <button
+                    mat-icon-button
+                    type="button"
+                    class="md-category__timeline-action"
+                    (click)="addTemporalEntry(field)"
+                    aria-label="Zeitraum hinzufügen"
+                    matTooltip="Zeitraum hinzufügen"
+                  >
+                    <mat-icon fontIcon="add"></mat-icon>
+                  </button>
+                </div>
               </div>
+
+              <span class="md-category__timeline-hint" *ngIf="field.hint">{{ field.hint }}</span>
 
               <div
                 class="md-category__timeline-history"
@@ -142,14 +178,6 @@
                 </ng-container>
               </div>
 
-              <div class="md-category__timeline-actions">
-                <button mat-stroked-button type="button" (click)="addTemporalEntry(field)">
-                  <mat-icon fontIcon="add"></mat-icon>
-                  Zeitraum hinzufügen
-                </button>
-                <span class="md-category__timeline-hint" *ngIf="field.hint">{{ field.hint }}</span>
-              </div>
-
               <div
                 class="md-category__timeline-error"
                 *ngIf="timelineControls.invalid && (timelineControls.dirty || timelineControls.touched) && timelineControls.errors as errors"
@@ -163,57 +191,188 @@
           </ng-container>
 
           <ng-template #regularField>
-            <mat-form-field appearance="outline">
-              <mat-label>{{ field.label }}</mat-label>
-
+            <div class="md-category__field" [class.md-category__field--boolean]="field.type === 'boolean'">
               <ng-container [ngSwitch]="field.type">
-                <input
-                  *ngSwitchCase="'text'"
-                  matInput
-                  [formControlName]="field.key"
-                  [placeholder]="field.placeholder ?? ''"
-                />
+                <mat-form-field appearance="outline" *ngSwitchCase="'text'">
+                  <mat-label>{{ field.label }}</mat-label>
+                  <input
+                    matInput
+                    [formControlName]="field.key"
+                    [placeholder]="field.placeholder ?? ''"
+                  />
+                  <button
+                    mat-icon-button
+                    matSuffix
+                    type="button"
+                    class="md-category__field-clear"
+                    *ngIf="canClearField(field)"
+                    [disabled]="isFieldEmpty(field)"
+                    (click)="clearField(field)"
+                    aria-label="Feld leeren"
+                    matTooltip="Feld leeren"
+                  >
+                    <mat-icon fontIcon="close"></mat-icon>
+                  </button>
+                  <mat-hint *ngIf="field.hint">{{ field.hint }}</mat-hint>
+                </mat-form-field>
 
-                <textarea
-                  *ngSwitchCase="'textarea'"
-                  matInput
-                  [formControlName]="field.key"
-                  [placeholder]="field.placeholder ?? ''"
-                  rows="3"
-                ></textarea>
+                <mat-form-field appearance="outline" *ngSwitchCase="'textarea'">
+                  <mat-label>{{ field.label }}</mat-label>
+                  <textarea
+                    matInput
+                    [formControlName]="field.key"
+                    [placeholder]="field.placeholder ?? ''"
+                    rows="3"
+                  ></textarea>
+                  <button
+                    mat-icon-button
+                    matSuffix
+                    type="button"
+                    class="md-category__field-clear"
+                    *ngIf="canClearField(field)"
+                    [disabled]="isFieldEmpty(field)"
+                    (click)="clearField(field)"
+                    aria-label="Feld leeren"
+                    matTooltip="Feld leeren"
+                  >
+                    <mat-icon fontIcon="close"></mat-icon>
+                  </button>
+                  <mat-hint *ngIf="field.hint">{{ field.hint }}</mat-hint>
+                </mat-form-field>
 
-                <input
-                  *ngSwitchCase="'number'"
-                  matInput
-                  type="number"
-                  [formControlName]="field.key"
-                  [placeholder]="field.placeholder ?? ''"
-                />
+                <mat-form-field appearance="outline" *ngSwitchCase="'number'">
+                  <mat-label>{{ field.label }}</mat-label>
+                  <input
+                    matInput
+                    type="number"
+                    [formControlName]="field.key"
+                    [placeholder]="field.placeholder ?? ''"
+                  />
+                  <button
+                    mat-icon-button
+                    matSuffix
+                    type="button"
+                    class="md-category__field-clear"
+                    *ngIf="canClearField(field)"
+                    [disabled]="isFieldEmpty(field)"
+                    (click)="clearField(field)"
+                    aria-label="Feld leeren"
+                    matTooltip="Feld leeren"
+                  >
+                    <mat-icon fontIcon="close"></mat-icon>
+                  </button>
+                  <mat-hint *ngIf="field.hint">{{ field.hint }}</mat-hint>
+                </mat-form-field>
 
-                <mat-select
-                  *ngSwitchCase="'select'"
-                  [formControlName]="field.key"
-                  [placeholder]="field.placeholder ?? ''"
-                >
-                  <mat-option *ngFor="let option of fieldOptions(field)" [value]="option.value">
-                    {{ option.label }}
-                  </mat-option>
-                </mat-select>
+                <mat-form-field appearance="outline" *ngSwitchCase="'date'">
+                  <mat-label>{{ field.label }}</mat-label>
+                  <input
+                    matInput
+                    type="date"
+                    [formControlName]="field.key"
+                    [placeholder]="field.placeholder ?? ''"
+                  />
+                  <button
+                    mat-icon-button
+                    matSuffix
+                    type="button"
+                    class="md-category__field-clear"
+                    *ngIf="canClearField(field)"
+                    [disabled]="isFieldEmpty(field)"
+                    (click)="clearField(field)"
+                    aria-label="Feld leeren"
+                    matTooltip="Feld leeren"
+                  >
+                    <mat-icon fontIcon="close"></mat-icon>
+                  </button>
+                  <mat-hint *ngIf="field.hint">{{ field.hint }}</mat-hint>
+                </mat-form-field>
 
-                <mat-select
-                  *ngSwitchCase="'multiselect'"
-                  [formControlName]="field.key"
-                  [placeholder]="field.placeholder ?? ''"
-                  multiple
-                >
-                  <mat-option *ngFor="let option of fieldOptions(field)" [value]="option.value">
-                    {{ option.label }}
-                  </mat-option>
-                </mat-select>
+                <mat-form-field appearance="outline" *ngSwitchCase="'time'">
+                  <mat-label>{{ field.label }}</mat-label>
+                  <input
+                    matInput
+                    type="time"
+                    [formControlName]="field.key"
+                    [placeholder]="field.placeholder ?? ''"
+                  />
+                  <button
+                    mat-icon-button
+                    matSuffix
+                    type="button"
+                    class="md-category__field-clear"
+                    *ngIf="canClearField(field)"
+                    [disabled]="isFieldEmpty(field)"
+                    (click)="clearField(field)"
+                    aria-label="Feld leeren"
+                    matTooltip="Feld leeren"
+                  >
+                    <mat-icon fontIcon="close"></mat-icon>
+                  </button>
+                  <mat-hint *ngIf="field.hint">{{ field.hint }}</mat-hint>
+                </mat-form-field>
+
+                <mat-form-field appearance="outline" *ngSwitchCase="'select'">
+                  <mat-label>{{ field.label }}</mat-label>
+                  <mat-select
+                    [formControlName]="field.key"
+                    [placeholder]="field.placeholder ?? ''"
+                  >
+                    <mat-option *ngFor="let option of fieldOptions(field)" [value]="option.value">
+                      {{ option.label }}
+                    </mat-option>
+                  </mat-select>
+                  <button
+                    mat-icon-button
+                    matSuffix
+                    type="button"
+                    class="md-category__field-clear"
+                    *ngIf="canClearField(field)"
+                    [disabled]="isFieldEmpty(field)"
+                    (click)="clearField(field)"
+                    aria-label="Feld leeren"
+                    matTooltip="Feld leeren"
+                  >
+                    <mat-icon fontIcon="close"></mat-icon>
+                  </button>
+                  <mat-hint *ngIf="field.hint">{{ field.hint }}</mat-hint>
+                </mat-form-field>
+
+                <mat-form-field appearance="outline" *ngSwitchCase="'multiselect'">
+                  <mat-label>{{ field.label }}</mat-label>
+                  <mat-select
+                    [formControlName]="field.key"
+                    [placeholder]="field.placeholder ?? ''"
+                    multiple
+                  >
+                    <mat-option *ngFor="let option of fieldOptions(field)" [value]="option.value">
+                      {{ option.label }}
+                    </mat-option>
+                  </mat-select>
+                  <button
+                    mat-icon-button
+                    matSuffix
+                    type="button"
+                    class="md-category__field-clear"
+                    *ngIf="canClearField(field)"
+                    [disabled]="isFieldEmpty(field)"
+                    (click)="clearField(field)"
+                    aria-label="Feld leeren"
+                    matTooltip="Feld leeren"
+                  >
+                    <mat-icon fontIcon="close"></mat-icon>
+                  </button>
+                  <mat-hint *ngIf="field.hint">{{ field.hint }}</mat-hint>
+                </mat-form-field>
+
+                <div class="md-category__boolean-field" *ngSwitchCase="'boolean'">
+                  <mat-slide-toggle [formControlName]="field.key">
+                    {{ field.label }}
+                  </mat-slide-toggle>
+                  <span class="md-category__boolean-hint" *ngIf="field.hint">{{ field.hint }}</span>
+                </div>
               </ng-container>
-
-              <mat-hint *ngIf="field.hint">{{ field.hint }}</mat-hint>
-            </mat-form-field>
+            </div>
           </ng-template>
         </ng-container>
       </div>

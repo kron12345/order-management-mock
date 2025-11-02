@@ -12,7 +12,7 @@ import { filter } from 'rxjs';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { MATERIAL_IMPORTS } from './core/material.imports.imports';
 
-type AppSection = 'manager' | 'planning' | 'master-data';
+type AppSection = 'manager' | 'planning' | 'master-data' | 'settings';
 
 @Component({
   selector: 'app-root',
@@ -82,6 +82,8 @@ export class AppComponent {
         return 'Planung';
       case 'master-data':
         return 'Stammdaten';
+      case 'settings':
+        return 'Einstellungen';
       default:
         return 'Auftragsmanager';
     }

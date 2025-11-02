@@ -2,6 +2,16 @@
 
 This project was generated with [Angular CLI](https://github.com/angular/angular-cli) version 18.2.11 and erweitert um einen planungsfähigen Gantt-Bereich für Ressourcen- und Aktivitätsplanung.
 
+## Wie starten?
+
+1. `npm install`
+2. `npm start`
+3. Browser öffnen unter `http://localhost:4200/`
+4. Für den bestehenden Ressourcen-Gantt links „Planung“ anwählen.
+5. Die Planungs-Masterdaten finden Sie jetzt unter „Stammdaten“ → Tab „Topologie“.
+
+Der Vite-Dev-Server kompiliert im Strict-Modus (Angular Signals + Standalone Components). Anpassungen an Store/Editoren werden ohne Neustart sofort sichtbar.
+
 ## Planungsgantt ausprobieren
 
 1. `npm install`
@@ -26,6 +36,26 @@ Der Gantt-Bereich zeigt 30 Demo-Ressourcen mit über 1 000 Aktivitäten. Linke
 - Ticks und Raster passen sich der Zoomstufe an (Monat → Tage, Woche/Tag → Stunden, Stunde → 15/5-Minuten).
 - Wochenenden werden als graue Bänder hervorgehoben, die aktuelle Zeit als rote Linie.
 - Ressourcenfilter durchsucht ID, Namen und Attribute.
+
+## Masterdaten für Planung (RINF/SEV)
+
+Innerhalb der Stammdaten (Tab „Topologie“) steht ein tab-basiertes Backend-loses CRUD-Frontend bereit. Folgende Domänen werden unterstützt:
+
+- Operational Points (RINF-Knoten) inkl. Geokoordinaten.
+- Sections of Line (gerichtete Kanten) mit Validierung start≠end.
+- Personnel Sites (Personalstandorte) mit optionalem OP-Bezug.
+- Replacement Stops & Routes inklusive Edges (SEV-Topologie).
+- OP ↔ Replacement Stop Links (Relationen gemäß Vorgaben).
+- Transfer Edges (Umsteigewege) zwischen OP/Sites/SEV.
+
+Die Datenspeicherung erfolgt rein im Browser über `PlanningStoreService` (Signals). Mockdaten werden beim ersten Öffnen per `loadMockData()` geladen.
+
+## Wie Daten erweitern?
+
+- **In-Memory Store:** `src/app/shared/planning-store.service.ts` bietet CRUD-Methoden pro Entität sowie Kaskadenlogik (z. B. Löschen von abhängigen Edges). Für Backend-Anbindung können die Methoden 1:1 an HTTP-Aufrufe adaptiert werden.
+- **Initialdaten:** `src/app/shared/planning-mocks.ts` enthält ein kleines Demo-Netz inkl. SEV. Eigene Datensätze einfach ergänzen oder per Store-Methoden nachladen.
+- **Datenmodell:** Alle Typen, Enums und Regeln liegen in `src/app/shared/planning-types.ts`. Bei Erweiterungen (z. B. weitere TransferModes) hier ergänzen.
+- **UI-Module:** Die Tab-Editoren leben unter `src/app/planning/components`. Jeder Editor kapselt Listen-UI + Formular inkl. Validierung. Neue Domänen lassen sich durch Kopieren eines Editors schnell ergänzen.
 
 ## Development server
 

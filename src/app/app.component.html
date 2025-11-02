@@ -52,6 +52,9 @@
         <a mat-button routerLink="/master-data" [class.active]="section() === 'master-data'">
           Stammdaten
         </a>
+        <a mat-button routerLink="/settings" [class.active]="section() === 'settings'">
+          Einstellungen
+        </a>
       </nav>
       <span class="spacer"></span>
       <button mat-icon-button matTooltip="Benachrichtigungen">
@@ -70,7 +73,9 @@
     </div>
 
     <mat-menu #menu="matMenu">
-      <button mat-menu-item><mat-icon>settings</mat-icon>Einstellungen</button>
+      <button mat-menu-item routerLink="/settings">
+        <mat-icon>settings</mat-icon>Einstellungen
+      </button>
       <button mat-menu-item disabled>
         <mat-icon>help_outline</mat-icon>Hilfe
       </button>

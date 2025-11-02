@@ -10,6 +10,9 @@ export interface PersonnelService {
   description?: string;
   requiredQualifications?: string[];
   poolId?: string;
+  startTime?: string;
+  endTime?: string;
+  isNightService?: boolean;
 }
 
 export interface PersonnelServicePool {
@@ -17,6 +20,8 @@ export interface PersonnelServicePool {
   name: string;
   description?: string;
   serviceIds: string[];
+  shiftCoordinator?: string;
+  contactEmail?: string;
 }
 
 export interface Personnel {
@@ -27,6 +32,10 @@ export interface Personnel {
   qualifications?: string[];
   serviceIds?: string[];
   poolId?: string;
+  homeStation?: string;
+  availabilityStatus?: string;
+  qualificationExpires?: string;
+  isReserve?: boolean;
 }
 
 export interface PersonnelPool {
@@ -34,6 +43,7 @@ export interface PersonnelPool {
   name: string;
   description?: string;
   personnelIds: string[];
+  locationCode?: string;
 }
 
 export interface VehicleService {
@@ -42,6 +52,10 @@ export interface VehicleService {
   description?: string;
   requiredVehicleTypeIds?: string[];
   poolId?: string;
+  startTime?: string;
+  endTime?: string;
+  isOvernight?: boolean;
+  primaryRoute?: string;
 }
 
 export interface VehicleServicePool {
@@ -49,6 +63,7 @@ export interface VehicleServicePool {
   name: string;
   description?: string;
   serviceIds: string[];
+  dispatcher?: string;
 }
 
 export interface VehicleType {
@@ -56,6 +71,10 @@ export interface VehicleType {
   label: string;
   category?: string;
   capacity?: number;
+  maxSpeed?: number;
+  maintenanceIntervalDays?: number;
+  energyType?: string;
+  manufacturer?: string;
 }
 
 export interface Vehicle {
@@ -66,6 +85,11 @@ export interface Vehicle {
   serviceIds?: string[];
   description?: string;
   poolId?: string;
+  hasWifi?: boolean;
+  fleetStatus?: string;
+  lastInspectionDate?: string;
+  rangeKm?: number;
+  seatReservation?: boolean;
 }
 
 export interface VehiclePool {
@@ -73,6 +97,7 @@ export interface VehiclePool {
   name: string;
   description?: string;
   vehicleIds: string[];
+  depotManager?: string;
 }
 
 export interface VehicleCompositionEntry {
@@ -84,4 +109,6 @@ export interface VehicleComposition {
   id: string;
   name: string;
   entries: VehicleCompositionEntry[];
+  turnaroundBuffer?: string;
+  remark?: string;
 }

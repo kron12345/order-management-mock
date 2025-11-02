@@ -5,6 +5,7 @@ import { MatIconModule } from '@angular/material/icon';
 import {
   MasterDataCategorySection,
   MasterDataHierarchySection,
+  MasterDataComponentSection,
   MasterDataSection,
   MasterDataTabConfig,
 } from '../../master-data.types';
@@ -42,5 +43,9 @@ export class MasterDataLayoutComponent {
 
   protected isHierarchySection(section: MasterDataSection): section is MasterDataHierarchySection {
     return section.type === 'hierarchy';
+  }
+
+  protected isComponentSection(section: MasterDataSection): section is MasterDataComponentSection {
+    return section.type === 'component';
   }
 }

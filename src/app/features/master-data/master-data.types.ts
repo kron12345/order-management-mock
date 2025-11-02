@@ -1,6 +1,15 @@
+import { Type } from '@angular/core';
 import { TemporalValue } from '../../models/master-data';
 
-export type MasterDataFieldType = 'text' | 'textarea' | 'number' | 'select' | 'multiselect';
+export type MasterDataFieldType =
+  | 'text'
+  | 'textarea'
+  | 'number'
+  | 'select'
+  | 'multiselect'
+  | 'boolean'
+  | 'date'
+  | 'time';
 export type MasterDataTemporalValue<T = unknown> = TemporalValue<T>;
 
 export interface MasterDataOption {
@@ -17,6 +26,7 @@ export interface MasterDataFieldConfig {
   readonly?: boolean;
   options?: MasterDataOption[];
   temporal?: boolean;
+  custom?: boolean;
 }
 
 export interface MasterDataTableColumn<T extends Record<string, unknown> = Record<string, unknown>> {
@@ -65,7 +75,16 @@ export interface MasterDataHierarchySection extends MasterDataSectionBase {
   config: MasterDataHierarchyConfig<any, any>;
 }
 
-export type MasterDataSection = MasterDataCategorySection | MasterDataHierarchySection;
+export interface MasterDataComponentSection extends MasterDataSectionBase {
+  type: 'component';
+  component: Type<unknown>;
+  inputs?: Record<string, unknown>;
+}
+
+export type MasterDataSection =
+  | MasterDataCategorySection
+  | MasterDataHierarchySection
+  | MasterDataComponentSection;
 
 export interface MasterDataTabConfig {
   id: string;

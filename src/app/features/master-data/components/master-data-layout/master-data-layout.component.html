@@ -23,7 +23,7 @@
 
         <div class="md-layout__sections">
           <ng-container *ngFor="let section of tab.sections">
-            <ng-container *ngIf="isCategorySection(section); else hierarchySection">
+            <ng-container *ngIf="isComponentSection(section); else regularSection">
               <div class="md-layout__section" [attr.data-section-id]="section.id">
                 <header
                   *ngIf="section.title || section.description"
@@ -32,14 +32,31 @@
                   <h3 *ngIf="section.title">{{ section.title }}</h3>
                   <p *ngIf="section.description">{{ section.description }}</p>
                 </header>
-                <app-master-data-category [config]="section.config" />
+                <ng-container
+                  *ngComponentOutlet="section.component; inputs: section.inputs ?? {}"
+                ></ng-container>
               </div>
             </ng-container>
 
-            <ng-template #hierarchySection>
-              <ng-container *ngIf="isHierarchySection(section)">
-                <app-master-data-hierarchy-section [config]="section.config" />
+            <ng-template #regularSection>
+              <ng-container *ngIf="isCategorySection(section); else hierarchySection">
+                <div class="md-layout__section" [attr.data-section-id]="section.id">
+                  <header
+                    *ngIf="section.title || section.description"
+                    class="md-layout__section-header"
+                  >
+                    <h3 *ngIf="section.title">{{ section.title }}</h3>
+                    <p *ngIf="section.description">{{ section.description }}</p>
+                  </header>
+                  <app-master-data-category [config]="section.config" />
+                </div>
               </ng-container>
+
+              <ng-template #hierarchySection>
+                <ng-container *ngIf="isHierarchySection(section)">
+                  <app-master-data-hierarchy-section [config]="section.config" />
+                </ng-container>
+              </ng-template>
             </ng-template>
           </ng-container>
         </div>

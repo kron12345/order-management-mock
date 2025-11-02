@@ -1,6 +1,6 @@
 <div class="gantt-timeline-row" [class.gantt-timeline-row--zebra]="zebra">
   <div class="gantt-timeline-row__canvas" [style.width.px]="contentWidth">
-    @for (segment of backgroundSegments; track segment.left) {
+    @for (segment of backgroundSegments; track segment.left + ':' + segment.width + ':' + segment.cssClass) {
       <div
         class="gantt-timeline-row__background"
         [ngClass]="segment.cssClass"
