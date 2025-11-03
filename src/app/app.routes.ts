@@ -5,6 +5,7 @@ import { TrainPlanListComponent } from './features/train-plans/train-plan-list.c
 import { TemplatesPageComponent } from './features/templates/templates-page.component';
 import { MasterDataLandingComponent } from './features/master-data/master-data-landing.component';
 import { CustomAttributeSettingsComponent } from './features/settings/custom-attribute-settings.component';
+import { TimetableManagerComponent } from './features/timetable-manager/timetable-manager.component';
 
 export const routes: Routes = [
   {
@@ -23,6 +24,12 @@ export const routes: Routes = [
     path: 'templates',
     component: TemplatesPageComponent,
     title: 'Vorlagen',
+    data: { section: 'manager' },
+  },
+  {
+    path: 'fahrplanmanager',
+    component: TimetableManagerComponent,
+    title: 'Fahrplanmanager',
     data: { section: 'manager' },
   },
   {

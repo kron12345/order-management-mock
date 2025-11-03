@@ -1,0 +1,337 @@
+<section class="page-header">
+  <div>
+    <h1>Fahrplanmanager</h1>
+    <p class="subtitle">
+      Verwalte kommerzielle TTT-Zeiten und betriebliche Fahrzeiten für GANTT und Disposition.
+    </p>
+  </div>
+  <button mat-flat-button color="primary" type="button" (click)="createTimetable()">
+    <mat-icon>add</mat-icon>
+    Fahrplan anlegen
+  </button>
+</section>
+
+<section class="filter-bar">
+  <mat-form-field appearance="outline" class="search-field">
+    <mat-label>Suchen (RefTrainID, OPN, Zugnummer, Quelle)</mat-label>
+    <mat-icon matPrefix>search</mat-icon>
+    <input matInput [formControl]="searchControl" placeholder="z. B. TT-2025-0001 oder OPN-4711" />
+  </mat-form-field>
+
+  <mat-form-field appearance="outline">
+    <mat-label>Status</mat-label>
+    <mat-select
+      [value]="filters().status"
+      (valueChange)="onStatusFilterChange($event)"
+    >
+      <mat-option *ngFor="let option of statusOptions" [value]="option.value">
+        {{ option.label }}
+      </mat-option>
+    </mat-select>
+  </mat-form-field>
+
+  <mat-form-field appearance="outline">
+    <mat-label>Quelle</mat-label>
+    <mat-select
+      [value]="filters().source"
+      (valueChange)="onSourceFilterChange($event)"
+    >
+      <mat-option *ngFor="let option of sourceOptions" [value]="option.value">
+        {{ option.label }}
+      </mat-option>
+    </mat-select>
+  </mat-form-field>
+
+  <mat-form-field appearance="outline">
+    <mat-label>Verantwortliches RU</mat-label>
+    <mat-select
+      [value]="filters().responsibleRu"
+      (valueChange)="onRuFilterChange($event)"
+    >
+      <mat-option [value]="'all'">Alle RU</mat-option>
+      <mat-option
+        *ngFor="let ru of responsibleRus()"
+        [value]="ru"
+      >
+        {{ ru }}
+      </mat-option>
+    </mat-select>
+  </mat-form-field>
+
+  <mat-form-field appearance="outline">
+    <mat-label>Sortierung</mat-label>
+    <mat-select
+      [value]="sortSelection(sort())"
+      (valueChange)="onSortChange($event)"
+    >
+      <mat-option *ngFor="let option of sortOptions" [value]="option.value">
+        {{ option.label }}
+      </mat-option>
+    </mat-select>
+  </mat-form-field>
+</section>
+
+@if (errorMessage(); as message) {
+  <div class="error-banner">
+    <mat-icon fontIcon="error_outline"></mat-icon>
+    <span>{{ message }}</span>
+  </div>
+}
+
+@if (!timetables().length) {
+  <mat-card class="empty-state" appearance="outlined">
+    <mat-card-content>
+      <mat-icon fontIcon="hourglass_empty"></mat-icon>
+      <div>
+        <h3>Noch keine Fahrpläne vorhanden</h3>
+        <p>Lege einen Fahrplan an, um kommerzielle und betriebliche Zeiten zu verwalten.</p>
+      </div>
+    </mat-card-content>
+  </mat-card>
+} @else {
+  <div class="timetable-list">
+    <mat-accordion multi>
+      <mat-expansion-panel
+        *ngFor="let timetable of timetables(); trackBy: trackByTimetable"
+      >
+        <mat-expansion-panel-header>
+          <div class="panel-header" [ngClass]="timetableStatusClass(timetable)">
+            <div class="panel-header__title">
+              <span class="title">{{ timetable.title }}</span>
+              <span class="subtitle">Zug {{ timetable.trainNumber }} · RefTrainID {{ timetable.refTrainId }}</span>
+            </div>
+            <div class="panel-header__chips">
+              <mat-chip-set>
+                <mat-chip matTooltip="Planungsphase">
+                  <mat-icon fontIcon="{{ phaseChipIcon(timetable.status) }}"></mat-icon>
+                  {{ phaseLabels[timetable.status] }}
+                </mat-chip>
+                <mat-chip matTooltip="Quelle">
+                  <mat-icon fontIcon="link"></mat-icon>
+                  {{ sourceLabels[timetable.source.type] }}
+                </mat-chip>
+                <mat-chip matTooltip="Zugnummer (OPN)">
+                  <mat-icon fontIcon="tag"></mat-icon>
+                  {{ timetable.opn }}
+                </mat-chip>
+              </mat-chip-set>
+            </div>
+          </div>
+        </mat-expansion-panel-header>
+
+        <div class="panel-content">
+          <div class="meta-grid">
+            <div>
+              <label>RefTrainID</label>
+              <span>{{ timetable.refTrainId }}</span>
+            </div>
+            <div>
+              <label>Zugnummer</label>
+              <span>{{ timetable.trainNumber }}</span>
+            </div>
+            <div>
+              <label>OPN</label>
+              <span>{{ timetable.opn }}</span>
+            </div>
+            <div>
+              <label>Verantwortliches RU</label>
+              <span>{{ timetable.responsibleRu }}</span>
+            </div>
+            <div>
+              <label>Gültigkeit</label>
+              <span>
+                {{ timetable.calendar.validFrom }}
+                –
+                {{ timetable.calendar.validTo ?? 'offen' }}
+              </span>
+            </div>
+            <div>
+              <label>Betriebstage</label>
+              <span>{{ timetable.calendar.daysBitmap }}</span>
+            </div>
+            <div>
+              <label>Quelle</label>
+              <span>
+                {{ sourceLabels[timetable.source.type] }}
+                @if (timetable.source.pathRequestId) {
+                  · {{ timetable.source.pathRequestId }}
+                }
+                @if (timetable.source.frameworkAgreementId) {
+                  · {{ timetable.source.frameworkAgreementId }}
+                }
+                @if (timetable.source.externalSystem) {
+                  · {{ timetable.source.externalSystem }}
+                }
+              </span>
+            </div>
+            <div>
+              <label>Zuletzt aktualisiert</label>
+              <span>{{ timetable.updatedAt | date:'short' }}</span>
+            </div>
+          </div>
+
+          @if (timetable.source.lastMessage) {
+            <mat-card class="info-card" appearance="outlined">
+              <mat-card-content>
+                <mat-icon fontIcon="campaign"></mat-icon>
+                <div>
+                  <strong>Letzte Meldung</strong>
+                  <p>{{ timetable.source.lastMessage }}</p>
+                </div>
+              </mat-card-content>
+            </mat-card>
+          }
+
+          <section class="milestones">
+            <div class="section-header">
+              <h3>Prozessmeilensteine</h3>
+            </div>
+            <div class="milestone-list">
+              <div
+                class="milestone-card"
+                *ngFor="let milestone of timetable.milestones"
+                [class]="milestoneStatusClass(milestone)"
+              >
+                <div class="milestone-card__title">
+                  {{ milestone.label }}
+                </div>
+                <div class="milestone-card__meta">
+                  <mat-icon *ngIf="milestone.status === 'completed'" fontIcon="check_circle"></mat-icon>
+                  <mat-icon *ngIf="milestone.status === 'in_progress'" fontIcon="schedule"></mat-icon>
+                  <mat-icon *ngIf="milestone.status === 'blocked'" fontIcon="block"></mat-icon>
+                  <mat-icon *ngIf="milestone.status === 'open'" fontIcon="flag"></mat-icon>
+                  <span>
+                    @switch (milestone.status) {
+                      @case ('completed') { Abgeschlossen }
+                      @case ('in_progress') { In Arbeit }
+                      @case ('blocked') { Blockiert }
+                      @default { Offen }
+                    }
+                  </span>
+                </div>
+                <div class="milestone-card__dates">
+                  @if (milestone.dueDate) {
+                    <span>Fällig: {{ milestone.dueDate }}</span>
+                  }
+                  @if (milestone.completedAt) {
+                    <span>Erledigt: {{ milestone.completedAt }}</span>
+                  }
+                </div>
+                @if (milestone.notes) {
+                  <p class="milestone-card__notes">{{ milestone.notes }}</p>
+                }
+              </div>
+            </div>
+          </section>
+
+          <section class="stops-section">
+            <div class="section-header">
+              <h3>Halte & Zeitlagen</h3>
+              <div class="actions">
+                <button mat-stroked-button type="button" (click)="syncOperationalWithCommercial(timetable)">
+                  <mat-icon>sync</mat-icon>
+                  Betriebliche Zeiten synchronisieren
+                </button>
+                <button mat-stroked-button color="primary" type="button" (click)="editStops(timetable)">
+                  <mat-icon>route</mat-icon>
+                  Fahrplan zusammenstellen
+                </button>
+              </div>
+            </div>
+
+            <div class="stop-table-wrapper">
+              <table class="stop-table">
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>Halt</th>
+                    <th>Kommerzielle Zeiten</th>
+                    <th>Betriebliche Zeiten</th>
+                    <th>Delta</th>
+                    <th>Aktivitäten</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr *ngFor="let stop of timetable.stops; trackBy: trackByStop">
+                    <td>{{ stop.sequence }}</td>
+                    <td>
+                      <div class="stop-location">
+                        <strong>{{ stop.locationName }}</strong>
+                        <small>{{ stop.locationCode }}</small>
+                      </div>
+                    </td>
+                    <td>
+                      <div class="time-block">
+                        <div>
+                          <label>Ankunft</label>
+                          <span>{{ formatTime({ time: stop.commercial.arrivalTime, offset: stop.commercial.arrivalOffsetDays }) }}</span>
+                        </div>
+                        <div>
+                          <label>Abfahrt</label>
+                          <span>{{ formatTime({ time: stop.commercial.departureTime, offset: stop.commercial.departureOffsetDays }) }}</span>
+                        </div>
+                      </div>
+                    </td>
+                    <td>
+                      <div class="time-block">
+                        <div>
+                          <label>Ankunft</label>
+                          <span>{{ formatTime({ time: stop.operational.arrivalTime, offset: stop.operational.arrivalOffsetDays }) }}</span>
+                        </div>
+                        <div>
+                          <label>Abfahrt</label>
+                          <span>{{ formatTime({ time: stop.operational.departureTime, offset: stop.operational.departureOffsetDays }) }}</span>
+                        </div>
+                        @if (stop.operational.remarks) {
+                          <div class="remarks">{{ stop.operational.remarks }}</div>
+                        }
+                      </div>
+                    </td>
+                    <td>
+                      <div class="delta-block">
+                        <span class="delta" [class]="deltaClass(arrivalDelta(stop))">
+                          {{ arrivalDelta(stop) ?? '–' }}
+                        </span>
+                        <span class="delta" [class]="deltaClass(departureDelta(stop))">
+                          {{ departureDelta(stop) ?? '–' }}
+                        </span>
+                      </div>
+                    </td>
+                    <td>
+                      <span class="activities">
+                        {{ stop.activities.join(', ') }}
+                      </span>
+                    </td>
+                    <td>
+                      <button
+                        mat-icon-button
+                        matTooltip="Betriebliche Zeiten bearbeiten"
+                        type="button"
+                        (click)="editOperationalStop(timetable, stop)"
+                      >
+                        <mat-icon>edit</mat-icon>
+                      </button>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          @if (timetable.notes) {
+            <mat-card class="notes-card" appearance="outlined">
+              <mat-card-content>
+                <mat-icon fontIcon="sticky_note_2"></mat-icon>
+                <div>
+                  <strong>Notizen</strong>
+                  <p>{{ timetable.notes }}</p>
+                </div>
+              </mat-card-content>
+            </mat-card>
+          }
+        </div>
+      </mat-expansion-panel>
+    </mat-accordion>
+  </div>
+}

@@ -22,10 +22,15 @@
           <span matListItemTitle>Vorlagen</span>
           <span matListItemLine>Fahrpläne & Kalender</span>
         </a>
-        <a mat-list-item routerLink="/plans" routerLinkActive="active">
-          <mat-icon matListItemIcon>train</mat-icon>
-          <span matListItemTitle>Fahrpläne</span>
-          <span matListItemLine>Züge & Path Requests</span>
+        <a
+          mat-list-item
+          routerLink="/fahrplanmanager"
+          routerLinkActive="active"
+          [routerLinkActiveOptions]="{ exact: true }"
+        >
+          <mat-icon matListItemIcon>event</mat-icon>
+          <span matListItemTitle>Fahrplanmanager</span>
+          <span matListItemLine>Kommerzielle & Betriebliche Zeiten</span>
         </a>
       </mat-nav-list>
     </mat-sidenav>
