@@ -722,6 +722,15 @@ export class OrderService {
       item.validity && item.validity.length
         ? this.normalizeSegments(item.validity)
         : this.deriveDefaultValidity(item);
+    const originalTimetable = item.originalTimetable
+      ? {
+          ...item.originalTimetable,
+          calendar: { ...item.originalTimetable.calendar },
+          stops: [...(item.originalTimetable.stops ?? [])].map((stop) => ({
+            ...stop,
+          })),
+        }
+      : undefined;
 
     return {
       ...item,
@@ -733,6 +742,9 @@ export class OrderService {
         : undefined,
       linkedTemplateId: item.linkedTemplateId,
       linkedTrainPlanId: item.linkedTrainPlanId,
+      generatedTimetableRefId: item.generatedTimetableRefId,
+      timetablePhase: item.timetablePhase,
+      originalTimetable,
     };
   }
 

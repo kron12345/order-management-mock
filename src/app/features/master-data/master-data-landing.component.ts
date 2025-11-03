@@ -84,6 +84,48 @@ export class MasterDataLandingComponent {
     value: type.id,
   }));
 
+  private readonly tiltingOptions: MasterDataOption[] = [
+    { label: 'Keine', value: 'none' },
+    { label: 'Passiv', value: 'passive' },
+    { label: 'Aktiv', value: 'active' },
+  ];
+
+  private readonly powerSupplyOptions: MasterDataOption[] = [
+    { label: '15 kV / 16.7 Hz AC', value: '15 kV / 16.7 Hz AC' },
+    { label: '25 kV / 50 Hz AC', value: '25 kV / 50 Hz AC' },
+    { label: 'Zugsammelschiene 1000 V AC', value: 'Zugsammelschiene 1000 V AC' },
+    { label: '750 V DC Stromschiene', value: '750 V DC Stromschiene' },
+  ];
+
+  private readonly trainProtectionOptions: MasterDataOption[] = [
+    { label: 'PZB 90', value: 'PZB 90' },
+    { label: 'LZB', value: 'LZB' },
+    { label: 'ETCS Level 2', value: 'ETCS Level 2' },
+    { label: 'ZBS', value: 'ZBS' },
+  ];
+
+  private readonly etcsLevelOptions: MasterDataOption[] = [
+    { label: 'Kein ETCS', value: 'Kein ETCS' },
+    { label: 'ETCS Level 1', value: 'ETCS Level 1' },
+    { label: 'ETCS Level 2 Baseline 3', value: 'ETCS Level 2 Baseline 3' },
+  ];
+
+  private readonly gaugeProfileOptions: MasterDataOption[] = [
+    { label: 'G1', value: 'G1' },
+    { label: 'G2', value: 'G2' },
+    { label: 'GA', value: 'GA' },
+    { label: 'GB1', value: 'GB1' },
+    { label: 'GB2', value: 'GB2' },
+    { label: 'S-Bahn Berlin', value: 'S-Bahn Berlin' },
+  ];
+
+  private readonly brakeTypeOptions: MasterDataOption[] = [
+    { label: 'KE-GPR-E mZ', value: 'KE-GPR-E mZ' },
+    { label: 'KE-GPR mZ', value: 'KE-GPR mZ' },
+    { label: 'KE-RA-Mg', value: 'KE-RA-Mg' },
+    { label: 'KE-R-A (S-Bahn)', value: 'KE-R-A (S-Bahn)' },
+  ];
+
   private readonly customAttributes = inject(CustomAttributeService);
 
   protected readonly tabs = computed<MasterDataTabConfig[]>(() =>
@@ -477,6 +519,54 @@ export class MasterDataLandingComponent {
             ],
           },
           { key: 'capacity', label: 'Kapazität (Sitzplätze)', type: 'number' },
+          {
+            key: 'trainTypeCode',
+            label: 'TTT Train Type',
+            type: 'text',
+            placeholder: 'z. B. LOC-E',
+          },
+          { key: 'lengthMeters', label: 'Länge (m)', type: 'number' },
+          { key: 'weightTons', label: 'Masse (t)', type: 'number' },
+          {
+            key: 'brakeType',
+            label: 'Bremssystem',
+            type: 'select',
+            options: this.brakeTypeOptions,
+          },
+          { key: 'brakePercentage', label: 'Bremshundertstel (%)', type: 'number' },
+          {
+            key: 'tiltingCapability',
+            label: 'Neigetechnik',
+            type: 'select',
+            options: this.tiltingOptions,
+          },
+          {
+            key: 'powerSupplySystems',
+            label: 'Energieversorgung',
+            type: 'multiselect',
+            options: this.powerSupplyOptions,
+          },
+          {
+            key: 'trainProtectionSystems',
+            label: 'Zugsicherungssysteme',
+            type: 'multiselect',
+            options: this.trainProtectionOptions,
+          },
+          {
+            key: 'etcsLevel',
+            label: 'ETCS-Level',
+            type: 'select',
+            options: this.etcsLevelOptions,
+          },
+          {
+            key: 'gaugeProfile',
+            label: 'Lichtraumprofil',
+            type: 'select',
+            options: this.gaugeProfileOptions,
+          },
+          { key: 'maxAxleLoad', label: 'Max. Achslast (t)', type: 'number' },
+          { key: 'noiseCategory', label: 'Lärmkategorie', type: 'text' },
+          { key: 'remarks', label: 'Hinweise', type: 'textarea' },
         ],
         'vehicle-types',
         definitions,

@@ -1,6 +1,27 @@
+import { TimetablePhase } from './timetable.model';
+
 export interface OrderItemValiditySegment {
   startDate: string; // ISO date (YYYY-MM-DD)
   endDate: string; // ISO date (YYYY-MM-DD)
+}
+
+export interface OrderItemTimetableSnapshotStop {
+  sequence: number;
+  locationName: string;
+  arrivalTime?: string;
+  departureTime?: string;
+}
+
+export interface OrderItemTimetableSnapshot {
+  refTrainId: string;
+  title: string;
+  trainNumber: string;
+  calendar: {
+    validFrom: string;
+    validTo?: string;
+    daysBitmap: string;
+  };
+  stops: OrderItemTimetableSnapshotStop[];
 }
 
 export interface OrderItem {
@@ -22,4 +43,7 @@ export interface OrderItem {
   parentItemId?: string;
   childItemIds?: string[];
   versionPath?: number[];
+  generatedTimetableRefId?: string;
+  timetablePhase?: TimetablePhase;
+  originalTimetable?: OrderItemTimetableSnapshot;
 }

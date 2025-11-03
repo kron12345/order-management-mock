@@ -1,5 +1,18 @@
 import { Injectable, computed, signal } from '@angular/core';
-import { Timetable, TimetableMilestone, TimetableSourceInfo, TimetableSourceType, TimetableStop, TimetableStopTiming, TimetablePhase } from '../models/timetable.model';
+import {
+  Timetable,
+  TimetableMilestone,
+  TimetableSourceInfo,
+  TimetableSourceType,
+  TimetableStop,
+  TimetableStopTiming,
+  TimetablePhase,
+  TimetableRollingStock,
+  TimetableCalendarModification,
+  TimetableCalendarVariant,
+  TimetableAuditEntry,
+  TimetableResponsibility,
+} from '../models/timetable.model';
 import { TrainPlanCalendar } from '../models/train-plan.model';
 import { MOCK_TIMETABLES } from '../mock/mock-timetables.mock';
 
@@ -41,6 +54,13 @@ export interface UpdateOperationalTimingPayload {
   remarks?: string;
 }
 
+export interface AppendAuditEntryPayload {
+  actor: string;
+  action: string;
+  notes?: string;
+  relatedEntity?: TimetableAuditEntry['relatedEntity'];
+}
+
 export interface CreateTimetablePayload {
   refTrainId: string;
   opn: string;
@@ -54,6 +74,11 @@ export interface CreateTimetablePayload {
   notes?: string;
   linkedOrderItemId?: string;
   milestones?: TimetableMilestone[];
+  rollingStock?: TimetableRollingStock;
+  calendarModifications?: TimetableCalendarModification[];
+  calendarVariants?: TimetableCalendarVariant[];
+  auditTrail?: TimetableAuditEntry[];
+  responsibilities?: TimetableResponsibility[];
 }
 
 @Injectable({ providedIn: 'root' })
@@ -176,6 +201,11 @@ export class TimetableService {
       updatedAt: timestamp,
       linkedOrderItemId: payload.linkedOrderItemId,
       notes: payload.notes,
+      rollingStock: payload.rollingStock,
+      calendarModifications: payload.calendarModifications,
+      calendarVariants: payload.calendarVariants,
+      auditTrail: payload.auditTrail ?? this.defaultAuditTrail(payload.responsibleRu),
+      responsibilities: payload.responsibilities ?? this.defaultResponsibilities(payload.responsibleRu),
     };
 
     this._timetables.update((current) => [timetable, ...current]);
@@ -203,6 +233,97 @@ export class TimetableService {
     this._timetables.update((current) =>
       current.map((item) => (item.refTrainId === refTrainId ? updated : item)),
     );
+    return updated;
+  }
+
+  updateRollingStock(
+    refTrainId: string,
+    rollingStock: TimetableRollingStock | null | undefined,
+  ): Timetable {
+    const existing = this.getByRefTrainId(refTrainId);
+    if (!existing) {
+      throw new Error('Fahrplan nicht gefunden.');
+    }
+
+    const updated: Timetable = {
+      ...existing,
+      rollingStock: rollingStock ?? undefined,
+      updatedAt: new Date().toISOString(),
+    };
+
+    this._timetables.update((current) =>
+      current.map((item) => (item.refTrainId === refTrainId ? updated : item)),
+    );
+
+    return updated;
+  }
+
+  updateCalendarVariants(
+    refTrainId: string,
+    variants: TimetableCalendarVariant[],
+  ): Timetable {
+    const updated = this.mutateTimetable(refTrainId, (timetable) => ({
+      ...timetable,
+      calendarVariants: variants,
+    }));
+    if (!updated) {
+      throw new Error('Fahrplan nicht gefunden.');
+    }
+    return updated;
+  }
+
+  updateResponsibilities(
+    refTrainId: string,
+    responsibilities: TimetableResponsibility[],
+  ): Timetable {
+    const updated = this.mutateTimetable(refTrainId, (timetable) => ({
+      ...timetable,
+      responsibilities,
+    }));
+    if (!updated) {
+      throw new Error('Fahrplan nicht gefunden.');
+    }
+    return updated;
+  }
+
+  appendAuditEntry(
+    refTrainId: string,
+    payload: AppendAuditEntryPayload,
+  ): Timetable {
+    const updated = this.mutateTimetable(refTrainId, (timetable) => {
+      const auditTrail = [
+        {
+          id: `audit-${Date.now()}`,
+          timestamp: new Date().toISOString(),
+          actor: payload.actor?.trim() || 'Unbekannt',
+          action: payload.action?.trim() || 'Aktualisierung',
+          notes: payload.notes?.trim() || undefined,
+          relatedEntity: payload.relatedEntity ?? 'other',
+        },
+        ...(timetable.auditTrail ?? []),
+      ] as TimetableAuditEntry[];
+      return {
+        ...timetable,
+        auditTrail,
+      };
+    });
+    if (!updated) {
+      throw new Error('Fahrplan nicht gefunden.');
+    }
+    return updated;
+  }
+
+  updateCalendarModifications(
+    refTrainId: string,
+    modifications: TimetableCalendarModification[],
+  ): Timetable {
+    const updated = this.mutateTimetable(refTrainId, (timetable) => ({
+      ...timetable,
+      calendarModifications: modifications,
+    }));
+    if (!updated) {
+      throw new Error('Fahrplan nicht gefunden.');
+    }
     return updated;
   }
 
@@ -433,5 +554,41 @@ export class TimetableService {
           },
         ];
     }
+  }
+
+  private defaultResponsibilities(responsibleRu: string): TimetableResponsibility[] {
+    return [
+      {
+        id: `${responsibleRu}-calendar`,
+        role: 'Kalenderprüfung',
+        assignee: responsibleRu,
+        scope: 'calendar',
+        status: 'in_progress',
+        dueDate: new Date().toISOString().split('T')[0],
+        notes: 'Regelbetriebstage mit Sonder- und Sperrtagen abstimmen.',
+      },
+      {
+        id: `${responsibleRu}-operations`,
+        role: 'Betrieb & Infrastrukturabstimmung',
+        assignee: 'InfraGO Leitstelle',
+        contact: 'leitstelle@infrago-demo.de',
+        scope: 'operations',
+        status: 'open',
+        notes: 'ETCS-Level und Trassenkapazitäten prüfen.',
+      },
+    ];
+  }
+
+  private defaultAuditTrail(responsibleRu: string): TimetableAuditEntry[] {
+    const timestamp = new Date().toISOString();
+    return [
+      {
+        id: `audit-${Date.now()}`,
+        timestamp,
+        actor: responsibleRu,
+        action: 'Fahrplananlage erstellt',
+        relatedEntity: 'other',
+      },
+    ];
   }
 }

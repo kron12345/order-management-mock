@@ -14,6 +14,7 @@ import { Router } from '@angular/router';
 import { TrainPlanStatus } from '../../../core/models/train-plan.model';
 import { MatDialog } from '@angular/material/dialog';
 import { OrderItemEditDialogComponent } from '../order-item-edit-dialog/order-item-edit-dialog.component';
+import { TimetablePhase } from '../../../core/models/timetable.model';
 
 @Component({
   selector: 'app-order-item-list',
@@ -76,6 +77,14 @@ export class OrderItemListComponent {
       canceled: 'Storniert',
       not_ordered: 'Nicht bestellt',
     };
+  private readonly timetablePhaseLabels: Record<TimetablePhase, string> = {
+    bedarf: 'Bedarf',
+    path_request: 'Trassenanmeldung',
+    offer: 'Angebot',
+    contract: 'Vertrag',
+    operational: 'Betrieb',
+    archived: 'Archiv',
+  };
 
   constructor(
     private readonly businessService: BusinessService,
@@ -99,6 +108,20 @@ export class OrderItemListComponent {
 
   typeLabel(item: OrderItem): string {
     return this.itemTypeLabels[item.type] ?? item.type;
+  }
+
+  timetablePhaseLabel(item: OrderItem): string | undefined {
+    if (!item.timetablePhase) {
+      return undefined;
+    }
+    return this.timetablePhaseLabels[item.timetablePhase] ?? item.timetablePhase;
+  }
+
+  timetablePhaseClass(item: OrderItem): string | undefined {
+    if (!item.timetablePhase) {
+      return undefined;
+    }
+    return `phase-${item.timetablePhase}`;
   }
 
   statusLabel(status: BusinessStatus): string {
@@ -137,6 +160,13 @@ export class OrderItemListComponent {
       return undefined;
     }
     return this.templateService.getById(id)?.title;
+  }
+
+  navigateToTimetable(event: MouseEvent, refTrainId: string) {
+    event.stopPropagation();
+    this.router.navigate(['/fahrplanmanager'], {
+      queryParams: { search: refTrainId },
+    });
   }
 
   navigateToTemplate(event: MouseEvent, templateId: string) {
@@ -191,6 +221,27 @@ export class OrderItemListComponent {
 
   hasSchedule(item: OrderItem): boolean {
     return Boolean(item.start && item.end);
+  }
+
+  originalTimetableRange(item: OrderItem): string | undefined {
+    const snapshot = item.originalTimetable;
+    if (!snapshot) {
+      return undefined;
+    }
+    if (snapshot.calendar.validTo) {
+      return `${snapshot.calendar.validFrom} – ${snapshot.calendar.validTo}`;
+    }
+    return `${snapshot.calendar.validFrom} (offen)`;
+  }
+
+  originalTimetableRoute(item: OrderItem): string | undefined {
+    const stops = item.originalTimetable?.stops;
+    if (!stops?.length) {
+      return undefined;
+    }
+    const first = stops[0];
+    const last = stops[stops.length - 1];
+    return `${first.locationName} → ${last.locationName}`;
   }
 
   versionLabel(item: OrderItem): string | undefined {

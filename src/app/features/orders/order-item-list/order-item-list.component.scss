@@ -129,6 +129,46 @@
           border-color: #9ca3af;
           color: #374151;
         }
+
+        .phase-chip {
+          font-size: 0.7rem;
+          height: 22px;
+          border-radius: 999px;
+          background: #f5f5f5;
+          text-transform: uppercase;
+          letter-spacing: 0.08em;
+          color: #616161;
+        }
+
+        .phase-path_request {
+          background: #e3f2fd;
+          color: #1976d2;
+        }
+
+        .phase-offer {
+          background: #fff3e0;
+          color: #ef6c00;
+        }
+
+        .phase-contract {
+          background: #ede7f6;
+          color: #5e35b1;
+        }
+
+        .phase-operational {
+          background: #e0f2f1;
+          color: #00695c;
+        }
+
+        .phase-bedarf {
+          background: #f3e5f5;
+          color: #6a1b9a;
+        }
+
+        .phase-archived {
+          background: #eceff1;
+          color: #546e7a;
+        }
       }
       .sep {
         opacity: 0.5;
@@ -256,6 +296,30 @@
             align-items: center;
             justify-content: center;
           }
+        }
+      }
+
+      .original-timetable {
+        margin-top: 8px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 12px;
+        border-radius: 8px;
+        background: rgba(26, 115, 232, 0.08);
+        color: #0d47a1;
+
+        mat-icon {
+          color: #1a73e8;
+        }
+
+        .original-title {
+          font-weight: 600;
+        }
+
+        .original-route {
+          font-size: 0.85rem;
+          color: rgba(0, 0, 0, 0.7);
         }
       }
       .businesses {

@@ -47,6 +47,12 @@
               <span class="sep">•</span>
               <span>{{ it.responsible }}</span>
             }
+            @if (timetablePhaseLabel(it)) {
+              <span class="sep">•</span>
+              <mat-chip class="phase-chip" appearance="outlined" [ngClass]="timetablePhaseClass(it)">
+                {{ timetablePhaseLabel(it) }}
+              </mat-chip>
+            }
           </div>
           @if (validitySummary(it)) {
             <div class="validity">
@@ -102,7 +108,32 @@
                 {{ templateName(it.linkedTemplateId) }}
               </button>
             }
+            @if (it.generatedTimetableRefId) {
+              <button
+                class="info-chip"
+                type="button"
+                mat-stroked-button
+                (click)="navigateToTimetable($event, it.generatedTimetableRefId!)"
+              >
+                <mat-icon>edit_calendar</mat-icon>
+                Fahrplanmanager
+              </button>
+            }
           </div>
+          @if (it.originalTimetable) {
+            <div class="original-timetable">
+              <mat-icon>history</mat-icon>
+              <div class="original-body">
+                <div class="original-title">
+                  Original: {{ it.originalTimetable.trainNumber }} ·
+                  {{ originalTimetableRange(it) }}
+                </div>
+                <div class="original-route">
+                  {{ originalTimetableRoute(it) }}
+                </div>
+              </div>
+            </div>
+          }
           @let businesses = businessesForItem(it);
           @if (businesses.length) {
             <div class="businesses">

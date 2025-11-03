@@ -75,6 +75,19 @@ export interface VehicleType {
   maintenanceIntervalDays?: number;
   energyType?: string;
   manufacturer?: string;
+  trainTypeCode?: string;
+  lengthMeters?: number;
+  weightTons?: number;
+  brakeType?: string;
+  brakePercentage?: number;
+  tiltingCapability?: 'none' | 'passive' | 'active';
+  powerSupplySystems?: string[];
+  trainProtectionSystems?: string[];
+  etcsLevel?: string;
+  gaugeProfile?: string;
+  maxAxleLoad?: number;
+  noiseCategory?: string;
+  remarks?: string;
 }
 
 export interface Vehicle {

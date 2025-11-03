@@ -8,6 +8,15 @@ import {
   TimetablePhase,
   TimetableSourceType,
   TimetableStop,
+  TimetableRollingStock,
+  TimetableRollingStockSegment,
+  TimetableRollingStockSegmentRole,
+  TimetableRollingStockOperation,
+  TimetableCalendarModification,
+  TimetableCalendarVariant,
+  TimetableCalendarVariantType,
+  TimetableResponsibility,
+  TimetableAuditEntry,
 } from '../../core/models/timetable.model';
 import {
   TimetableService,
@@ -26,6 +35,23 @@ import {
   PlanAssemblyDialogResult,
 } from '../orders/plan-assembly-dialog/plan-assembly-dialog.component';
 import { TrainPlanStop } from '../../core/models/train-plan.model';
+import { VehicleComposition, VehicleType } from '../../models/master-data';
+import { DEMO_MASTER_DATA } from '../../data/demo-master-data';
+import {
+  TimetableRollingStockDialogComponent,
+  RollingStockDialogData,
+} from './timetable-rolling-stock-dialog.component';
+import { TimetableResponsibilitiesDialogComponent } from './timetable-responsibilities-dialog.component';
+import { TimetableCalendarVariantsDialogComponent } from './timetable-calendar-variants-dialog.component';
+import {
+  TimetableAuditDialogComponent,
+  TimetableAuditDialogData,
+  TimetableAuditDialogResult,
+} from './timetable-audit-dialog.component';
+import {
+  TimetableTttSyncDialogComponent,
+} from './timetable-ttt-sync-dialog.component';
+import { ActivatedRoute } from '@angular/router';
 
 interface SortOption {
   value: string;
@@ -42,6 +68,7 @@ interface SortOption {
 export class TimetableManagerComponent {
   private readonly timetableService = inject(TimetableService);
   private readonly dialog = inject(MatDialog);
+  private readonly route = inject(ActivatedRoute);
 
   readonly searchControl = new FormControl('', { nonNullable: true });
   readonly filters = computed(() => this.timetableService.filters());
@@ -92,6 +119,125 @@ export class TimetableManagerComponent {
 
   readonly errorMessage = signal<string | null>(null);
 
+  private readonly vehicleTypeMap = new Map<string, VehicleType>(
+    DEMO_MASTER_DATA.vehicleTypes.map((type) => [type.id, type]),
+  );
+  private readonly vehicleCompositionMap = new Map<string, VehicleComposition>(
+    DEMO_MASTER_DATA.vehicleCompositions.map((composition) => [composition.id, composition]),
+  );
+
+  private readonly tiltingLabels: Record<'none' | 'passive' | 'active', string> = {
+    none: 'Keine',
+    passive: 'Passiv',
+    active: 'Aktiv',
+  };
+
+  private readonly segmentRoleLabels: Record<TimetableRollingStockSegmentRole, string> = {
+    leading: 'Führend',
+    intermediate: 'Mittelteil',
+    trailing: 'Schiebend',
+    powercar: 'Triebkopf',
+  };
+
+  private readonly calendarModificationTypeLabels: Record<
+    TimetableCalendarModification['type'],
+    string
+  > = {
+    cancelled: 'Ausfall',
+    modified_timetable: 'Geänderter Fahrplan',
+    rolling_stock_change: 'Rolling Stock Wechsel',
+    replacement_service: 'Ersatzverkehr',
+  };
+
+  private readonly calendarModificationTypeIcons: Record<
+    TimetableCalendarModification['type'],
+    string
+  > = {
+    cancelled: 'cancel',
+    modified_timetable: 'schedule',
+    rolling_stock_change: 'train',
+    replacement_service: 'directions_bus',
+  };
+
+  private readonly calendarVariantTypeLabels: Record<TimetableCalendarVariantType, string> = {
+    series: 'Serie',
+    special_day: 'Sondertag',
+    block: 'Sperrtag',
+    replacement: 'Ersatztag',
+  };
+
+  private readonly calendarVariantTypeIcons: Record<TimetableCalendarVariantType, string> = {
+    series: 'event_repeat',
+    special_day: 'event',
+    block: 'block',
+    replacement: 'sync_alt',
+  };
+
+  private readonly calendarVariantAppliesLabels: Record<'commercial' | 'operational' | 'both', string> = {
+    commercial: 'Kommerziell',
+    operational: 'Betrieblich',
+    both: 'Kommerziell & Betrieblich',
+  };
+
+  private readonly rollingStockOperationLabels: Record<
+    TimetableRollingStockOperation['type'],
+    string
+  > = {
+    split: 'Flügeln',
+    join: 'Vereinen',
+    reconfigure: 'Rekonfiguration',
+  };
+
+  private readonly rollingStockOperationIcons: Record<
+    TimetableRollingStockOperation['type'],
+    string
+  > = {
+    split: 'call_split',
+    join: 'call_merge',
+    reconfigure: 'settings',
+  };
+
+  private readonly responsibilityScopeLabels: Record<
+    TimetableResponsibility['scope'],
+    string
+  > = {
+    calendar: 'Kalender',
+    rolling_stock: 'Fahrzeuge',
+    operations: 'Betrieb',
+    commercial: 'Kommerziell',
+    integration: 'Integration',
+  };
+
+  private readonly responsibilityStatusLabels: Record<
+    NonNullable<TimetableResponsibility['status']>,
+    string
+  > = {
+    open: 'Offen',
+    in_progress: 'In Arbeit',
+    completed: 'Abgeschlossen',
+  };
+
+  private readonly responsibilityStatusClasses: Record<
+    NonNullable<TimetableResponsibility['status']>,
+    string
+  > = {
+    open: 'responsibility-status--open',
+    in_progress: 'responsibility-status--progress',
+    completed: 'responsibility-status--completed',
+  };
+
+  private readonly auditEntityLabels: Record<
+    NonNullable<TimetableAuditEntry['relatedEntity']>,
+    string
+  > = {
+    calendar: 'Kalender',
+    rolling_stock: 'Fahrzeuge',
+    milestone: 'Meilensteine',
+    responsibility: 'Aufgaben',
+    operations: 'Betrieb',
+    other: 'Allgemein',
+  };
+
   constructor() {
     this.searchControl.setValue(this.filters().search, { emitEvent: false });
     this.searchControl.valueChanges
@@ -104,6 +250,19 @@ export class TimetableManagerComponent {
         this.searchControl.setValue(current, { emitEvent: false });
       }
     });
+
+    const initialSearch = this.route.snapshot.queryParamMap.get('search');
+    if (initialSearch) {
+      this.timetableService.setFilters({ search: initialSearch });
+    }
+    this.route.queryParamMap
+      .pipe(takeUntilDestroyed())
+      .subscribe((params) => {
+        const search = params.get('search');
+        if (search !== null && search !== this.filters().search) {
+          this.timetableService.setFilters({ search });
+        }
+      });
   }
 
   onStatusFilterChange(value: TimetablePhase | 'all') {
@@ -212,6 +371,161 @@ export class TimetableManagerComponent {
     }
   }
 
+  editRollingStock(timetable: Timetable) {
+    this.errorMessage.set(null);
+    this.dialog
+      .open<TimetableRollingStockDialogComponent, RollingStockDialogData, TimetableRollingStock | null>(
+        TimetableRollingStockDialogComponent,
+        {
+        width: '980px',
+        maxWidth: '95vw',
+        data: {
+          rollingStock: timetable.rollingStock,
+          vehicleTypes: DEMO_MASTER_DATA.vehicleTypes,
+          vehicleCompositions: DEMO_MASTER_DATA.vehicleCompositions,
+          stops: timetable.stops.map((stop) => ({
+            id: stop.id,
+            locationName: stop.locationName,
+            sequence: stop.sequence,
+          })),
+        },
+        },
+      )
+      .afterClosed()
+      .subscribe((result) => {
+        if (result === undefined) {
+          return;
+        }
+        try {
+          this.timetableService.updateRollingStock(timetable.refTrainId, result);
+          this.errorMessage.set(null);
+        } catch (error) {
+          const message =
+            error instanceof Error
+              ? error.message
+              : 'Fahrzeugdaten konnten nicht gespeichert werden.';
+          this.errorMessage.set(message);
+        }
+      });
+  }
+
+  editCalendarVariants(timetable: Timetable) {
+    this.errorMessage.set(null);
+    this.dialog
+      .open<
+        TimetableCalendarVariantsDialogComponent,
+        { variants: TimetableCalendarVariant[]; calendar: Timetable['calendar'] },
+        TimetableCalendarVariant[] | null
+      >(TimetableCalendarVariantsDialogComponent, {
+        width: '880px',
+        maxWidth: '95vw',
+        data: {
+          variants: timetable.calendarVariants ?? [],
+          calendar: timetable.calendar,
+        },
+      })
+      .afterClosed()
+      .subscribe((result) => {
+        if (!result) {
+          return;
+        }
+        try {
+          this.timetableService.updateCalendarVariants(timetable.refTrainId, result);
+          this.errorMessage.set(null);
+        } catch (error) {
+          const message =
+            error instanceof Error
+              ? error.message
+              : 'Kalender-Varianten konnten nicht gespeichert werden.';
+          this.errorMessage.set(message);
+        }
+      });
+  }
+
+  editResponsibilities(timetable: Timetable) {
+    this.errorMessage.set(null);
+    this.dialog
+      .open<
+        TimetableResponsibilitiesDialogComponent,
+        { responsibilities: TimetableResponsibility[]; responsibleRu: string },
+        TimetableResponsibility[] | null
+      >(TimetableResponsibilitiesDialogComponent, {
+        width: '860px',
+        maxWidth: '95vw',
+        data: {
+          responsibilities: timetable.responsibilities ?? [],
+          responsibleRu: timetable.responsibleRu,
+        },
+      })
+      .afterClosed()
+      .subscribe((result) => {
+        if (!result) {
+          return;
+        }
+        try {
+          this.timetableService.updateResponsibilities(timetable.refTrainId, result);
+          this.errorMessage.set(null);
+        } catch (error) {
+          const message =
+            error instanceof Error
+              ? error.message
+              : 'Verantwortlichkeiten konnten nicht gespeichert werden.';
+          this.errorMessage.set(message);
+        }
+      });
+  }
+
+  addAuditEntry(timetable: Timetable) {
+    this.errorMessage.set(null);
+    this.dialog
+      .open<
+        TimetableAuditDialogComponent,
+        TimetableAuditDialogData,
+        TimetableAuditDialogResult | undefined
+      >(TimetableAuditDialogComponent, {
+        width: '560px',
+        maxWidth: '95vw',
+        data: {
+          defaultActor: timetable.responsibleRu,
+        },
+      })
+      .afterClosed()
+      .subscribe((result) => {
+        if (!result) {
+          return;
+        }
+        try {
+          this.timetableService.appendAuditEntry(timetable.refTrainId, result);
+          this.errorMessage.set(null);
+        } catch (error) {
+          const message =
+            error instanceof Error
+              ? error.message
+              : 'Audit-Eintrag konnte nicht gespeichert werden.';
+          this.errorMessage.set(message);
+        }
+      });
+  }
+
+  syncWithTtt(timetable: Timetable) {
+    this.errorMessage.set(null);
+    this.dialog
+      .open<TimetableTttSyncDialogComponent, { timetable: Timetable }, { applied: boolean } | undefined>(
+        TimetableTttSyncDialogComponent,
+        {
+          width: '900px',
+          maxWidth: '95vw',
+          data: { timetable },
+        },
+      )
+      .afterClosed()
+      .subscribe((result) => {
+        if (result?.applied) {
+          this.errorMessage.set('TTT-Import erfolgreich übernommen.');
+        }
+      });
+  }
+
   formatTime(timing: { time?: string; offset?: number }): string {
     if (!timing.time) {
       return '–';
@@ -288,6 +602,147 @@ export class TimetableManagerComponent {
 
   trackByStop(_: number, stop: TimetableStop) {
     return stop.id;
+  }
+
+  trackByRollingStockSegment(
+    _: number,
+    segment: TimetableRollingStockSegment,
+  ) {
+    return `${segment.position}-${segment.vehicleTypeId}`;
+  }
+
+  vehicleTypeLabel(typeId: string): string {
+    return this.vehicleTypeMap.get(typeId)?.label ?? typeId;
+  }
+
+  segmentRoleLabel(role: TimetableRollingStockSegmentRole | undefined | null): string {
+    if (!role) {
+      return '—';
+    }
+    return this.segmentRoleLabels[role] ?? role;
+  }
+
+  tiltingLabel(tilting: TimetableRollingStock['tiltingCapability'] | undefined | null): string {
+    if (!tilting) {
+      return '—';
+    }
+    return this.tiltingLabels[tilting] ?? tilting;
+  }
+
+  formatList(values: string[] | undefined | null): string {
+    if (!values || !values.length) {
+      return '—';
+    }
+    return values.join(', ');
+  }
+
+  rollingStockCompositionLabel(rolling: TimetableRollingStock): string {
+    if (!rolling.compositionId) {
+      return '—';
+    }
+    const composition = this.vehicleCompositionMap.get(rolling.compositionId);
+    if (!composition) {
+      return rolling.compositionId;
+    }
+    return `${composition.name} (${composition.id})`;
+  }
+
+  calendarVariantLabel(type: TimetableCalendarVariantType): string {
+    return this.calendarVariantTypeLabels[type] ?? type;
+  }
+
+  calendarVariantIcon(type: TimetableCalendarVariantType): string {
+    return this.calendarVariantTypeIcons[type] ?? 'event';
+  }
+
+  calendarVariantScopeLabel(scope: 'commercial' | 'operational' | 'both'): string {
+    return this.calendarVariantAppliesLabels[scope] ?? scope;
+  }
+
+  variantDatesLabel(variant: TimetableCalendarVariant): string {
+    if (!variant.dates?.length) {
+      return '—';
+    }
+    return variant.dates.join(', ');
+  }
+
+  calendarModificationLabel(type: TimetableCalendarModification['type']): string {
+    return this.calendarModificationTypeLabels[type] ?? type;
+  }
+
+  calendarModificationIcon(type: TimetableCalendarModification['type']): string {
+    return this.calendarModificationTypeIcons[type] ?? 'info';
+  }
+
+  modificationStopsLabel(
+    timetable: Timetable,
+    modification: TimetableCalendarModification,
+  ): string {
+    if (!modification.affectedStopIds?.length) {
+      return '—';
+    }
+    const lookup = new Map(timetable.stops.map((stop) => [stop.id, stop]));
+    const names = modification.affectedStopIds
+      .map((id) => lookup.get(id)?.locationName ?? id)
+      .filter(Boolean);
+    return names.length ? names.join(', ') : '—';
+  }
+
+  stopLabel(timetable: Timetable, stopId: string): string {
+    const stop = timetable.stops.find((entry) => entry.id === stopId);
+    if (!stop) {
+      return stopId;
+    }
+    return `#${stop.sequence} · ${stop.locationName}`;
+  }
+
+  rollingStockOperationLabel(type: TimetableRollingStockOperation['type']): string {
+    return this.rollingStockOperationLabels[type] ?? type;
+  }
+
+  rollingStockOperationIcon(type: TimetableRollingStockOperation['type']): string {
+    return this.rollingStockOperationIcons[type] ?? 'info';
+  }
+
+  responsibilityScopeLabel(scope: TimetableResponsibility['scope']): string {
+    return this.responsibilityScopeLabels[scope] ?? scope;
+  }
+
+  responsibilityStatusLabel(
+    status: TimetableResponsibility['status'] | undefined,
+  ): string {
+    if (!status) {
+      return 'Unbekannt';
+    }
+    return this.responsibilityStatusLabels[status] ?? status;
+  }
+
+  responsibilityStatusClass(
+    status: TimetableResponsibility['status'] | undefined,
+  ): string {
+    if (!status) {
+      return '';
+    }
+    return this.responsibilityStatusClasses[status] ?? '';
+  }
+
+  auditEntityLabel(entry: TimetableAuditEntry): string {
+    if (!entry.relatedEntity) {
+      return this.auditEntityLabels.other;
+    }
+    return this.auditEntityLabels[entry.relatedEntity] ?? entry.relatedEntity;
+  }
+
+  trackByResponsibility(_: number, responsibility: TimetableResponsibility): string {
+    return responsibility.id;
+  }
+
+  trackByVariant(_: number, variant: TimetableCalendarVariant): string {
+    return variant.id;
+  }
+
+  trackByAudit(_: number, entry: TimetableAuditEntry): string {
+    return entry.id;
   }
 
   private toTrainPlanStop(stop: TimetableStop): TrainPlanStop {

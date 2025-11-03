@@ -39,6 +39,107 @@ export interface TimetableMilestone {
   notes?: string;
 }
 
+export type TimetableRollingStockSegmentRole =
+  | 'leading'
+  | 'intermediate'
+  | 'trailing'
+  | 'powercar';
+
+export interface TimetableRollingStockSegment {
+  position: number;
+  vehicleTypeId: string;
+  count: number;
+  role?: TimetableRollingStockSegmentRole;
+  vehicleNumbers?: string[];
+  remarks?: string;
+  setId?: string;
+  setLabel?: string;
+  destination?: string;
+}
+
+export type TimetableRollingStockOperationType =
+  | 'split'
+  | 'join'
+  | 'reconfigure';
+
+export interface TimetableRollingStockOperation {
+  stopId: string;
+  type: TimetableRollingStockOperationType;
+  setIds: string[];
+  remarks?: string;
+}
+
+export interface TimetableRollingStock {
+  compositionId?: string;
+  designation?: string;
+  tractionMode?: string;
+  powerSupplySystems?: string[];
+  maxSpeed?: number;
+  lengthMeters?: number;
+  weightTons?: number;
+  brakeType?: string;
+  brakePercentage?: number;
+  etcsLevel?: string;
+  trainProtectionSystems?: string[];
+  gaugeProfile?: string;
+  tiltingCapability?: 'none' | 'passive' | 'active';
+  remarks?: string;
+  segments: TimetableRollingStockSegment[];
+  operations?: TimetableRollingStockOperation[];
+}
+
+export interface TimetableCalendarModification {
+  date: string;
+  description: string;
+  type: 'cancelled' | 'modified_timetable' | 'rolling_stock_change' | 'replacement_service';
+  affectedStopIds?: string[];
+  notes?: string;
+}
+
+export type TimetableCalendarVariantType =
+  | 'series'
+  | 'special_day'
+  | 'block'
+  | 'replacement';
+
+export interface TimetableCalendarVariant {
+  id: string;
+  type: TimetableCalendarVariantType;
+  description: string;
+  validFrom?: string;
+  validTo?: string;
+  daysOfWeek?: string[];
+  dates?: string[];
+  appliesTo?: 'commercial' | 'operational' | 'both';
+  reason?: string;
+}
+
+export interface TimetableAuditEntry {
+  id: string;
+  timestamp: string;
+  actor: string;
+  action: string;
+  notes?: string;
+  relatedEntity?:
+    | 'calendar'
+    | 'rolling_stock'
+    | 'milestone'
+    | 'responsibility'
+    | 'operations'
+    | 'other';
+}
+
+export interface TimetableResponsibility {
+  id: string;
+  role: string;
+  assignee: string;
+  contact?: string;
+  scope: 'calendar' | 'rolling_stock' | 'operations' | 'commercial' | 'integration';
+  status?: 'open' | 'in_progress' | 'completed';
+  dueDate?: string;
+  notes?: string;
+}
+
 export interface TimetableStopTiming {
   arrivalTime?: string;
   departureTime?: string;
@@ -77,4 +178,9 @@ export interface Timetable {
   updatedAt: string;
   linkedOrderItemId?: string;
   notes?: string;
+  rollingStock?: TimetableRollingStock;
+  calendarModifications?: TimetableCalendarModification[];
+  calendarVariants?: TimetableCalendarVariant[];
+  auditTrail?: TimetableAuditEntry[];
+  responsibilities?: TimetableResponsibility[];
 }

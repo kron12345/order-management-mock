@@ -170,6 +170,13 @@
             </div>
           </div>
 
+          <div class="ttt-sync-actions">
+            <button mat-stroked-button type="button" color="primary" (click)="syncWithTtt(timetable)">
+              <mat-icon>sync_alt</mat-icon>
+              TTT Sync
+            </button>
+          </div>
+
           @if (timetable.source.lastMessage) {
             <mat-card class="info-card" appearance="outlined">
               <mat-card-content>
@@ -179,8 +186,380 @@
                   <p>{{ timetable.source.lastMessage }}</p>
                 </div>
               </mat-card-content>
-            </mat-card>
-          }
+          </mat-card>
+        }
+
+          <section class="rolling-stock-section">
+            <div class="section-header">
+              <h3>Fahrzeugdaten (TTT)</h3>
+              <button mat-stroked-button type="button" (click)="editRollingStock(timetable)">
+                <mat-icon>directions_transit</mat-icon>
+                Fahrzeugdaten bearbeiten
+              </button>
+            </div>
+
+            @if (timetable.rollingStock; as rolling) {
+              <div class="rolling-stock-grid">
+                <div>
+                  <label>Komposition</label>
+                  <span>{{ rollingStockCompositionLabel(rolling) }}</span>
+                </div>
+                <div>
+                  <label>Bezeichnung</label>
+                  <span>{{ rolling.designation ?? '—' }}</span>
+                </div>
+                <div>
+                  <label>Traktionsart</label>
+                  <span>{{ rolling.tractionMode ?? '—' }}</span>
+                </div>
+                <div>
+                  <label>Energieversorgung</label>
+                  <span>{{ formatList(rolling.powerSupplySystems) }}</span>
+                </div>
+                <div>
+                  <label>Höchstgeschwindigkeit</label>
+                  <span>
+                    @if (rolling.maxSpeed) {
+                      {{ rolling.maxSpeed }} km/h
+                    } @else {
+                      —
+                    }
+                  </span>
+                </div>
+                <div>
+                  <label>Zuglänge</label>
+                  <span>
+                    @if (rolling.lengthMeters) {
+                      {{ rolling.lengthMeters }} m
+                    } @else {
+                      —
+                    }
+                  </span>
+                </div>
+                <div>
+                  <label>Zugmasse</label>
+                  <span>
+                    @if (rolling.weightTons) {
+                      {{ rolling.weightTons }} t
+                    } @else {
+                      —
+                    }
+                  </span>
+                </div>
+                <div>
+                  <label>Bremssystem</label>
+                  <span>
+                    {{ rolling.brakeType ?? '—' }}
+                    @if (rolling.brakePercentage) {
+                      · {{ rolling.brakePercentage }} %
+                    }
+                  </span>
+                </div>
+                <div>
+                  <label>ETCS-Level</label>
+                  <span>{{ rolling.etcsLevel ?? '—' }}</span>
+                </div>
+                <div>
+                  <label>Zugsicherung</label>
+                  <span>{{ formatList(rolling.trainProtectionSystems) }}</span>
+                </div>
+                <div>
+                  <label>Lichtraumprofil</label>
+                  <span>{{ rolling.gaugeProfile ?? '—' }}</span>
+                </div>
+                <div>
+                  <label>Neigetechnik</label>
+                  <span>{{ tiltingLabel(rolling.tiltingCapability) }}</span>
+                </div>
+              </div>
+
+              <div class="rolling-stock-table-wrapper">
+                <table class="rolling-stock-table">
+                  <thead>
+                    <tr>
+                      <th>#</th>
+                      <th>Rolle</th>
+                      <th>Fahrzeugtyp</th>
+                      <th>Anzahl</th>
+                      <th>Fahrzeugnummern</th>
+                      <th>Bemerkung</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr *ngFor="let segment of rolling.segments; trackBy: trackByRollingStockSegment">
+                      <td>{{ segment.position }}</td>
+                      <td>{{ segmentRoleLabel(segment.role) }}</td>
+                      <td>{{ vehicleTypeLabel(segment.vehicleTypeId) }}</td>
+                      <td>{{ segment.count }}</td>
+                      <td>{{ formatList(segment.vehicleNumbers) }}</td>
+                      <td>{{ segment.remarks ?? '—' }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              @if (rolling.operations?.length) {
+                <div class="rolling-stock-operations">
+                  <h4>Operationen</h4>
+                  <div class="rolling-stock-operations__list">
+                    <div
+                      class="rolling-stock-operations__item"
+                      *ngFor="let operation of rolling.operations"
+                    >
+                      <mat-icon fontIcon="{{ rollingStockOperationIcon(operation.type) }}"></mat-icon>
+                      <div>
+                        <strong>{{ rollingStockOperationLabel(operation.type) }}</strong>
+                        <span class="operation-stop">
+                          {{ stopLabel(timetable, operation.stopId) }}
+                        </span>
+                        <span class="operation-sets">
+                          Sets: {{ formatList(operation.setIds) }}
+                        </span>
+                        @if (operation.remarks) {
+                          <p class="operation-remark">{{ operation.remarks }}</p>
+                        }
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              }
+
+              @if (rolling.remarks) {
+                <mat-card class="info-card" appearance="outlined">
+                  <mat-card-content>
+                    <mat-icon fontIcon="info"></mat-icon>
+                    <div>
+                      <strong>Hinweise</strong>
+                      <p>{{ rolling.remarks }}</p>
+                    </div>
+                  </mat-card-content>
+                </mat-card>
+              }
+            } @else {
+              <p class="rolling-stock-empty">
+                Noch keine Fahrzeugdaten hinterlegt.
+                <button mat-button type="button" color="primary" (click)="editRollingStock(timetable)">
+                  Jetzt hinzufügen
+                </button>
+              </p>
+            }
+          </section>
+
+          <section class="responsibilities-section">
+            <div class="section-header">
+              <h3>Aufgaben & Verantwortlichkeiten</h3>
+              <button mat-stroked-button type="button" (click)="editResponsibilities(timetable)">
+                <mat-icon>assignment_ind</mat-icon>
+                Verantwortlichkeiten bearbeiten
+              </button>
+            </div>
+
+            @if (timetable.responsibilities?.length) {
+              <div class="responsibility-list">
+                <mat-card
+                  class="responsibility-card"
+                  appearance="outlined"
+                  *ngFor="let responsibility of timetable.responsibilities; trackBy: trackByResponsibility"
+                >
+                  <mat-card-content>
+                    <div class="responsibility-header">
+                      <div>
+                        <strong>{{ responsibility.role }}</strong>
+                        <p class="responsibility-assignee">{{ responsibility.assignee }}</p>
+                        @if (responsibility.contact) {
+                          <p class="responsibility-contact">{{ responsibility.contact }}</p>
+                        }
+                      </div>
+                      <div class="responsibility-chips">
+                        <mat-chip-set>
+                          <mat-chip>
+                            <mat-icon fontIcon="category"></mat-icon>
+                            {{ responsibilityScopeLabel(responsibility.scope) }}
+                          </mat-chip>
+                          @if (responsibility.status) {
+                            <mat-chip [ngClass]="responsibilityStatusClass(responsibility.status)">
+                              <mat-icon *ngIf="responsibility.status === 'completed'" fontIcon="check_circle"></mat-icon>
+                              <mat-icon *ngIf="responsibility.status === 'in_progress'" fontIcon="hourglass_top"></mat-icon>
+                              <mat-icon *ngIf="responsibility.status === 'open'" fontIcon="radio_button_unchecked"></mat-icon>
+                              {{ responsibilityStatusLabel(responsibility.status) }}
+                            </mat-chip>
+                          }
+                        </mat-chip-set>
+                      </div>
+                    </div>
+                    <div class="responsibility-meta">
+                      @if (responsibility.dueDate) {
+                        <span>
+                          <mat-icon fontIcon="event"></mat-icon>
+                          Fällig: {{ responsibility.dueDate }}
+                        </span>
+                      }
+                    </div>
+                    @if (responsibility.notes) {
+                      <p class="responsibility-notes">{{ responsibility.notes }}</p>
+                    }
+                  </mat-card-content>
+                </mat-card>
+              </div>
+            } @else {
+              <p class="empty-hint">
+                Noch keine Verantwortlichkeiten hinterlegt.
+                <button mat-button type="button" color="primary" (click)="editResponsibilities(timetable)">
+                  Jetzt hinzufügen
+                </button>
+              </p>
+            }
+          </section>
+
+          <section class="calendar-variant-section">
+            <div class="section-header">
+              <h3>Kalender-Varianten</h3>
+              <button mat-stroked-button type="button" (click)="editCalendarVariants(timetable)">
+                <mat-icon>event_repeat</mat-icon>
+                Varianten bearbeiten
+              </button>
+            </div>
+
+            @if (timetable.calendarVariants?.length) {
+              <div class="calendar-variant-list">
+                <mat-card
+                  class="calendar-variant-card"
+                  appearance="outlined"
+                  *ngFor="let variant of timetable.calendarVariants; trackBy: trackByVariant"
+                >
+                  <mat-card-content>
+                    <div class="calendar-variant-header">
+                      <div class="calendar-variant-title">
+                        <mat-chip>
+                          <mat-icon fontIcon="{{ calendarVariantIcon(variant.type) }}"></mat-icon>
+                          {{ calendarVariantLabel(variant.type) }}
+                        </mat-chip>
+                        <span class="calendar-variant-description">{{ variant.description }}</span>
+                      </div>
+                      <mat-chip color="primary" selected>
+                        {{ calendarVariantScopeLabel(variant.appliesTo ?? 'both') }}
+                      </mat-chip>
+                    </div>
+                    <div class="calendar-variant-meta">
+                      @if (variant.validFrom || variant.validTo) {
+                        <span>
+                          <mat-icon fontIcon="event"></mat-icon>
+                          {{ variant.validFrom ?? '---' }} – {{ variant.validTo ?? '---' }}
+                        </span>
+                      }
+                      @if (variant.daysOfWeek?.length) {
+                        <span>
+                          <mat-icon fontIcon="calendar_view_week"></mat-icon>
+                          {{ variant.daysOfWeek?.join(', ') }}
+                        </span>
+                      }
+                      @if (variant.dates?.length) {
+                        <span>
+                          <mat-icon fontIcon="event_note"></mat-icon>
+                          {{ variantDatesLabel(variant) }}
+                        </span>
+                      }
+                    </div>
+                    @if (variant.reason) {
+                      <p class="calendar-variant-notes">{{ variant.reason }}</p>
+                    }
+                  </mat-card-content>
+                </mat-card>
+              </div>
+            } @else {
+              <p class="empty-hint">
+                Keine Varianten hinterlegt.
+                <button mat-button type="button" color="primary" (click)="editCalendarVariants(timetable)">
+                  Variante anlegen
+                </button>
+              </p>
+            }
+          </section>
+
+          <section class="calendar-mod-section">
+            <div class="section-header">
+              <h3>Kalender-Modifikationen</h3>
+            </div>
+            @if (timetable.calendarModifications?.length) {
+              <div class="calendar-mod-list">
+                <mat-card
+                  class="calendar-mod-card"
+                  appearance="outlined"
+                  *ngFor="let modification of timetable.calendarModifications; let idx = index"
+                >
+                  <mat-card-content>
+                    <div class="calendar-mod-header">
+                      <div class="calendar-mod-date">{{ modification.date }}</div>
+                      <mat-chip-set>
+                        <mat-chip>
+                          <mat-icon fontIcon="{{ calendarModificationIcon(modification.type) }}"></mat-icon>
+                          {{ calendarModificationLabel(modification.type) }}
+                        </mat-chip>
+                      </mat-chip-set>
+                    </div>
+                    <p class="calendar-mod-description">{{ modification.description }}</p>
+                    <div class="calendar-mod-meta">
+                      <span>
+                        <strong>Betroffene Halte:</strong>
+                        {{ modificationStopsLabel(timetable, modification) }}
+                      </span>
+                      @if (modification.notes) {
+                        <span>
+                          <strong>Hinweis:</strong>
+                          {{ modification.notes }}
+                        </span>
+                      }
+                    </div>
+                  </mat-card-content>
+                </mat-card>
+              </div>
+            } @else {
+              <p class="empty-hint">Keine Modifikationen erfasst.</p>
+            }
+          </section>
+
+          <section class="audit-section">
+            <div class="section-header">
+              <h3>Audit Trail</h3>
+              <button mat-stroked-button type="button" (click)="addAuditEntry(timetable)">
+                <mat-icon>playlist_add</mat-icon>
+                Audit-Eintrag hinzufügen
+              </button>
+            </div>
+
+            @if (timetable.auditTrail?.length) {
+              <div class="audit-list">
+                <div
+                  class="audit-entry"
+                  *ngFor="let entry of timetable.auditTrail; trackBy: trackByAudit"
+                >
+                  <div class="audit-entry__icon">
+                    <mat-icon fontIcon="flag"></mat-icon>
+                  </div>
+                  <div class="audit-entry__content">
+                    <div class="audit-entry__header">
+                      <strong>{{ entry.action }}</strong>
+                      <span class="audit-entry__timestamp">{{ entry.timestamp | date:'short' }}</span>
+                    </div>
+                    <div class="audit-entry__meta">
+                      <span>
+                        <mat-icon fontIcon="person" inline></mat-icon>
+                        {{ entry.actor }}
+                      </span>
+                      <mat-chip>{{ auditEntityLabel(entry) }}</mat-chip>
+                    </div>
+                    @if (entry.notes) {
+                      <p class="audit-entry__notes">{{ entry.notes }}</p>
+                    }
+                  </div>
+                </div>
+              </div>
+            } @else {
+              <p class="empty-hint">
+                Noch keine Audit-Einträge. Änderungen können mit einem Eintrag dokumentiert werden.
+              </p>
+            }
+          </section>
 
           <section class="milestones">
             <div class="section-header">
