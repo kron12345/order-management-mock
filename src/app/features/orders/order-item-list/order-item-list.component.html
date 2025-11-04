@@ -24,17 +24,6 @@
           }
           <div class="meta">
             <span class="type">{{ typeLabel(it) }}</span>
-            @let planStatus = trainPlanStatus(it);
-            @if (planStatus) {
-              <span class="sep">•</span>
-              <mat-chip
-                class="ttt-status-chip"
-                [ngClass]="planStatus.cssClass"
-                appearance="outlined"
-              >
-                {{ planStatus.label }}
-              </mat-chip>
-            }
             @if (hasSchedule(it)) {
               <span class="sep">•</span>
               <span class="time"
@@ -131,6 +120,44 @@
                 <div class="original-route">
                   {{ originalTimetableRoute(it) }}
                 </div>
+                @let variants = originalVariants(it);
+                @if (variants.length) {
+                  <div class="original-variants">
+                    <span class="section-label">Kalendervarianten</span>
+                    <mat-chip-set>
+                      @for (variant of variants; track variant.id) {
+                        <mat-chip
+                          class="variant-chip"
+                          matTooltip="{{ variantTooltip(variant) }}"
+                          matTooltipShowDelay="200"
+                        >
+                          {{ variantLabel(variant) }}
+                        </mat-chip>
+                      }
+                    </mat-chip-set>
+                  </div>
+                }
+                @let modifications = originalModifications(it);
+                @if (modifications.length) {
+                  <div class="original-modifications">
+                    <span class="section-label">Modifikationen</span>
+                    <div class="modification-list">
+                      @for (mod of modifications; track mod.date + mod.type) {
+                        <div class="modification-entry">
+                          <mat-icon inline>event_busy</mat-icon>
+                          <div>
+                            <div class="modification-title">
+                              {{ mod.date }} · {{ modificationLabel(mod) }}
+                            </div>
+                            @if (mod.notes) {
+                              <div class="modification-notes">{{ mod.notes }}</div>
+                            }
+                          </div>
+                        </div>
+                      }
+                    </div>
+                  </div>
+                }
               </div>
             </div>
           }

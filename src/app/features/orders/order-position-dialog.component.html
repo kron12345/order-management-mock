@@ -17,6 +17,8 @@
         [labels]="serviceGeneralLabels"
         [hints]="{ name: 'Ohne Eingabe wird der Leistungstyp als Name verwendet.', deviation: 'z. B. +3 min' }"
         [placeholders]="{ name: 'Leistung · Nachtpflege', deviation: 'z. B. +3 min' }"
+        [descriptions]="serviceGeneralDescriptions"
+        [responsibleControl]="null"
       ></app-order-item-general-fields>
 
       <app-order-item-service-fields
@@ -24,6 +26,8 @@
         [config]="serviceFieldsConfig"
         [trafficPeriods]="trafficPeriods()"
         [placeholders]="{ serviceType: 'z. B. Werkstattaufenthalt', from: 'z. B. Basel SBB', to: 'z. B. Zürich HB' }"
+        [descriptions]="serviceFieldDescriptions"
+        [timeInputType]="'time'"
       ></app-order-item-service-fields>
 
       <button
@@ -40,7 +44,7 @@
 
   <div class="section" *ngIf="mode() === 'plan'">
     <div class="inline-actions">
-      <button mat-stroked-button type="button" (click)="openTemplateCreateDialog('plan')">
+      <button mat-stroked-button type="button" (click)="openTemplateCreateDialog()">
         <mat-icon>schema</mat-icon>
         Vorlage erstellen
       </button>
@@ -61,6 +65,16 @@
             <mat-option [value]="template.id">{{ template.title }}</mat-option>
           }
         </mat-select>
+        <button
+          mat-icon-button
+          matSuffix
+          type="button"
+          class="help-icon"
+          [matTooltip]="planFieldDescriptions.templateId"
+          aria-label="Vorlage Hilfe"
+        >
+          <mat-icon>help_outline</mat-icon>
+        </button>
       </mat-form-field>
 
       <mat-form-field appearance="outline">
@@ -70,21 +84,61 @@
             <mat-option [value]="period.id">{{ period.name }}</mat-option>
           }
         </mat-select>
+        <button
+          mat-icon-button
+          matSuffix
+          type="button"
+          class="help-icon"
+          [matTooltip]="planFieldDescriptions.trafficPeriodId"
+          aria-label="Verkehrsperiode Hilfe"
+        >
+          <mat-icon>help_outline</mat-icon>
+        </button>
       </mat-form-field>
 
       <div class="grid">
         <mat-form-field appearance="outline">
           <mat-label>Erste Abfahrt</mat-label>
           <input matInput type="time" formControlName="startTime" />
+          <button
+            mat-icon-button
+            matSuffix
+            type="button"
+            class="help-icon"
+            [matTooltip]="planFieldDescriptions.startTime"
+            aria-label="Erste Abfahrt Hilfe"
+          >
+            <mat-icon>help_outline</mat-icon>
+          </button>
         </mat-form-field>
         <mat-form-field appearance="outline">
           <mat-label>Letzte Abfahrt</mat-label>
           <input matInput type="time" formControlName="endTime" />
+          <button
+            mat-icon-button
+            matSuffix
+            type="button"
+            class="help-icon"
+            [matTooltip]="planFieldDescriptions.endTime"
+            aria-label="Letzte Abfahrt Hilfe"
+          >
+            <mat-icon>help_outline</mat-icon>
+          </button>
         </mat-form-field>
         <mat-form-field appearance="outline">
           <mat-label>Takt (Minuten)</mat-label>
           <input matInput type="number" formControlName="intervalMinutes" min="1" />
           <mat-hint>Abstand zwischen den Zügen, z. B. 30.</mat-hint>
+          <button
+            mat-icon-button
+            matSuffix
+            type="button"
+            class="help-icon"
+            [matTooltip]="planFieldDescriptions.intervalMinutes"
+            aria-label="Takt Hilfe"
+          >
+            <mat-icon>help_outline</mat-icon>
+          </button>
         </mat-form-field>
       </div>
 
@@ -92,10 +146,61 @@
         <mat-form-field appearance="outline">
           <mat-label>Namenspräfix</mat-label>
           <input matInput formControlName="namePrefix" placeholder="z. B. S3 Basel" />
+          <button
+            mat-icon-button
+            matSuffix
+            type="button"
+            class="help-icon"
+            [matTooltip]="planFieldDescriptions.namePrefix"
+            aria-label="Namenspräfix Hilfe"
+          >
+            <mat-icon>help_outline</mat-icon>
+          </button>
         </mat-form-field>
         <mat-form-field appearance="outline">
           <mat-label>Verantwortlich</mat-label>
           <input matInput formControlName="responsible" />
+          <button
+            mat-icon-button
+            matSuffix
+            type="button"
+            class="help-icon"
+            [matTooltip]="planFieldDescriptions.responsible"
+            aria-label="Verantwortlich Hilfe"
+          >
+            <mat-icon>help_outline</mat-icon>
+          </button>
+        </mat-form-field>
+      </div>
+
+      <div class="grid">
+        <mat-form-field appearance="outline">
+          <mat-label>Zugnummer (OTN)</mat-label>
+          <input matInput type="number" formControlName="otn" placeholder="z. B. 2400" />
+          <button
+            mat-icon-button
+            matSuffix
+            type="button"
+            class="help-icon"
+            [matTooltip]="planFieldDescriptions.otn"
+            aria-label="OTN Hilfe"
+          >
+            <mat-icon>help_outline</mat-icon>
+          </button>
+        </mat-form-field>
+        <mat-form-field appearance="outline">
+          <mat-label>OTN-Intervall</mat-label>
+          <input matInput type="number" min="1" formControlName="otnInterval" />
+          <button
+            mat-icon-button
+            matSuffix
+            type="button"
+            class="help-icon"
+            [matTooltip]="planFieldDescriptions.otnInterval"
+            aria-label="OTN Intervall Hilfe"
+          >
+            <mat-icon>help_outline</mat-icon>
+          </button>
         </mat-form-field>
       </div>
     </form>
@@ -103,65 +208,146 @@
 
   <div class="section" *ngIf="mode() === 'manualPlan'">
     <div class="inline-actions">
-      <button mat-stroked-button type="button" (click)="openTemplateCreateDialog('manualPlan')">
-        <mat-icon>schema</mat-icon>
+      <button mat-stroked-button type="button" (click)="openManualPlanAssembly()">
+        <mat-icon>alt_route</mat-icon>
         Fahrplan zusammenstellen
       </button>
-      <button
-        mat-stroked-button
-        type="button"
-        (click)="openTrafficPeriodEditor('import')"
-      >
-        <mat-icon>event</mat-icon>
-        Verkehrsperiode erstellen
-      </button>
+      <p class="hint">
+        Stelle den Fahrplan direkt zusammen. Der Fahrtag bestimmt nur das Datum, alle Zeiten definierst du im Editor.
+      </p>
     </div>
 
-    @if (manualTemplate(); as tpl) {
-      <mat-card class="template-summary">
-        <div class="template-summary__header">
-          <div>
-            <strong>{{ tpl.title }}</strong>
-            <span class="template-summary__train">Zug {{ tpl.trainNumber }}</span>
+    @if (manualTemplate(); as stops) {
+      @if (stops.length) {
+        <mat-card class="template-summary">
+          <div class="template-summary__header">
+            <div>
+              <strong>{{ manualPlanForm.controls.name.value || 'Manueller Fahrplan' }}</strong>
+              <span class="template-summary__train">
+                Zug {{ manualPlanForm.controls.trainNumber.value || '—' }}
+              </span>
+            </div>
+            <div class="template-summary__actions">
+              <span class="template-summary__meta">
+                {{ stops.length }} Halte ·
+                {{ stops[0].locationName || '—' }} – {{ stops[stops.length - 1].locationName || '—' }}
+              </span>
+              @if (manualPlanForm.controls.trafficPeriodId.value) {
+                <span class="template-summary__meta">
+                  Verkehrsperiode:
+                  {{
+                    trafficPeriodName(manualPlanForm.controls.trafficPeriodId.value)
+                      || 'unbekannt'
+                  }}
+                </span>
+              }
+              <button
+                mat-icon-button
+                type="button"
+                (click)="openManualPlanAssembly()"
+                aria-label="Fahrplan bearbeiten"
+              >
+                <mat-icon>edit</mat-icon>
+              </button>
+              <button
+                mat-icon-button
+                type="button"
+                (click)="clearManualTemplate()"
+                aria-label="Fahrplan entfernen"
+              >
+                <mat-icon>close</mat-icon>
+              </button>
+            </div>
           </div>
-          <div class="template-summary__actions">
-            <span class="template-summary__meta">
-              {{ tpl.stops.length }} Halte
+          <div class="template-summary__times">
+            <span>
+              <strong>Start</strong>
+              {{ stops[0].departureTime || stops[0].arrivalTime || '--:--' }}
             </span>
-            <button
-              mat-icon-button
-              type="button"
-              (click)="clearManualTemplate()"
-              aria-label="Fahrplan entfernen"
-            >
-              <mat-icon>close</mat-icon>
-            </button>
+            <mat-icon>arrow_forward</mat-icon>
+            <span>
+              <strong>Ende</strong>
+              {{
+                stops[stops.length - 1].arrivalTime ||
+                  stops[stops.length - 1].departureTime ||
+                  '--:--'
+              }}
+            </span>
           </div>
-        </div>
-      </mat-card>
+        </mat-card>
+      } @else {
+        <p class="hint">Definiere Halte und Zeiten, um einen einmaligen Fahrplan zu erzeugen.</p>
+      }
     } @else {
-      <p class="hint">Nutze „Fahrplan zusammenstellen“, um Halte und Zeiten zu definieren.</p>
+      <p class="hint">Definiere Halte und Zeiten, um einen einmaligen Fahrplan zu erzeugen.</p>
     }
 
     <form [formGroup]="manualPlanForm" class="form">
       <div class="grid">
         <mat-form-field appearance="outline">
+          <mat-label>Fahrtag</mat-label>
+          <input
+            matInput
+            type="date"
+            formControlName="departureDate"
+            [disabled]="!!manualPlanForm.controls.trafficPeriodId.value"
+          />
+          <button
+            mat-icon-button
+            matSuffix
+            type="button"
+            class="help-icon"
+            [matTooltip]="manualFieldDescriptions.departureDate"
+            aria-label="Fahrtag Hilfe"
+          >
+            <mat-icon>help_outline</mat-icon>
+          </button>
+        </mat-form-field>
+        <mat-form-field appearance="outline">
           <mat-label>Verkehrsperiode</mat-label>
-          <mat-select formControlName="trafficPeriodId">
+          <mat-select
+            formControlName="trafficPeriodId"
+            [disabled]="!!manualPlanForm.controls.departureDate.value"
+          >
+            <mat-option value="">Keine Auswahl</mat-option>
             @for (period of trafficPeriods(); track period.id) {
               <mat-option [value]="period.id">{{ period.name }}</mat-option>
             }
           </mat-select>
+          <button
+            mat-icon-button
+            matSuffix
+            type="button"
+            class="help-icon"
+            [matTooltip]="manualFieldDescriptions.trafficPeriodId"
+            aria-label="Verkehrsperiode Hilfe"
+          >
+            <mat-icon>help_outline</mat-icon>
+          </button>
         </mat-form-field>
         <mat-form-field appearance="outline">
-          <mat-label>Abfahrt</mat-label>
-          <input matInput type="datetime-local" formControlName="departure" />
+          <mat-label>Zugnummer (OTN)</mat-label>
+          <input matInput formControlName="trainNumber" />
+          <button
+            mat-icon-button
+            matSuffix
+            type="button"
+            class="help-icon"
+            [matTooltip]="manualFieldDescriptions.trainNumber"
+            aria-label="Zugnummer Hilfe"
+          >
+            <mat-icon>help_outline</mat-icon>
+          </button>
         </mat-form-field>
       </div>
+      <p class="field-hint">
+        Wähle entweder einen Fahrtag oder eine Verkehrsperiode – beides gleichzeitig ist nicht möglich.
+      </p>
       <app-order-item-general-fields
         [form]="manualPlanForm"
         [labels]="manualGeneralLabels"
         [placeholders]="{ name: 'z. B. Sonderzug 4711' }"
+        [descriptions]="manualGeneralDescriptions"
       ></app-order-item-general-fields>
     </form>
   </div>
@@ -195,14 +381,44 @@
                 <mat-option [value]="period.id">{{ period.name }}</mat-option>
               }
             </mat-select>
+            <button
+              mat-icon-button
+              matSuffix
+              type="button"
+              class="help-icon"
+              [matTooltip]="importOptionsDescriptions.trafficPeriodId"
+              aria-label="Verkehrsperiode Hilfe"
+            >
+              <mat-icon>help_outline</mat-icon>
+            </button>
           </mat-form-field>
           <mat-form-field appearance="outline">
             <mat-label>Namenspräfix</mat-label>
             <input matInput formControlName="namePrefix" placeholder="z. B. RailML Import" />
+            <button
+              mat-icon-button
+              matSuffix
+              type="button"
+              class="help-icon"
+              [matTooltip]="importOptionsDescriptions.namePrefix"
+              aria-label="Namenspräfix Hilfe"
+            >
+              <mat-icon>help_outline</mat-icon>
+            </button>
           </mat-form-field>
           <mat-form-field appearance="outline">
             <mat-label>Verantwortlich</mat-label>
             <input matInput formControlName="responsible" />
+            <button
+              mat-icon-button
+              matSuffix
+              type="button"
+              class="help-icon"
+              [matTooltip]="importOptionsDescriptions.responsible"
+              aria-label="Verantwortlich Hilfe"
+            >
+              <mat-icon>help_outline</mat-icon>
+            </button>
           </mat-form-field>
         </div>
       </form>
@@ -211,14 +427,44 @@
         <mat-form-field appearance="outline">
           <mat-label>Suche</mat-label>
           <input matInput formControlName="search" placeholder="Train-ID oder Name" />
+          <button
+            mat-icon-button
+            matSuffix
+            type="button"
+            class="help-icon"
+            [matTooltip]="importFilterDescriptions.search"
+            aria-label="Suche Hilfe"
+          >
+            <mat-icon>help_outline</mat-icon>
+          </button>
         </mat-form-field>
         <mat-form-field appearance="outline">
           <mat-label>Start</mat-label>
           <input matInput formControlName="start" placeholder="z. B. Basel" />
+          <button
+            mat-icon-button
+            matSuffix
+            type="button"
+            class="help-icon"
+            [matTooltip]="importFilterDescriptions.start"
+            aria-label="Start-Filter Hilfe"
+          >
+            <mat-icon>help_outline</mat-icon>
+          </button>
         </mat-form-field>
         <mat-form-field appearance="outline">
           <mat-label>Ziel</mat-label>
           <input matInput formControlName="end" placeholder="z. B. Zürich" />
+          <button
+            mat-icon-button
+            matSuffix
+            type="button"
+            class="help-icon"
+            [matTooltip]="importFilterDescriptions.end"
+            aria-label="Ziel-Filter Hilfe"
+          >
+            <mat-icon>help_outline</mat-icon>
+          </button>
         </mat-form-field>
         <button mat-stroked-button type="button" (click)="onImportFiltersReset()">
           <mat-icon>clear_all</mat-icon>
@@ -238,26 +484,129 @@
         </div>
 
         <mat-selection-list [multiple]="true">
-          @for (train of filteredTrains(); track train.id) {
+          @for (train of filteredTrains(); track trackByTrainId($index, train)) {
             <mat-list-option
               [selected]="isTrainSelected(train.id)"
               (selectedChange)="toggleTrainSelection(train.id, $event)"
+              class="import-train-option"
             >
               <div class="import-train">
-                <div class="import-train__title">
-                  <strong>{{ train.name }}</strong>
-                  <span class="import-train__meta">
-                    {{ train.number }} · {{ train.category || 'ohne Kategorie' }}
-                  </span>
+                <div class="import-train__header">
+                  <div class="import-train__title-block">
+                    <div class="import-train__title">
+                      <strong>{{ train.name }}</strong>
+                      @if (train.variantLabel) {
+                        <span class="import-train__variant-chip">
+                          <mat-icon>tune</mat-icon>
+                          {{ train.variantLabel }}
+                        </span>
+                      }
+                    </div>
+                    <div class="import-train__chips">
+                      <mat-chip-set aria-label="Zugdaten">
+                        <mat-chip disableRipple>
+                          <mat-icon>confirmation_number</mat-icon>
+                          {{ train.number }}
+                        </mat-chip>
+                        <mat-chip disableRipple>
+                          <mat-icon>category</mat-icon>
+                          {{ train.category || 'ohne Kategorie' }}
+                        </mat-chip>
+                        @if (train.trafficPeriodName) {
+                          <mat-chip disableRipple>
+                            <mat-icon>calendar_month</mat-icon>
+                            {{ train.trafficPeriodName }}
+                          </mat-chip>
+                        }
+                        @if (train.operatingPeriodRef) {
+                          <mat-chip disableRipple>
+                            <mat-icon>link</mat-icon>
+                            {{ train.operatingPeriodRef }}
+                          </mat-chip>
+                        }
+                      </mat-chip-set>
+                    </div>
+                  </div>
+                  <div class="import-train__actions">
+                    <span class="import-train__stops-count">
+                      {{ train.stops.length }} Halte
+                    </span>
+                    <button
+                      mat-icon-button
+                      type="button"
+                      (click)="toggleTrainExpansion(train.id, $event)"
+                      [attr.aria-label]="
+                        isTrainExpanded(train.id)
+                          ? 'Details einklappen'
+                          : 'Details aufklappen'
+                      "
+                    >
+                      <mat-icon>
+                        {{ isTrainExpanded(train.id) ? 'expand_less' : 'expand_more' }}
+                      </mat-icon>
+                    </button>
+                  </div>
                 </div>
-                <div class="import-train__route">
-                  <span>{{ train.start || '—' }}</span>
-                  <mat-icon>arrow_forward</mat-icon>
-                  <span>{{ train.end || '—' }}</span>
-                  <span class="import-train__time">
-                    {{ train.departureTime || '--:--' }}
-                  </span>
+                <div class="import-train__summary">
+                  <div class="import-train__timeline">
+                    <div class="import-train__timeline-point">
+                      <span class="import-train__time">{{ train.departureTime || '--:--' }}</span>
+                      <small>{{ train.start || '—' }}</small>
+                    </div>
+                    <div class="import-train__timeline-line">
+                      <mat-icon>trending_flat</mat-icon>
+                    </div>
+                    <div class="import-train__timeline-point import-train__timeline-point--end">
+                      <span class="import-train__time">{{ train.arrivalTime || '--:--' }}</span>
+                      <small>{{ train.end || '—' }}</small>
+                    </div>
+                  </div>
+                  <div class="import-train__badges">
+                    @if (train.variantOf) {
+                      <span class="import-train__badge">
+                        Variante von {{ train.variantOf }}
+                      </span>
+                    }
+                    @if (train.trainPartId) {
+                      <span class="import-train__badge">
+                        TrainPart: {{ train.trainPartId }}
+                      </span>
+                    }
+                  </div>
                 </div>
+                @if (isTrainExpanded(train.id)) {
+                  <div class="import-train__details">
+                    <div class="import-train__details-header">
+                      Halteübersicht
+                    </div>
+                    <div class="import-train__stops">
+                      @for (stop of train.stops; track $index; let idx = $index) {
+                        <div class="import-train__stop-row">
+                          <div class="import-train__stop-seq">#{{ idx + 1 }}</div>
+                          <div class="import-train__stop-location">
+                            <strong>{{ stop.locationName || stop.locationCode }}</strong>
+                            <small>{{ stop.locationCode }}</small>
+                          </div>
+                          <div class="import-train__stop-times">
+                            <div>
+                              <span>Ankunft</span>
+                              <strong>{{ stopTimeLabel(stop, 'arrival') }}</strong>
+                            </div>
+                            <div>
+                              <span>Abfahrt</span>
+                              <strong>{{ stopTimeLabel(stop, 'departure') }}</strong>
+                            </div>
+                          </div>
+                          <div class="import-train__stop-meta">
+                            @if (stop.activities.length) {
+                              <span>{{ stop.activities.join(', ') }}</span>
+                            }
+                          </div>
+                        </div>
+                      }
+                    </div>
+                  </div>
+                }
               </div>
             </mat-list-option>
           }

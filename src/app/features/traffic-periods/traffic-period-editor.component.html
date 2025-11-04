@@ -51,13 +51,54 @@
       </mat-form-field>
     </section>
 
+    <section class="variant-section">
+      <div class="grid grid--three">
+        <mat-form-field appearance="outline">
+          <mat-label>Variantentyp</mat-label>
+          <mat-select formControlName="variantType">
+            @for (option of variantTypeOptions; track option.value) {
+              <mat-option [value]="option.value">{{ option.label }}</mat-option>
+            }
+          </mat-select>
+        </mat-form-field>
+
+        <mat-form-field appearance="outline">
+          <mat-label>Gültig für</mat-label>
+          <mat-select formControlName="appliesTo">
+            @for (option of appliesOptions; track option.value) {
+              <mat-option [value]="option.value">{{ option.label }}</mat-option>
+            }
+          </mat-select>
+        </mat-form-field>
+
+        <mat-form-field appearance="outline">
+          <mat-label>Variantennummer</mat-label>
+          <input matInput formControlName="variantNumber" placeholder="z. B. 00 oder A1" />
+        </mat-form-field>
+      </div>
+
+      <mat-form-field appearance="outline">
+        <mat-label>Begründung / Hinweis</mat-label>
+        <textarea matInput rows="2" formControlName="reason"></textarea>
+      </mat-form-field>
+    </section>
+
     <section class="selection-section">
-      <app-annual-calendar-selector
-        [title]="'Kalender'"
-        [year]="selectedYear()"
-        [selectedDates]="selectedDates()"
-        (selectedDatesChange)="onSelectedDatesChange($event)"
-      ></app-annual-calendar-selector>
+      <div class="calendar-grid">
+        <app-annual-calendar-selector
+          [title]="'Verkehrstage'"
+          [year]="selectedYear()"
+          [selectedDates]="selectedDates()"
+          (selectedDatesChange)="onSelectedDatesChange($event)"
+        ></app-annual-calendar-selector>
+
+        <app-annual-calendar-selector
+          [title]="'Ausnahmen (ausgeschlossen)'"
+          [year]="selectedYear()"
+          [selectedDates]="excludedDates()"
+          (selectedDatesChange)="onExcludedDatesChange($event)"
+        ></app-annual-calendar-selector>
+      </div>
     </section>
   </form>
 </mat-dialog-content>

@@ -8,7 +8,12 @@ import {
 } from '@angular/material/dialog';
 import { MATERIAL_IMPORTS } from '../../core/material.imports.imports';
 import { TrafficPeriodCreatePayload } from '../../core/services/traffic-period.service';
-import { TrafficPeriod, TrafficPeriodType } from '../../core/models/traffic-period.model';
+import {
+  TrafficPeriod,
+  TrafficPeriodType,
+  TrafficPeriodVariantType,
+  TrafficPeriodVariantScope,
+} from '../../core/models/traffic-period.model';
 import { AnnualCalendarSelectorComponent } from '../../shared/annual-calendar-selector/annual-calendar-selector.component';
 
 interface TrafficPeriodEditorData {
@@ -53,6 +58,10 @@ export class TrafficPeriodEditorComponent {
       Validators.min(1900),
       Validators.max(2100),
     ]),
+    variantType: this.fb.nonNullable.control<TrafficPeriodVariantType>('series'),
+    appliesTo: this.fb.nonNullable.control<TrafficPeriodVariantScope>('both'),
+    variantNumber: ['00', [Validators.required, Validators.maxLength(8)]],
+    reason: [''],
   });
 
   readonly typeOptions: { value: TrafficPeriodType; label: string }[] = [
@@ -64,6 +73,20 @@ export class TrafficPeriodEditorComponent {
   private readonly existingPeriod = this.data.period;
   readonly isEditMode = !!this.existingPeriod;
   readonly selectedDates = signal<string[]>([]);
+  readonly excludedDates = signal<string[]>([]);
+
+  readonly variantTypeOptions: { value: TrafficPeriodVariantType; label: string }[] = [
+    { value: 'series', label: 'Serie' },
+    { value: 'special_day', label: 'Sondertag' },
+    { value: 'block', label: 'Block/Sperre' },
+    { value: 'replacement', label: 'Ersatz' },
+  ];
+
+  readonly appliesOptions: { value: TrafficPeriodVariantScope; label: string }[] = [
+    { value: 'commercial', label: 'Kommerziell' },
+    { value: 'operational', label: 'Betrieb' },
+    { value: 'both', label: 'Beides' },
+  ];
 
   constructor() {
     if (this.existingPeriod) {
@@ -74,11 +97,16 @@ export class TrafficPeriodEditorComponent {
       .pipe(takeUntilDestroyed())
       .subscribe(() => {
         this.selectedDates.set([]);
+        this.excludedDates.set([]);
       });
   }
 
   onSelectedDatesChange(dates: string[]) {
     this.selectedDates.set(dates);
+  }
+
+  onExcludedDatesChange(dates: string[]) {
+    this.excludedDates.set(dates);
   }
 
   selectedYear(): number {
@@ -97,6 +125,7 @@ export class TrafficPeriodEditorComponent {
 
     const value = this.form.getRawValue();
     const dates = [...this.selectedDates()].sort();
+    const excluded = [...this.excludedDates()].sort();
 
     const payload: TrafficPeriodCreatePayload = {
       name: value.name!,
@@ -106,6 +135,11 @@ export class TrafficPeriodEditorComponent {
       tags: this.parseTags(value.tags),
       year: value.year,
       selectedDates: dates,
+      excludedDates: excluded,
+      variantType: value.variantType ?? 'series',
+      appliesTo: value.appliesTo ?? 'both',
+      variantNumber: this.normalizeVariantNumber(value.variantNumber),
+      reason: value.reason?.trim() || undefined,
     };
 
     const result: TrafficPeriodEditorResult = {
@@ -141,11 +175,25 @@ export class TrafficPeriodEditorComponent {
         responsible: period.responsible ?? '',
         tags: period.tags?.join(', ') ?? '',
         year,
+        variantType: rule?.variantType ?? 'series',
+        appliesTo: rule?.appliesTo ?? 'both',
+        variantNumber: rule?.variantNumber ?? '00',
+        reason: rule?.reason ?? '',
       },
       { emitEvent: false },
     );
 
     const includes = rule?.includesDates ?? [];
     this.selectedDates.set([...includes]);
+    const excludes = rule?.excludesDates ?? [];
+    this.excludedDates.set([...excludes]);
+  }
+
+  private normalizeVariantNumber(value: string | null | undefined): string {
+    const trimmed = value?.trim();
+    if (!trimmed) {
+      return '00';
+    }
+    return trimmed.toUpperCase();
   }
 }

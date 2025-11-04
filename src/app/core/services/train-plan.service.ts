@@ -30,6 +30,8 @@ export interface CreatePlansFromTemplatePayload {
   intervalMinutes: number;
   count: number;
   responsibleRu?: string;
+  trainNumberStart?: number;
+  trainNumberInterval?: number;
 }
 
 export interface CreateManualPlanPayload {
@@ -214,6 +216,12 @@ export class TrainPlanService {
 
       const currentDate = dates[dateIndex];
       const departureDate = this.buildDateTime(currentDate, minutesWithinDay);
+      const trainNumberOverride = this.resolveTrainNumberOverride(
+        payload.trainNumberStart,
+        payload.trainNumberInterval,
+        i,
+      );
+
       const plan = this.buildPlanFromTemplate(
         templateEntity,
         period.id,
@@ -221,6 +229,7 @@ export class TrainPlanService {
         i,
         payload.responsibleRu ?? template.responsibleRu,
         nowIso,
+        trainNumberOverride,
       );
 
       plans.push(plan);
@@ -421,9 +430,11 @@ export class TrainPlanService {
     sequence: number,
     responsibleRu: string,
     timestamp: string,
+    trainNumberOverride?: string,
   ): TrainPlan {
     const planId = this.generatePlanId();
-    const trainNumber = this.generateTrainNumber(template.trainNumber, sequence);
+    const trainNumber =
+      trainNumberOverride ?? this.generateTrainNumber(template.trainNumber, sequence);
     const stops = this.buildStops(template.stops, departureDate);
     const firstStop = stops[0];
     const lastStop = stops[stops.length - 1];
@@ -596,6 +607,19 @@ export class TrainPlanService {
   private generateTrainNumber(base: string, sequence: number): string {
     const suffix = (sequence + 1).toString().padStart(3, '0');
     return `${base}-${suffix}`;
+  }
+
+  private resolveTrainNumberOverride(
+    start?: number,
+    interval?: number,
+    sequenceIndex = 0,
+  ): string | undefined {
+    if (typeof start !== 'number' || Number.isNaN(start)) {
+      return undefined;
+    }
+    const step = Math.max(1, interval ?? 1);
+    const value = start + sequenceIndex * step;
+    return value.toString();
   }
 
   private generateStopId(stop: ScheduleTemplateStop, date: Date): string {

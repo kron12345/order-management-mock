@@ -80,56 +80,6 @@
           color: #213547;
         }
 
-        .ttt-status-chip {
-          font-size: 0.7rem;
-          text-transform: uppercase;
-          letter-spacing: 0.08em;
-          font-weight: 600;
-          height: 22px;
-          border-radius: 999px;
-          border-width: 1px;
-          border-style: solid;
-          background: #f0f4ff;
-          color: #1a73e8;
-          padding: 0 8px;
-        }
-
-        .ttt-status-chip.status-requested {
-          background: #e8f0fe;
-          border-color: #1a73e8;
-          color: #1a73e8;
-        }
-
-        .ttt-status-chip.status-offered {
-          background: #ede7f6;
-          border-color: #5e35b1;
-          color: #512da8;
-        }
-
-        .ttt-status-chip.status-confirmed {
-          background: #e6f4ea;
-          border-color: #1e8e3e;
-          color: #1e8e3e;
-        }
-
-        .ttt-status-chip.status-operating {
-          background: #e0f2f1;
-          border-color: #00796b;
-          color: #00695c;
-        }
-
-        .ttt-status-chip.status-canceled {
-          background: #fde8e8;
-          border-color: #d32f2f;
-          color: #c62828;
-        }
-
-        .ttt-status-chip.status-not-ordered {
-          background: #f3f4f6;
-          border-color: #9ca3af;
-          color: #374151;
-        }
-
         .phase-chip {
           font-size: 0.7rem;
           height: 22px;
@@ -320,6 +270,63 @@
         .original-route {
           font-size: 0.85rem;
           color: rgba(0, 0, 0, 0.7);
+        }
+
+        .original-body {
+          display: flex;
+          flex-direction: column;
+          gap: 6px;
+        }
+
+        .section-label {
+          font-size: 0.75rem;
+          text-transform: uppercase;
+          letter-spacing: 0.08em;
+          color: rgba(0, 0, 0, 0.6);
+        }
+
+        .original-variants,
+        .original-modifications {
+          display: flex;
+          flex-direction: column;
+          gap: 4px;
+          margin-top: 4px;
+        }
+
+        .variant-chip {
+          font-size: 0.7rem;
+          height: 24px;
+          border-radius: 999px;
+          --mdc-chip-container-color: rgba(26, 115, 232, 0.12);
+          --mdc-chip-label-text-color: #0d47a1;
+        }
+
+        .modification-list {
+          display: flex;
+          flex-direction: column;
+          gap: 4px;
+        }
+
+        .modification-entry {
+          display: flex;
+          gap: 6px;
+          align-items: flex-start;
+          font-size: 0.82rem;
+          color: rgba(0, 0, 0, 0.75);
+
+          mat-icon {
+            font-size: 16px;
+            height: 16px;
+            width: 16px;
+          }
+
+          .modification-title {
+            font-weight: 600;
+          }
+
+          .modification-notes {
+            color: rgba(0, 0, 0, 0.6);
+          }
         }
       }
       .businesses {

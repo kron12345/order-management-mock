@@ -4,6 +4,7 @@ export const MOCK_ORDERS: Order[] = [
   {
     id: 'ORD-2030-001',
     name: 'ICE Sprinter Berlin – Köln/Bremen',
+    customerId: 'cust-db-001',
     customer: 'DB Fernverkehr',
     tags: ['ICE', 'Flügelzug', 'TTT'],
     comment: 'Flügelzugkonzept inkl. Splitting in Hannover. Varianten und Aufgaben laufen direkt gegen den Fahrplanmanager.',
@@ -97,6 +98,7 @@ export const MOCK_ORDERS: Order[] = [
   {
     id: 'ORD-2030-002',
     name: 'RE Zürich – Bern 2030',
+    customerId: 'cust-sbb-001',
     customer: 'SBB Personenverkehr',
     tags: ['RegionalExpress', 'RVK'],
     items: [
@@ -171,6 +173,7 @@ export const MOCK_ORDERS: Order[] = [
   {
     id: 'ORD-2030-003',
     name: 'Güterkorridor Rotterdam – Basel',
+    customerId: 'cust-cargon-001',
     customer: 'CargoNet Europe',
     tags: ['Güterverkehr', 'Nacht'],
     items: [

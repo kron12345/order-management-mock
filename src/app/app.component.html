@@ -12,6 +12,11 @@
           <span matListItemTitle>Aufträge</span>
           <span matListItemLine>Übersicht & Bearbeitung</span>
         </a>
+        <a mat-list-item routerLink="/customers" routerLinkActive="active">
+          <mat-icon matListItemIcon>groups</mat-icon>
+          <span matListItemTitle>Kunden</span>
+          <span matListItemLine>Stammdaten & Kontakte</span>
+        </a>
         <a mat-list-item routerLink="/businesses" routerLinkActive="active">
           <mat-icon matListItemIcon>work_outline</mat-icon>
           <span matListItemTitle>Geschäfte</span>
@@ -21,6 +26,11 @@
           <mat-icon matListItemIcon>schema</mat-icon>
           <span matListItemTitle>Vorlagen</span>
           <span matListItemLine>Fahrpläne & Kalender</span>
+        </a>
+        <a mat-list-item routerLink="/plans" routerLinkActive="active">
+          <mat-icon matListItemIcon>archive</mat-icon>
+          <span matListItemTitle>Fahrplanarchiv</span>
+          <span matListItemLine>Backups der Auftragsfahrpläne</span>
         </a>
         <a
           mat-list-item

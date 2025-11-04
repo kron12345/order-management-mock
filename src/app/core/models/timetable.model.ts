@@ -112,6 +112,7 @@ export interface TimetableCalendarVariant {
   dates?: string[];
   appliesTo?: 'commercial' | 'operational' | 'both';
   reason?: string;
+  variantNumber?: string;
 }
 
 export interface TimetableAuditEntry {

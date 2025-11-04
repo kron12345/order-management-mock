@@ -30,7 +30,8 @@ export class OrderListComponent {
 
   openCreateDialog() {
     this.dialog.open(OrderCreateDialogComponent, {
-      width: '520px',
+      width: '760px',
+      maxWidth: '95vw',
     });
   }
 

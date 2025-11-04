@@ -15,6 +15,7 @@ import {
   ReactiveFormsModule,
   Validators,
 } from '@angular/forms';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import {
   MAT_DIALOG_DATA,
   MatDialogRef,
@@ -70,11 +71,35 @@ export class PlanAssemblyDialogComponent {
     ) as FormArray<StopForm>,
   });
   readonly errorMessage = signal<string | null>(null);
+  readonly validationHint = signal<string | null>(null);
   readonly selectedIndex = signal(0);
   readonly stopList = signal<StopForm[]>([]);
+  readonly fieldDescriptions = {
+    type: 'Legt fest, ob der Halt der Start, ein Zwischenhalt oder das Ziel ist.',
+    locationName: 'Anzeigename des Haltes, z. B. Basel SBB.',
+    locationCode: 'Technischer Ortscode oder interner Identifier.',
+    countryCode: 'Optionales Länderkürzel (ISO-2), z. B. CH oder DE.',
+    arrivalTime:
+      'Geplante Ankunftszeit (HH:MM). Beim ersten Halt deaktiviert, weil dort nur abgefahren wird.',
+    arrivalOffsetDays:
+      'Zusätzliche Tage zur Ankunft (z. B. +1, wenn die Ankunft am Folgetag liegt).',
+    departureTime:
+      'Geplante Abfahrtszeit (HH:MM). Beim letzten Halt deaktiviert, weil dort nur ankommt.',
+    departureOffsetDays:
+      'Zusätzliche Tage zur Abfahrt, wenn der Halt an einem Folgetag fortgesetzt wird.',
+    dwellMinutes: 'Aufenthaltsdauer zwischen Ankunft und Abfahrt in Minuten.',
+    activities: 'RailML-Aktivitätscodes, kommagetrennt (z. B. 0001, 0020).',
+    platform: 'Optionaler Gleis- oder Bahnsteighinweis.',
+    notes: 'Freitextnotiz für interne Hinweise zum Halt.',
+  } as const;
 
   constructor() {
     this.stopList.set([...this.stopsArray.controls]);
+    this.enforceEdgeFieldRules();
+    this.updateValidationHint();
+    this.form.valueChanges.pipe(takeUntilDestroyed()).subscribe(() => {
+      this.updateValidationHint();
+    });
   }
 
   get stopsControls(): StopForm[] {
@@ -112,9 +137,7 @@ export class PlanAssemblyDialogComponent {
     } as TrainPlanStop);
     const insertIndex = Math.min(afterIndex + 1, this.stopsArray.length);
     this.stopsArray.insert(insertIndex, newStop);
-    this.resequenceStops();
-    this.selectStop(insertIndex);
-    this.refreshList();
+    this.handleStructureChange(insertIndex);
   }
 
   removeStop(index: number) {
@@ -123,10 +146,8 @@ export class PlanAssemblyDialogComponent {
       return;
     }
     this.stopsArray.removeAt(index);
-    this.resequenceStops();
     const nextIndex = Math.min(this.stopsArray.length - 1, Math.max(0, this.selectedIndex()));
-    this.selectStop(nextIndex);
-    this.refreshList();
+    this.handleStructureChange(nextIndex);
   }
 
   moveStop(index: number, direction: -1 | 1) {
@@ -137,9 +158,7 @@ export class PlanAssemblyDialogComponent {
     const control = this.stopsArray.at(index);
     this.stopsArray.removeAt(index);
     this.stopsArray.insert(target, control);
-    this.resequenceStops();
-    this.selectStop(target);
-    this.refreshList();
+    this.handleStructureChange(target);
   }
 
   cancel() {
@@ -147,8 +166,9 @@ export class PlanAssemblyDialogComponent {
   }
 
   submit() {
-    if (this.form.invalid) {
-      this.errorMessage.set('Bitte alle Pflichtfelder der Halte prüfen.');
+    const validationIssue = this.computeValidationIssue(true);
+    if (validationIssue) {
+      this.errorMessage.set(validationIssue);
       this.form.markAllAsTouched();
       return;
     }
@@ -236,6 +256,165 @@ export class PlanAssemblyDialogComponent {
     this.stopList.set([...this.stopsArray.controls]);
     this.viewport?.checkViewportSize();
     this.cdr.detectChanges();
+  }
+
+  private handleStructureChange(targetIndex: number) {
+    this.resequenceStops();
+    this.enforceEdgeFieldRules();
+    const clampedIndex = Math.min(
+      Math.max(0, targetIndex),
+      Math.max(0, this.stopsArray.length - 1),
+    );
+    this.selectStop(clampedIndex);
+    this.refreshList();
+    this.updateValidationHint();
+  }
+
+  private enforceEdgeFieldRules() {
+    this.stopsControls.forEach((group, index) => {
+      const isFirst = index === 0;
+      const isLast = index === this.stopsControls.length - 1;
+      if (isFirst) {
+        this.disableControls(group.controls.arrivalTime, group.controls.arrivalOffsetDays);
+        this.enableControls(group.controls.departureTime, group.controls.departureOffsetDays);
+        group.controls.arrivalTime.setValue('', { emitEvent: false });
+        group.controls.arrivalOffsetDays.setValue('', { emitEvent: false });
+      } else if (isLast) {
+        this.disableControls(group.controls.departureTime, group.controls.departureOffsetDays);
+        this.enableControls(group.controls.arrivalTime, group.controls.arrivalOffsetDays);
+        group.controls.departureTime.setValue('', { emitEvent: false });
+        group.controls.departureOffsetDays.setValue('', { emitEvent: false });
+      } else {
+        this.enableControls(
+          group.controls.arrivalTime,
+          group.controls.arrivalOffsetDays,
+          group.controls.departureTime,
+          group.controls.departureOffsetDays,
+        );
+      }
+    });
+  }
+
+  private disableControls(...controls: FormControl<string>[]) {
+    controls.forEach((control) => {
+      if (!control.disabled) {
+        control.disable({ emitEvent: false });
+      }
+    });
+  }
+
+  private enableControls(...controls: FormControl<string>[]) {
+    controls.forEach((control) => {
+      if (control.disabled) {
+        control.enable({ emitEvent: false });
+      }
+    });
+  }
+
+  private updateValidationHint() {
+    const issue = this.computeValidationIssue(false);
+    this.validationHint.set(issue);
+    if (issue === null && this.errorMessage()) {
+      this.errorMessage.set(null);
+    }
+  }
+
+  private computeValidationIssue(requireComplete: boolean): string | null {
+    if (this.form.invalid) {
+      return 'Bitte alle Pflichtfelder der Halte ausfüllen.';
+    }
+    if (!this.stopsControls.length) {
+      return 'Es werden mindestens zwei Halte benötigt.';
+    }
+    const originDeparture = this.stopsControls[0].controls.departureTime.value.trim();
+    if (!originDeparture) {
+      return 'Der Start benötigt eine Abfahrtszeit.';
+    }
+    const destinationArrival =
+      this.stopsControls[this.stopsControls.length - 1].controls.arrivalTime.value.trim();
+    if (!destinationArrival) {
+      return 'Das Ziel benötigt eine Ankunftszeit.';
+    }
+
+    return this.validateTimelineConsistency();
+  }
+
+  private validateTimelineConsistency(): string | null {
+    let lastTimestamp: number | null = null;
+
+    for (let index = 0; index < this.stopsControls.length; index++) {
+      const group = this.stopsControls[index];
+      const arrival = this.toAbsoluteMinutes(
+        group.controls.arrivalTime,
+        group.controls.arrivalOffsetDays,
+      );
+      const departure = this.toAbsoluteMinutes(
+        group.controls.departureTime,
+        group.controls.departureOffsetDays,
+      );
+
+      if (arrival !== null && index === 0) {
+        return 'Der Starthalt darf keine Ankunft enthalten.';
+      }
+      if (departure !== null && index === this.stopsControls.length - 1) {
+        return 'Der Zielhalt darf keine Abfahrt enthalten.';
+      }
+
+      if (arrival !== null) {
+        if (lastTimestamp !== null && arrival < lastTimestamp) {
+          return `Die Ankunft von Halt #${index + 1} liegt vor dem vorherigen Ereignis.`;
+        }
+        lastTimestamp = arrival;
+      } else if (index > 0 && index < this.stopsControls.length - 1) {
+        if (!group.controls.departureTime.value.trim()) {
+          return `Halt #${index + 1} benötigt mindestens eine Ankunft oder Abfahrt.`;
+        }
+      }
+
+      if (departure !== null) {
+        if (arrival !== null && departure < arrival) {
+          return `Die Abfahrt von Halt #${index + 1} liegt vor der Ankunft desselben Halts.`;
+        }
+        if (lastTimestamp !== null && departure < lastTimestamp) {
+          return `Die Abfahrt von Halt #${index + 1} liegt vor einem vorherigen Ereignis.`;
+        }
+        lastTimestamp = departure;
+      }
+    }
+
+    return null;
+  }
+
+  private toAbsoluteMinutes(
+    timeControl: FormControl<string>,
+    offsetControl: FormControl<string>,
+  ): number | null {
+    if (timeControl.disabled) {
+      return null;
+    }
+    const timeMinutes = this.parseTimeToMinutes(timeControl.value);
+    if (timeMinutes === null) {
+      return null;
+    }
+    const offset = this.toNumber(offsetControl.value) ?? 0;
+    return timeMinutes + offset * 24 * 60;
+  }
+
+  private parseTimeToMinutes(value: string | null | undefined): number | null {
+    const trimmed = value?.trim();
+    if (!trimmed) {
+      return null;
+    }
+    const parts = trimmed.split(':');
+    if (parts.length !== 2) {
+      return null;
+    }
+    const hours = Number.parseInt(parts[0], 10);
+    const minutes = Number.parseInt(parts[1], 10);
+    if (Number.isNaN(hours) || Number.isNaN(minutes)) {
+      return null;
+    }
+    return hours * 60 + minutes;
   }
 
   stopName(control: StopForm): string {

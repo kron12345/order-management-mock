@@ -11,6 +11,8 @@ import {
 import {
   TrafficPeriod,
   TrafficPeriodType,
+  TrafficPeriodVariantType,
+  TrafficPeriodVariantScope,
 } from '../../core/models/traffic-period.model';
 import { MatDialog } from '@angular/material/dialog';
 import { TrafficPeriodEditorComponent } from './traffic-period-editor.component';
@@ -57,6 +59,19 @@ export class TrafficPeriodListComponent {
     standard: 'Standard',
     special: 'Sonderverkehr',
     construction: 'Bauphase',
+  };
+
+  readonly variantTypeLabels: Record<TrafficPeriodVariantType, string> = {
+    series: 'Serie',
+    special_day: 'Sondertag',
+    block: 'Block/Sperre',
+    replacement: 'Ersatztag',
+  };
+
+  readonly appliesLabels: Record<TrafficPeriodVariantScope, string> = {
+    commercial: 'Kommerziell',
+    operational: 'Betrieb',
+    both: 'Beide',
   };
   private readonly monthLabels = ['Jan', 'Feb', 'Mrz', 'Apr', 'Mai', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dez'];
 
@@ -182,6 +197,20 @@ export class TrafficPeriodListComponent {
 
   excludesLabel(rule: TrafficPeriod['rules'][number]): string | null {
     return this.formatDateRanges(rule.excludesDates);
+  }
+
+  variantTypeLabel(rule: TrafficPeriod['rules'][number]): string | undefined {
+    if (!rule.variantType) {
+      return undefined;
+    }
+    return this.variantTypeLabels[rule.variantType];
+  }
+
+  appliesLabel(rule: TrafficPeriod['rules'][number]): string | undefined {
+    if (!rule.appliesTo) {
+      return undefined;
+    }
+    return this.appliesLabels[rule.appliesTo];
   }
 
   ruleTimeline(rule: TrafficPeriod['rules'][number]) {

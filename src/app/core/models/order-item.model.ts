@@ -22,6 +22,28 @@ export interface OrderItemTimetableSnapshot {
     daysBitmap: string;
   };
   stops: OrderItemTimetableSnapshotStop[];
+  variants?: OrderItemTimetableSnapshotVariant[];
+  modifications?: OrderItemTimetableSnapshotModification[];
+}
+
+export interface OrderItemTimetableSnapshotVariant {
+  id: string;
+  description?: string;
+  type?: string;
+  validFrom?: string;
+  validTo?: string;
+  daysOfWeek?: string[];
+  dates?: string[];
+  appliesTo?: string;
+  variantNumber?: string;
+  reason?: string;
+}
+
+export interface OrderItemTimetableSnapshotModification {
+  date: string;
+  description?: string;
+  type: string;
+  notes?: string;
 }
 
 export interface OrderItem {

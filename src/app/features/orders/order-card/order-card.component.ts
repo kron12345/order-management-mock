@@ -8,9 +8,11 @@ import { OrderItemListComponent } from '../order-item-list/order-item-list.compo
 import { OrderPositionDialogComponent } from '../order-position-dialog.component';
 import { BusinessService } from '../../../core/services/business.service';
 import { BusinessStatus } from '../../../core/models/business.model';
-import { TrainPlanService } from '../../../core/services/train-plan.service';
-import { TrainPlanStatus } from '../../../core/models/train-plan.model';
 import { OrderService } from '../../../core/services/order.service';
+import { CustomerService } from '../../../core/services/customer.service';
+import { Customer } from '../../../core/models/customer.model';
+import { TimetableService } from '../../../core/services/timetable.service';
+import { TimetablePhase } from '../../../core/models/timetable.model';
 
 @Component({
   selector: 'app-order-card',
@@ -49,8 +51,11 @@ export class OrderCardComponent {
   readonly businessStatusSummaries = computed(() =>
     this.computeBusinessStatusSummaries(this.effectiveItems()),
   );
-  readonly trainStatusSummaries = computed(() =>
-    this.computeTrainStatusSummaries(this.effectiveItems()),
+  readonly timetablePhaseSummaries = computed(() =>
+    this.computeTimetablePhaseSummaries(this.effectiveItems()),
+  );
+  readonly variantSummaries = computed(() =>
+    this.computeVariantSummaries(this.effectiveItems()),
   );
   private readonly filters = computed(() => this.orderService.filters());
   readonly effectiveItems = computed(() => this.resolveItems());
@@ -61,21 +66,21 @@ export class OrderCardComponent {
     in_arbeit: 'In Arbeit',
     erledigt: 'Erledigt',
   };
-  private readonly trainPlanStatusLabels: Partial<Record<TrainPlanStatus, string>> =
-    {
-      not_ordered: 'Nicht bestellt',
-      requested: 'Angefragt',
-      offered: 'Angeboten',
-      confirmed: 'Bestätigt',
-      operating: 'In Betrieb',
-      canceled: 'Storniert',
-    };
+  private readonly timetablePhaseLabels: Record<TimetablePhase, string> = {
+    bedarf: 'Bedarf',
+    path_request: 'Trassenanmeldung',
+    offer: 'Angebot',
+    contract: 'Vertrag',
+    operational: 'Betrieb',
+    archived: 'Archiv',
+  };
 
   constructor(
     private readonly dialog: MatDialog,
     private readonly businessService: BusinessService,
-    private readonly trainPlanService: TrainPlanService,
     private readonly orderService: OrderService,
+    private readonly customerService: CustomerService,
+    private readonly timetableService: TimetableService,
   ) {}
 
   openPositionDialog(event: MouseEvent) {
@@ -143,44 +148,57 @@ export class OrderCardComponent {
     );
   }
 
-  private computeTrainStatusSummaries(items: OrderItem[]): StatusSummary[] {
-    const ids = new Set<string>(
-      items
-        .map((item) => item.linkedTrainPlanId)
-        .filter((id): id is string => !!id),
-    );
-
-    if (!ids.size) {
-      return [];
-    }
-
+  private computeTimetablePhaseSummaries(items: OrderItem[]): StatusSummary[] {
     const counts = new Map<string, number>();
     const labels = new Map<string, string>();
-    const values = new Map<string, string>();
+    const values = new Map<string, TimetablePhase>();
 
-    ids.forEach((planId) => {
-      const plan = this.trainPlanService.getById(planId);
-      const status = plan?.status;
-      if (!status) {
+    items.forEach((item) => {
+      const phase = this.resolveTimetablePhase(item);
+      if (!phase) {
         return;
       }
-      const className = this.statusClassName(status);
-      counts.set(className, (counts.get(className) ?? 0) + 1);
-      labels.set(
-        className,
-        this.trainPlanStatusLabels[status] ?? this.fallbackStatusLabel(status),
-      );
-      values.set(className, status);
+      const key = this.statusClassName(phase);
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+      labels.set(key, this.timetablePhaseLabels[phase] ?? phase);
+      values.set(key, phase);
     });
 
     return this.sortSummaries(
-      Array.from(counts.entries()).map(([className, count]) => ({
-        key: className,
-        label:
-          labels.get(className) ??
-          this.fallbackStatusLabel(this.stripStatusPrefix(className)),
+      Array.from(counts.entries()).map(([key, count]) => ({
+        key,
+        label: labels.get(key) ?? this.fallbackStatusLabel(this.stripStatusPrefix(key)),
         count,
-        value: values.get(className) ?? this.stripStatusPrefix(className),
+        value: values.get(key) ?? this.stripStatusPrefix(key),
+      })),
+    );
+  }
+
+  private computeVariantSummaries(items: OrderItem[]): StatusSummary[] {
+    const counts = new Map<string, number>();
+    const labels = new Map<string, string>();
+    items.forEach((item) => {
+      const variants = item.originalTimetable?.variants;
+      if (!variants?.length) {
+        return;
+      }
+      variants.forEach((variant) => {
+        const number = variant.variantNumber ?? variant.id;
+        const key = `variant-${number}`;
+        counts.set(key, (counts.get(key) ?? 0) + 1);
+        const label = variant.description
+          ? `${number} · ${variant.description}`
+          : number;
+        labels.set(key, label);
+      });
+    });
+
+    return this.sortSummaries(
+      Array.from(counts.entries()).map(([key, count]) => ({
+        key,
+        label: labels.get(key) ?? key,
+        count,
+        value: key,
       })),
     );
   }
@@ -196,6 +214,16 @@ export class OrderCardComponent {
 
   private normalizeStatusValue(value: string): string {
     return value.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+  }
+
+  private resolveTimetablePhase(item: OrderItem): TimetablePhase | undefined {
+    if (item.generatedTimetableRefId) {
+      const timetable = this.timetableService.getByRefTrainId(item.generatedTimetableRefId);
+      if (timetable?.status) {
+        return timetable.status;
+      }
+    }
+    return item.timetablePhase ?? undefined;
   }
 
   private statusClassName(value: string): string {
@@ -227,7 +255,7 @@ export class OrderCardComponent {
     return businesses.some((b) => b.status === status);
   }
 
-  isTrainStatusActive(status: string): boolean {
+  isPhaseActive(status: string): boolean {
     return this.filters().trainStatus === status;
   }
 
@@ -235,10 +263,10 @@ export class OrderCardComponent {
     return this.filters().businessStatus === status;
   }
 
-  toggleTrainStatus(status: string, event: MouseEvent) {
+  togglePhaseFilter(status: string, event: MouseEvent) {
     event.stopPropagation();
     const current = this.filters().trainStatus;
-    const next = current === status ? 'all' : (status as TrainPlanStatus | 'all');
+    const next = current === status ? 'all' : (status as TimetablePhase | 'all');
     this.orderService.setFilter({ trainStatus: next });
   }
 
@@ -254,9 +282,17 @@ export class OrderCardComponent {
     this.orderService.setFilter({ businessStatus: 'all' });
   }
 
-  clearTrainStatus(event: MouseEvent) {
+  clearPhaseFilter(event: MouseEvent) {
     event.stopPropagation();
     this.orderService.setFilter({ trainStatus: 'all' });
+  }
+
+  customerDetails(): Customer | undefined {
+    const order = this.orderSignal();
+    if (!order?.customerId) {
+      return undefined;
+    }
+    return this.customerService.getById(order.customerId);
   }
 }
 

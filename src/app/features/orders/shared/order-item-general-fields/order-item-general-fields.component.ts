@@ -1,6 +1,6 @@
 import { CommonModule } from '@angular/common';
 import { Component, Input } from '@angular/core';
-import { FormGroup, ReactiveFormsModule } from '@angular/forms';
+import { ControlContainer, FormGroup, FormGroupDirective, ReactiveFormsModule } from '@angular/forms';
 import { MATERIAL_IMPORTS } from '../../../../core/material.imports.imports';
 
 export type OrderItemGeneralLabels = Record<'name' | 'responsible' | 'deviation', string>;
@@ -11,12 +11,18 @@ export type OrderItemGeneralLabels = Record<'name' | 'responsible' | 'deviation'
   imports: [CommonModule, ReactiveFormsModule, ...MATERIAL_IMPORTS],
   templateUrl: './order-item-general-fields.component.html',
   styleUrl: './order-item-general-fields.component.scss',
+  viewProviders: [
+    {
+      provide: ControlContainer,
+      useExisting: FormGroupDirective,
+    },
+  ],
 })
 export class OrderItemGeneralFieldsComponent {
   @Input({ required: true }) form!: FormGroup;
-  @Input() nameControl = 'name';
-  @Input() responsibleControl = 'responsible';
-  @Input() deviationControl = 'deviation';
+  @Input() nameControl: string | null = 'name';
+  @Input() responsibleControl: string | null = 'responsible';
+  @Input() deviationControl: string | null = 'deviation';
   @Input() labels: OrderItemGeneralLabels = {
     name: 'Name',
     responsible: 'Verantwortung',
@@ -24,6 +30,7 @@ export class OrderItemGeneralFieldsComponent {
   };
   @Input() hints: Partial<Record<'name' | 'responsible' | 'deviation', string>> = {};
   @Input() placeholders: Partial<Record<'name' | 'responsible' | 'deviation', string>> = {};
+  @Input() descriptions: Partial<Record<'name' | 'responsible' | 'deviation', string>> = {};
 
   label(key: 'name' | 'responsible' | 'deviation'): string {
     return this.labels[key];
@@ -31,6 +38,10 @@ export class OrderItemGeneralFieldsComponent {
 
   placeholder(key: 'name' | 'responsible' | 'deviation'): string | undefined {
     return this.placeholders[key];
+  }
+
+  description(key: 'name' | 'responsible' | 'deviation'): string | undefined {
+    return this.descriptions[key];
   }
 
   hasControl(controlName: string | null | undefined): boolean {

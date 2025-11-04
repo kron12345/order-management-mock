@@ -1,5 +1,13 @@
 export type TrafficPeriodType = 'standard' | 'special' | 'construction';
 
+export type TrafficPeriodVariantType =
+  | 'series'
+  | 'special_day'
+  | 'block'
+  | 'replacement';
+
+export type TrafficPeriodVariantScope = 'commercial' | 'operational' | 'both';
+
 export interface TrafficPeriodRule {
   id: string;
   name: string;
@@ -10,6 +18,10 @@ export interface TrafficPeriodRule {
   includesHolidays?: boolean;
   excludesDates?: string[]; // ISO dates
   includesDates?: string[]; // ISO dates
+  variantType?: TrafficPeriodVariantType;
+  appliesTo?: TrafficPeriodVariantScope;
+  variantNumber?: string;
+  reason?: string;
 }
 
 export interface TrafficPeriod {

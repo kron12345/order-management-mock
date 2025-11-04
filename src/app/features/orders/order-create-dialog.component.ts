@@ -7,6 +7,8 @@ import {
   CreateOrderPayload,
   OrderService,
 } from '../../core/services/order.service';
+import { CustomerService } from '../../core/services/customer.service';
+import { Customer } from '../../core/models/customer.model';
 
 @Component({
   selector: 'app-order-create-dialog',
@@ -19,14 +21,27 @@ export class OrderCreateDialogComponent {
   private readonly fb = inject(FormBuilder);
   private readonly dialogRef = inject(MatDialogRef<OrderCreateDialogComponent>);
   private readonly orderService = inject(OrderService);
+  private readonly customerService = inject(CustomerService);
+
+  readonly fieldDescriptions = {
+    id: 'Optionale manuelle Kennung. Leer lassen, wenn das System eine ID vergeben soll.',
+    name: 'Pflichtfeld. Der Name erscheint in der Auftragsübersicht.',
+    customerId: 'Verknüpft den Auftrag mit einem gepflegten Kunden inklusive Projektdaten und Kontakten.',
+    customer: 'Nur verwenden, wenn kein Kunde ausgewählt wurde oder ein individueller Anzeigename nötig ist.',
+    tags: 'Kommagetrennte Schlagwörter, damit der Auftrag leichter gefiltert werden kann.',
+    comment: 'Interne Hinweise oder Zusatzinformationen zum Auftrag.',
+  } as const;
 
   readonly form = this.fb.group({
     id: [''],
     name: ['', Validators.required],
+    customerId: [''],
     customer: [''],
     tags: [''],
     comment: [''],
   });
+
+  readonly customers = this.customerService.customers;
 
   cancel() {
     this.dialogRef.close();
@@ -42,6 +57,7 @@ export class OrderCreateDialogComponent {
     const payload: CreateOrderPayload = {
       id: value.id?.trim() || undefined,
       name: value.name!,
+      customerId: value.customerId?.trim() || undefined,
       customer: value.customer?.trim() || undefined,
       tags: this.parseTags(value.tags),
       comment: value.comment?.trim() || undefined,
@@ -60,5 +76,10 @@ export class OrderCreateDialogComponent {
       .map((tag) => tag.trim())
       .filter(Boolean);
     return tags.length ? Array.from(new Set(tags)) : undefined;
+  }
+
+  selectedCustomer(): Customer | undefined {
+    const id = this.form.controls.customerId.value;
+    return this.customerService.getById(id ?? undefined);
   }
 }

@@ -1,7 +1,11 @@
 import { Component, Input } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { MATERIAL_IMPORTS } from '../../../core/material.imports.imports';
-import { OrderItem } from '../../../core/models/order-item.model';
+import {
+  OrderItem,
+  OrderItemTimetableSnapshotModification,
+  OrderItemTimetableSnapshotVariant,
+} from '../../../core/models/order-item.model';
 import {
   Business,
   BusinessStatus,
@@ -11,10 +15,10 @@ import { TrafficPeriodService } from '../../../core/services/traffic-period.serv
 import { ScheduleTemplateService } from '../../../core/services/schedule-template.service';
 import { TrainPlanService } from '../../../core/services/train-plan.service';
 import { Router } from '@angular/router';
-import { TrainPlanStatus } from '../../../core/models/train-plan.model';
 import { MatDialog } from '@angular/material/dialog';
 import { OrderItemEditDialogComponent } from '../order-item-edit-dialog/order-item-edit-dialog.component';
 import { TimetablePhase } from '../../../core/models/timetable.model';
+import { TimetableService } from '../../../core/services/timetable.service';
 
 @Component({
   selector: 'app-order-item-list',
@@ -68,15 +72,6 @@ export class OrderItemListComponent {
     Leistung: 'Leistung',
     Fahrplan: 'Fahrplan',
   };
-  private readonly trainPlanStatusLabels: Partial<Record<TrainPlanStatus, string>> =
-    {
-      requested: 'Angefragt',
-      offered: 'Angeboten',
-      confirmed: 'Bestätigt',
-      operating: 'In Betrieb',
-      canceled: 'Storniert',
-      not_ordered: 'Nicht bestellt',
-    };
   private readonly timetablePhaseLabels: Record<TimetablePhase, string> = {
     bedarf: 'Bedarf',
     path_request: 'Trassenanmeldung',
@@ -93,6 +88,7 @@ export class OrderItemListComponent {
     private readonly trainPlanService: TrainPlanService,
     private readonly router: Router,
     private readonly dialog: MatDialog,
+    private readonly timetableService: TimetableService,
   ) {}
 
   businessesForItem(item: OrderItem): Business[] {
@@ -111,17 +107,19 @@ export class OrderItemListComponent {
   }
 
   timetablePhaseLabel(item: OrderItem): string | undefined {
-    if (!item.timetablePhase) {
+    const phase = this.resolveTimetablePhase(item);
+    if (!phase) {
       return undefined;
     }
-    return this.timetablePhaseLabels[item.timetablePhase] ?? item.timetablePhase;
+    return this.timetablePhaseLabels[phase] ?? phase;
   }
 
   timetablePhaseClass(item: OrderItem): string | undefined {
-    if (!item.timetablePhase) {
+    const phase = this.resolveTimetablePhase(item);
+    if (!phase) {
       return undefined;
     }
-    return `phase-${item.timetablePhase}`;
+    return `phase-${phase}`;
   }
 
   statusLabel(status: BusinessStatus): string {
@@ -187,40 +185,75 @@ export class OrderItemListComponent {
     return plan ? `${plan.trainNumber} · ${plan.calendar.validFrom}` : undefined;
   }
 
-  trainPlanStatus(
-    item: OrderItem,
-  ): { label: string; cssClass: string } | undefined {
-    if (!item.linkedTrainPlanId) {
-      return undefined;
+  private resolveTimetablePhase(item: OrderItem): TimetablePhase | undefined {
+    if (item.generatedTimetableRefId) {
+      const timetable = this.timetableService.getByRefTrainId(item.generatedTimetableRefId);
+      if (timetable?.status) {
+        return timetable.status;
+      }
     }
-    const plan = this.trainPlanService.getById(item.linkedTrainPlanId);
-    const status = plan?.status;
-    if (!status) {
-      return undefined;
-    }
-    const label =
-      this.trainPlanStatusLabels[status] ?? this.fallbackStatusLabel(status);
-    return {
-      label,
-      cssClass: `status-${this.normalizeStatusValue(status)}`,
-    };
+    return item.timetablePhase ?? undefined;
   }
 
-  private fallbackStatusLabel(value: string): string {
+  hasSchedule(item: OrderItem): boolean {
+    return Boolean(item.start && item.end);
+  }
+
+  originalVariants(item: OrderItem): OrderItemTimetableSnapshotVariant[] {
+    return item.originalTimetable?.variants ?? [];
+  }
+
+  originalModifications(
+    item: OrderItem,
+  ): OrderItemTimetableSnapshotModification[] {
+    return item.originalTimetable?.modifications ?? [];
+  }
+
+  variantLabel(variant: OrderItemTimetableSnapshotVariant): string {
+    const number = variant.variantNumber ?? variant.id;
+    const type = variant.type ? this.formatLabel(variant.type) : undefined;
+    if (type) {
+      return `${number} · ${type}`;
+    }
+    return number;
+  }
+
+  variantTooltip(variant: OrderItemTimetableSnapshotVariant): string {
+    const parts: string[] = [];
+    if (variant.description) {
+      parts.push(variant.description);
+    }
+    if (variant.validFrom) {
+      const range = variant.validTo
+        ? `${variant.validFrom} – ${variant.validTo}`
+        : variant.validFrom;
+      parts.push(range);
+    }
+    if (variant.daysOfWeek?.length) {
+      parts.push(`Tage: ${variant.daysOfWeek.join(', ')}`);
+    }
+    if (variant.dates?.length) {
+      parts.push(`Sondertage: ${variant.dates.join(', ')}`);
+    }
+    if (variant.reason) {
+      parts.push(variant.reason);
+    }
+    return parts.join(' · ');
+  }
+
+  modificationLabel(
+    modification: OrderItemTimetableSnapshotModification,
+  ): string {
+    return modification.description ?? this.formatLabel(modification.type);
+  }
+
+  private formatLabel(value: string): string {
     return value
       .replace(/[_-]+/g, ' ')
       .replace(/\s+/g, ' ')
       .trim()
       .toLowerCase()
       .replace(/(^|\s)\S/g, (match) => match.toUpperCase());
-  }
-
-  private normalizeStatusValue(value: string): string {
-    return value.toLowerCase().replace(/[^a-z0-9]+/g, '-');
-  }
-
-  hasSchedule(item: OrderItem): boolean {
-    return Boolean(item.start && item.end);
   }
 
   originalTimetableRange(item: OrderItem): string | undefined {

@@ -158,6 +158,15 @@
                     </div>
                   }
                   <div class="rule__chips">
+                    @if (rule.variantNumber) {
+                      <span class="badge">Variante {{ rule.variantNumber }}</span>
+                    }
+                    @if (variantTypeLabel(rule)) {
+                      <span class="badge">Typ: {{ variantTypeLabel(rule) }}</span>
+                    }
+                    @if (appliesLabel(rule)) {
+                      <span class="badge">Bereich: {{ appliesLabel(rule) }}</span>
+                    }
                     @if (patternLabel(rule)) {
                       <span class="badge">Muster: {{ patternLabel(rule) }}</span>
                     }
@@ -171,7 +180,9 @@
                       <span class="badge">Exkl.: {{ excludesLabel(rule) }}</span>
                     }
                   </div>
-                  @if (rule.description) {
+                  @if (rule.reason) {
+                    <div class="rule__note">{{ rule.reason }}</div>
+                  } @else if (rule.description) {
                     <div class="rule__note">{{ rule.description }}</div>
                   }
                 </div>

@@ -2,8 +2,8 @@ import { Component, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { MATERIAL_IMPORTS } from '../../../core/material.imports.imports';
 import { OrderService, OrderFilters } from '../../../core/services/order.service';
-import { TrainPlanStatus } from '../../../core/models/train-plan.model';
 import { BusinessStatus } from '../../../core/models/business.model';
+import { TimetablePhase } from '../../../core/models/timetable.model';
 
 @Component({
   selector: 'app-filter-bar',
@@ -25,14 +25,14 @@ export class FilterBarComponent {
     { value: 'thisWeek', label: 'Diese Woche' },
   ];
 
-  readonly trainStatusOptions: { value: TrainPlanStatus | 'all'; label: string }[] = [
-    { value: 'all', label: 'Alle Status' },
-    { value: 'not_ordered', label: 'Nicht bestellt' },
-    { value: 'requested', label: 'Angefragt' },
-    { value: 'offered', label: 'Im Angebot' },
-    { value: 'confirmed', label: 'Bestätigt' },
-    { value: 'operating', label: 'Unterwegs' },
-    { value: 'canceled', label: 'Storniert' },
+  readonly trainStatusOptions: { value: TimetablePhase | 'all'; label: string }[] = [
+    { value: 'all', label: 'Alle Phasen' },
+    { value: 'bedarf', label: 'Bedarf' },
+    { value: 'path_request', label: 'Trassenanmeldung' },
+    { value: 'offer', label: 'Angebot' },
+    { value: 'contract', label: 'Vertrag' },
+    { value: 'operational', label: 'Betrieb' },
+    { value: 'archived', label: 'Archiv' },
   ];
 
   readonly businessStatusOptions: { value: BusinessStatus | 'all'; label: string }[] = [
@@ -85,7 +85,7 @@ export class FilterBarComponent {
     this.store.setFilter({ timeRange: value });
   }
 
-  onTrainStatusChange(value: TrainPlanStatus | 'all') {
+  onTrainStatusChange(value: TimetablePhase | 'all') {
     this.store.setFilter({ trainStatus: value });
   }
 

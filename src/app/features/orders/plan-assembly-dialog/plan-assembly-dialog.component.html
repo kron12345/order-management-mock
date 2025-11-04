@@ -60,7 +60,7 @@
             type="button"
             matTooltip="Nach oben"
             (click)="moveStop(selectedIndex(), -1)"
-            [disabled]="selectedIndex() === 0"
+            [disabled]="isEdgeStop(selectedIndex())"
           >
             <mat-icon>arrow_upward</mat-icon>
           </button>
@@ -69,7 +69,7 @@
             type="button"
             matTooltip="Nach unten"
             (click)="moveStop(selectedIndex(), 1)"
-            [disabled]="selectedIndex() === stopsControls.length - 1"
+            [disabled]="isEdgeStop(selectedIndex())"
           >
             <mat-icon>arrow_downward</mat-icon>
           </button>
@@ -103,18 +103,58 @@
               <mat-option value="intermediate">Zwischenhalt</mat-option>
               <mat-option value="destination">Ziel</mat-option>
             </mat-select>
+            <button
+              mat-icon-button
+              matSuffix
+              type="button"
+              class="help-icon"
+              [matTooltip]="fieldDescriptions.type"
+              aria-label="Typ Hilfe"
+            >
+              <mat-icon>help_outline</mat-icon>
+            </button>
           </mat-form-field>
           <mat-form-field appearance="outline">
             <mat-label>Ort</mat-label>
             <input matInput formControlName="locationName" />
+            <button
+              mat-icon-button
+              matSuffix
+              type="button"
+              class="help-icon"
+              [matTooltip]="fieldDescriptions.locationName"
+              aria-label="Ort Hilfe"
+            >
+              <mat-icon>help_outline</mat-icon>
+            </button>
           </mat-form-field>
           <mat-form-field appearance="outline">
             <mat-label>Code</mat-label>
             <input matInput formControlName="locationCode" />
+            <button
+              mat-icon-button
+              matSuffix
+              type="button"
+              class="help-icon"
+              [matTooltip]="fieldDescriptions.locationCode"
+              aria-label="Code Hilfe"
+            >
+              <mat-icon>help_outline</mat-icon>
+            </button>
           </mat-form-field>
           <mat-form-field appearance="outline">
             <mat-label>Land</mat-label>
             <input matInput formControlName="countryCode" />
+            <button
+              mat-icon-button
+              matSuffix
+              type="button"
+              class="help-icon"
+              [matTooltip]="fieldDescriptions.countryCode"
+              aria-label="Land Hilfe"
+            >
+              <mat-icon>help_outline</mat-icon>
+            </button>
           </mat-form-field>
         </div>
 
@@ -122,22 +162,72 @@
           <mat-form-field appearance="outline">
             <mat-label>Ankunft</mat-label>
             <input matInput type="time" formControlName="arrivalTime" />
+            <button
+              mat-icon-button
+              matSuffix
+              type="button"
+              class="help-icon"
+              [matTooltip]="fieldDescriptions.arrivalTime"
+              aria-label="Ankunft Hilfe"
+            >
+              <mat-icon>help_outline</mat-icon>
+            </button>
           </mat-form-field>
           <mat-form-field appearance="outline">
             <mat-label>Ankunft +T</mat-label>
             <input matInput type="number" formControlName="arrivalOffsetDays" />
+            <button
+              mat-icon-button
+              matSuffix
+              type="button"
+              class="help-icon"
+              [matTooltip]="fieldDescriptions.arrivalOffsetDays"
+              aria-label="Ankunft Offset Hilfe"
+            >
+              <mat-icon>help_outline</mat-icon>
+            </button>
           </mat-form-field>
           <mat-form-field appearance="outline">
             <mat-label>Abfahrt</mat-label>
             <input matInput type="time" formControlName="departureTime" />
+            <button
+              mat-icon-button
+              matSuffix
+              type="button"
+              class="help-icon"
+              [matTooltip]="fieldDescriptions.departureTime"
+              aria-label="Abfahrt Hilfe"
+            >
+              <mat-icon>help_outline</mat-icon>
+            </button>
           </mat-form-field>
           <mat-form-field appearance="outline">
             <mat-label>Abfahrt +T</mat-label>
             <input matInput type="number" formControlName="departureOffsetDays" />
+            <button
+              mat-icon-button
+              matSuffix
+              type="button"
+              class="help-icon"
+              [matTooltip]="fieldDescriptions.departureOffsetDays"
+              aria-label="Abfahrt Offset Hilfe"
+            >
+              <mat-icon>help_outline</mat-icon>
+            </button>
           </mat-form-field>
           <mat-form-field appearance="outline">
             <mat-label>Halt (min)</mat-label>
             <input matInput type="number" formControlName="dwellMinutes" />
+            <button
+              mat-icon-button
+              matSuffix
+              type="button"
+              class="help-icon"
+              [matTooltip]="fieldDescriptions.dwellMinutes"
+              aria-label="Halt Hilfe"
+            >
+              <mat-icon>help_outline</mat-icon>
+            </button>
           </mat-form-field>
         </div>
 
@@ -146,22 +236,52 @@
             <mat-label>Aktivitäten</mat-label>
             <input matInput formControlName="activities" />
             <mat-hint>Kommagetrennt, z.&nbsp;B. 0001, 0020</mat-hint>
+            <button
+              mat-icon-button
+              matSuffix
+              type="button"
+              class="help-icon"
+              [matTooltip]="fieldDescriptions.activities"
+              aria-label="Aktivitäten Hilfe"
+            >
+              <mat-icon>help_outline</mat-icon>
+            </button>
           </mat-form-field>
           <mat-form-field appearance="outline">
             <mat-label>Gleis</mat-label>
             <input matInput formControlName="platform" />
+            <button
+              mat-icon-button
+              matSuffix
+              type="button"
+              class="help-icon"
+              [matTooltip]="fieldDescriptions.platform"
+              aria-label="Gleis Hilfe"
+            >
+              <mat-icon>help_outline</mat-icon>
+            </button>
           </mat-form-field>
           <mat-form-field appearance="outline">
             <mat-label>Notiz</mat-label>
             <input matInput formControlName="notes" />
+            <button
+              mat-icon-button
+              matSuffix
+              type="button"
+              class="help-icon"
+              [matTooltip]="fieldDescriptions.notes"
+              aria-label="Notiz Hilfe"
+            >
+              <mat-icon>help_outline</mat-icon>
+            </button>
           </mat-form-field>
         </div>
       </ng-container>
     </div>
   </form>
 
-  @if (errorMessage()) {
-    <div class="error">{{ errorMessage() }}</div>
+  @if (errorMessage() || validationHint()) {
+    <div class="error">{{ errorMessage() || validationHint() }}</div>
   }
 </mat-dialog-content>
 

@@ -1,5 +1,11 @@
 import { Injectable, computed, signal } from '@angular/core';
-import { TrafficPeriod, TrafficPeriodType } from '../models/traffic-period.model';
+import {
+  TrafficPeriod,
+  TrafficPeriodRule,
+  TrafficPeriodType,
+  TrafficPeriodVariantType,
+  TrafficPeriodVariantScope,
+} from '../models/traffic-period.model';
 import { MOCK_TRAFFIC_PERIODS } from '../mock/mock-traffic-periods.mock';
 
 export interface TrafficPeriodFilters {
@@ -21,6 +27,23 @@ export interface TrafficPeriodCreatePayload {
   tags?: string[];
   year: number;
   selectedDates: string[];
+  excludedDates?: string[];
+  variantType: TrafficPeriodVariantType;
+  variantNumber: string;
+  appliesTo: TrafficPeriodVariantScope;
+  reason?: string;
+}
+
+export interface RailMlTrafficPeriodPayload {
+  sourceId: string;
+  name: string;
+  description?: string;
+  daysBitmap: string;
+  validityStart: string;
+  validityEnd: string;
+  type?: TrafficPeriodType;
+  scope?: TrafficPeriodVariantScope;
+  reason?: string;
 }
 
 @Injectable({ providedIn: 'root' })
@@ -138,6 +161,13 @@ export class TrafficPeriodService {
           validityStart: `${payload.year}-01-01`,
           validityEnd: `${payload.year}-12-31`,
           includesDates: sortedDates,
+          excludesDates: payload.excludedDates?.length
+            ? [...new Set(payload.excludedDates)].sort()
+            : undefined,
+          variantType: payload.variantType,
+          appliesTo: payload.appliesTo,
+          variantNumber: payload.variantNumber || '00',
+          reason: payload.reason,
         },
       ],
     };
@@ -177,11 +207,63 @@ export class TrafficPeriodService {
               validityStart: `${payload.year}-01-01`,
               validityEnd: `${payload.year}-12-31`,
               includesDates: sortedDates,
+              excludesDates: payload.excludedDates?.length
+                ? [...new Set(payload.excludedDates)].sort()
+                : undefined,
+              variantType: payload.variantType,
+              appliesTo: payload.appliesTo,
+              variantNumber: payload.variantNumber || '00',
+              reason: payload.reason,
             },
           ],
         } satisfies TrafficPeriod;
       }),
     );
+  }
+
+  ensureRailMlPeriod(payload: RailMlTrafficPeriodPayload): TrafficPeriod {
+    const sourceTag = `railml:${payload.sourceId}`;
+    const existing = this._periods().find((period) =>
+      period.tags?.includes(sourceTag),
+    );
+    if (existing) {
+      return existing;
+    }
+
+    const now = new Date().toISOString();
+    const id = this.generateId();
+    const ruleId = `${id}-R1`;
+    const normalizedBitmap = this.normalizeDaysBitmap(payload.daysBitmap);
+    const rule: TrafficPeriodRule = {
+      id: ruleId,
+      name: `RailML ${payload.sourceId}`,
+      daysBitmap: normalizedBitmap,
+      validityStart: payload.validityStart,
+      validityEnd: payload.validityEnd,
+      includesDates: this.expandDates(
+        payload.validityStart,
+        payload.validityEnd,
+        normalizedBitmap,
+      ),
+      variantType: 'series',
+      appliesTo: payload.scope ?? 'commercial',
+      reason: payload.reason ?? payload.description,
+    };
+
+    const period: TrafficPeriod = {
+      id,
+      name: payload.name,
+      type: payload.type ?? 'standard',
+      description: payload.description,
+      responsible: 'RailML Import',
+      createdAt: now,
+      updatedAt: now,
+      rules: [rule],
+      tags: ['railml', sourceTag],
+    };
+
+    this._periods.update((periods) => [period, ...periods]);
+    return period;
   }
 
   deletePeriod(periodId: string) {
@@ -193,6 +275,42 @@ export class TrafficPeriodService {
   private generateId(): string {
     const ts = Date.now().toString(36).toUpperCase();
     return `TPER-${ts}`;
+  }
+
+  private normalizeDaysBitmap(value: string): string {
+    const sanitized = value
+      .padEnd(7, '1')
+      .slice(0, 7)
+      .split('')
+      .map((char) => (char === '1' ? '1' : '0'))
+      .join('');
+    return sanitized.length === 7 ? sanitized : '1111111';
+  }
+
+  private expandDates(
+    startIso: string,
+    endIso: string,
+    daysBitmap: string,
+  ): string[] | undefined {
+    const start = new Date(startIso);
+    const end = new Date(endIso);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+      return undefined;
+    }
+    const normalizedBitmap = this.normalizeDaysBitmap(daysBitmap);
+    const dates: string[] = [];
+    for (
+      let cursor = new Date(start);
+      cursor <= end && dates.length <= 1460;
+      cursor.setDate(cursor.getDate() + 1)
+    ) {
+      const weekday = cursor.getDay();
+      const bitmapIndex = weekday === 0 ? 6 : weekday - 1;
+      if (normalizedBitmap[bitmapIndex] === '1') {
+        dates.push(cursor.toISOString().slice(0, 10));
+      }
+    }
+    return dates.length ? dates : undefined;
   }
 
   private normalizeTags(tags?: string[]): string[] | undefined {

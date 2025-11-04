@@ -1,4 +1,4 @@
-<div class="general-section">
+<div class="general-section" [formGroup]="form">
   @if (hasControl(nameControl)) {
     <mat-form-field appearance="outline">
       <mat-label>{{ label('name') }}</mat-label>
@@ -7,6 +7,18 @@
         [formControlName]="nameControl!"
         [placeholder]="placeholder('name') ?? ''"
       />
+      @if (description('name')) {
+        <button
+          mat-icon-button
+          matSuffix
+          type="button"
+          class="help-icon"
+          [matTooltip]="description('name')!"
+          [attr.aria-label]="label('name') + ' Hilfe'"
+        >
+          <mat-icon>help_outline</mat-icon>
+        </button>
+      }
       @if (hints.name) {
         <mat-hint>{{ hints.name }}</mat-hint>
       }
@@ -21,6 +33,18 @@
         [formControlName]="responsibleControl!"
         [placeholder]="placeholder('responsible') ?? ''"
       />
+      @if (description('responsible')) {
+        <button
+          mat-icon-button
+          matSuffix
+          type="button"
+          class="help-icon"
+          [matTooltip]="description('responsible')!"
+          [attr.aria-label]="label('responsible') + ' Hilfe'"
+        >
+          <mat-icon>help_outline</mat-icon>
+        </button>
+      }
       @if (hints.responsible) {
         <mat-hint>{{ hints.responsible }}</mat-hint>
       }
@@ -35,6 +59,18 @@
         [formControlName]="deviationControl!"
         [placeholder]="placeholder('deviation') ?? ''"
       />
+      @if (description('deviation')) {
+        <button
+          mat-icon-button
+          matSuffix
+          type="button"
+          class="help-icon"
+          [matTooltip]="description('deviation')!"
+          [attr.aria-label]="label('deviation') + ' Hilfe'"
+        >
+          <mat-icon>help_outline</mat-icon>
+        </button>
+      }
       @if (hints.deviation) {
         <mat-hint>{{ hints.deviation }}</mat-hint>
       }

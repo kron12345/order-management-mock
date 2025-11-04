@@ -1,21 +1,38 @@
 import { Injectable, computed, signal } from '@angular/core';
 import { Order } from '../models/order.model';
-import { OrderItem, OrderItemValiditySegment } from '../models/order-item.model';
+import {
+  OrderItem,
+  OrderItemTimetableSnapshot,
+  OrderItemValiditySegment,
+} from '../models/order-item.model';
+import {
+  Timetable,
+  TimetablePhase,
+  TimetableCalendarVariant,
+  TimetableCalendarModification,
+} from '../models/timetable.model';
 import { MOCK_ORDERS } from '../mock/mock-orders.mock';
-import { ScheduleTemplate } from '../models/schedule-template.model';
 import {
   CreatePlansFromTemplatePayload,
+  PlanModificationStopInput,
   TrainPlanService,
 } from './train-plan.service';
-import { TrainPlan, TrainPlanStatus } from '../models/train-plan.model';
+import { TrainPlan } from '../models/train-plan.model';
 import { CreateScheduleTemplateStopPayload } from './schedule-template.service';
 import { BusinessStatus } from '../models/business.model';
+import { CustomerService } from './customer.service';
+import {
+  TimetableService,
+  TimetableStopInput,
+} from './timetable.service';
+import { TrafficPeriodService } from './traffic-period.service';
+import { TrafficPeriod } from '../models/traffic-period.model';
 
 export interface OrderFilters {
   search: string;
   tag: string | 'all';
   timeRange: 'all' | 'next4h' | 'next12h' | 'today' | 'thisWeek';
-  trainStatus: TrainPlanStatus | 'all';
+  trainStatus: TimetablePhase | 'all';
   businessStatus: BusinessStatus | 'all';
   trainNumber: string;
 }
@@ -30,6 +47,7 @@ export interface OrderItemOption {
 export interface CreateOrderPayload {
   id?: string;
   name: string;
+  customerId?: string;
   customer?: string;
   tags?: string[];
   comment?: string;
@@ -69,15 +87,25 @@ export interface ImportedRailMlTrain {
   departureTime?: string;
   arrivalTime?: string;
   stops: ImportedRailMlStop[];
+  trafficPeriodId?: string;
+  trafficPeriodName?: string;
+  trafficPeriodSourceId?: string;
+  groupId?: string;
+  variantOf?: string;
+  variantLabel?: string;
+  operatingPeriodRef?: string;
+  timetablePeriodRef?: string;
+  trainPartId?: string;
 }
 
 export interface CreateManualPlanOrderItemPayload {
   orderId: string;
-  template: ScheduleTemplate;
   departure: string; // ISO
-  trafficPeriodId: string;
+  trainNumber: string;
+  stops: PlanModificationStopInput[];
   name?: string;
   responsible?: string;
+  trafficPeriodId?: string;
 }
 
 export interface CreateImportedPlanOrderItemPayload {
@@ -86,6 +114,7 @@ export interface CreateImportedPlanOrderItemPayload {
   trafficPeriodId: string;
   namePrefix?: string;
   responsible?: string;
+  parentItemId?: string;
 }
 
 type EditableOrderItemKeys =
@@ -124,9 +153,19 @@ export class OrderService {
     trainNumber: '',
   });
 
-  constructor(private readonly trainPlanService: TrainPlanService) {
+  constructor(
+    private readonly trainPlanService: TrainPlanService,
+    private readonly customerService: CustomerService,
+    private readonly timetableService: TimetableService,
+    private readonly trafficPeriodService: TrafficPeriodService,
+  ) {
     this._orders.set(
       this._orders().map((order) => this.initializeOrder(order)),
+    );
+    this._orders().forEach((order) =>
+      order.items.forEach((item) =>
+        this.syncTimetableCalendarArtifacts(item.generatedTimetableRefId),
+      ),
     );
   }
 
@@ -185,10 +224,13 @@ export class OrderService {
 
   createOrder(payload: CreateOrderPayload): Order {
     const id = payload.id?.trim().length ? payload.id.trim() : this.generateOrderId();
+    const customerId = payload.customerId;
+    const customerName = this.resolveCustomerName(customerId, payload.customer);
     const order: Order = {
       id,
       name: payload.name,
-      customer: payload.customer,
+      customerId,
+      customer: customerName,
       tags: this.normalizeTags(payload.tags),
       comment: payload.comment,
       items: [],
@@ -196,6 +238,25 @@ export class OrderService {
 
     this._orders.update((orders) => [order, ...orders]);
     return order;
+  }
+
+  removeCustomerAssignments(customerId: string) {
+    if (!customerId) {
+      return;
+    }
+    this._orders.update((orders) =>
+      orders.map((order) => {
+        if (order.customerId !== customerId) {
+          return order;
+        }
+        const next: Order = {
+          ...order,
+          customerId: undefined,
+          customer: undefined,
+        };
+        return next;
+      }),
+    );
   }
 
   addServiceOrderItem(payload: CreateServiceOrderItemPayload): OrderItem {
@@ -245,14 +306,15 @@ export class OrderService {
         linkedTrainPlanId: plan.id,
       } satisfies OrderItem;
 
-      return this.applyPlanDetailsToItem(base, plan);
+      const enriched = this.applyPlanDetailsToItem(base, plan);
+      const timetable = this.ensureTimetableForPlan(plan, enriched);
+      return this.withTimetableMetadata(enriched, timetable);
     });
 
     this.appendItems(payload.orderId, items);
 
     items.forEach((item, index) => {
       const plan = plans[index];
-      this.trainPlanService.linkOrderItem(plan.id, item.id);
       this.linkTrainPlanToItem(plan.id, item.id);
     });
 
@@ -260,36 +322,46 @@ export class OrderService {
   }
 
   addManualPlanOrderItem(payload: CreateManualPlanOrderItemPayload): OrderItem {
+    if (!payload.stops.length) {
+      throw new Error('Der Fahrplan benötigt mindestens einen Halt.');
+    }
+
+    const stopPayloads = payload.stops.map((stop) =>
+      this.manualStopToTemplatePayload(stop),
+    );
+    const responsible =
+      payload.responsible?.trim() && payload.responsible.trim().length
+        ? payload.responsible.trim()
+        : 'Manuelle Planung';
+    const title =
+      payload.name?.trim() && payload.name.trim().length
+        ? payload.name.trim()
+        : `Manueller Fahrplan ${payload.trainNumber}`;
+
     const plan = this.trainPlanService.createManualPlan({
-      title: payload.template.title,
-      trainNumber: payload.template.trainNumber,
-      responsibleRu: payload.template.responsibleRu,
+      title,
+      trainNumber: payload.trainNumber,
+      responsibleRu: responsible,
       departure: payload.departure,
-      stops: payload.template.stops,
-      sourceName: payload.template.title,
-      notes: payload.template.description,
-      templateId: payload.template.id,
+      stops: stopPayloads,
+      sourceName: title,
       trafficPeriodId: payload.trafficPeriodId,
     });
 
     const base: OrderItem = {
       id: this.generateItemId(payload.orderId),
-      name:
-        payload.name?.trim() && payload.name.trim().length
-          ? payload.name.trim()
-          : payload.template.title,
+      name: title,
       type: 'Fahrplan',
-      responsible:
-        payload.responsible?.trim() || payload.template.responsibleRu,
+      responsible,
       linkedTrainPlanId: plan.id,
-      linkedTemplateId: payload.template.id,
     } satisfies OrderItem;
     const item = this.applyPlanDetailsToItem(base, plan);
+    const timetable = this.ensureTimetableForPlan(plan, item);
+    const enriched = this.withTimetableMetadata(item, timetable);
 
-    this.appendItems(payload.orderId, [item]);
-    this.trainPlanService.linkOrderItem(plan.id, item.id);
-    this.linkTrainPlanToItem(plan.id, item.id);
-    return item;
+    this.appendItems(payload.orderId, [enriched]);
+    this.linkTrainPlanToItem(plan.id, enriched.id);
+    return enriched;
   }
 
   addImportedPlanOrderItem(payload: CreateImportedPlanOrderItemPayload): OrderItem {
@@ -323,6 +395,7 @@ export class OrderService {
       type: 'Fahrplan',
       responsible,
       linkedTrainPlanId: plan.id,
+      parentItemId: payload.parentItemId,
     } satisfies OrderItem;
 
     const item = this.applyPlanDetailsToItem(
@@ -333,11 +406,12 @@ export class OrderService {
       },
       plan,
     );
+    const timetable = this.ensureTimetableForPlan(plan, item);
+    const enriched = this.withTimetableMetadata(item, timetable);
 
-    this.appendItems(payload.orderId, [item]);
-    this.trainPlanService.linkOrderItem(plan.id, item.id);
-    this.linkTrainPlanToItem(plan.id, item.id);
-    return item;
+    this.appendItems(payload.orderId, [enriched]);
+    this.linkTrainPlanToItem(plan.id, enriched.id);
+    return enriched;
   }
 
   applyPlanModification(payload: {
@@ -477,7 +551,13 @@ export class OrderService {
       );
     }
 
-    return result;
+    const resultNonNull = result as SplitResult;
+    const { created, original } = resultNonNull;
+    const refId =
+      created.generatedTimetableRefId ?? original.generatedTimetableRefId;
+    this.syncTimetableCalendarArtifacts(refId);
+
+    return resultNonNull;
   }
 
   private matchesOrder(order: Order, filters: OrderFilters): boolean {
@@ -487,7 +567,7 @@ export class OrderService {
       !(
         order.name.toLowerCase().includes(term) ||
         order.id.toLowerCase().includes(term) ||
-        (order.customer?.toLowerCase().includes(term) ?? false)
+        this.matchesCustomerTerm(order, term)
       )
     ) {
       return false;
@@ -505,17 +585,23 @@ export class OrderService {
           return false;
         }
       } else {
+        const timetable = item.generatedTimetableRefId
+          ? this.timetableService.getByRefTrainId(item.generatedTimetableRefId)
+          : undefined;
         const plan = item.linkedTrainPlanId
           ? this.trainPlanService.getById(item.linkedTrainPlanId)
           : undefined;
+
         if (filters.trainStatus !== 'all') {
-          if (!plan || plan.status !== filters.trainStatus) {
+          const currentPhase = timetable?.status ?? item.timetablePhase;
+          if (!currentPhase || currentPhase !== filters.trainStatus) {
             return false;
           }
         }
         if (filters.trainNumber.trim()) {
           const search = filters.trainNumber.trim().toLowerCase();
-          const trainNumber = plan?.trainNumber ?? item.name;
+          const trainNumber =
+            timetable?.trainNumber ?? plan?.trainNumber ?? item.name;
           if (!trainNumber.toLowerCase().includes(search)) {
             return false;
           }
@@ -644,6 +730,7 @@ export class OrderService {
 
   linkTrainPlanToItem(planId: string, itemId: string) {
     const plan = this.trainPlanService.getById(planId);
+    let updatedItem: OrderItem | null = null;
     this._orders.update((orders) =>
       orders.map((order) => {
         let mutated = false;
@@ -654,7 +741,9 @@ export class OrderService {
               ...item,
               linkedTrainPlanId: planId,
             };
-            return plan ? this.applyPlanDetailsToItem(base, plan) : base;
+            const next = plan ? this.applyPlanDetailsToItem(base, plan) : base;
+            updatedItem = next;
+            return next;
           }
           if (item.linkedTrainPlanId === planId && item.id !== itemId) {
             mutated = true;
@@ -667,6 +756,16 @@ export class OrderService {
         return mutated ? { ...order, items } : order;
       }),
     );
+
+    this.trainPlanService.linkOrderItem(planId, itemId);
+
+    if (plan && updatedItem) {
+      const timetable = this.ensureTimetableForPlan(plan, updatedItem);
+      if (timetable) {
+        this.updateItemTimetableMetadata(itemId, timetable);
+        this.syncTimetableCalendarArtifacts(timetable.refTrainId);
+      }
+    }
   }
 
   unlinkTrainPlanFromItem(planId: string, itemId: string) {
@@ -711,10 +810,55 @@ export class OrderService {
 
   private initializeOrder(order: Order): Order {
     const prepared = order.items.map((item) => this.ensureItemDefaults(item));
+    const customer = this.resolveCustomerName(order.customerId, order.customer);
     return {
       ...order,
+      customer,
       items: this.normalizeItemsAfterChange(prepared),
     };
+  }
+
+  private matchesCustomerTerm(order: Order, term: string): boolean {
+    const normalized = term.trim().toLowerCase();
+    if (!normalized.length) {
+      return true;
+    }
+    const customer = this.customerService.getById(order.customerId);
+    if (!customer) {
+      return order.customer?.toLowerCase().includes(normalized) ?? false;
+    }
+    const attributes: Array<string | undefined> = [
+      customer.name,
+      customer.customerNumber,
+      customer.projectNumber,
+      order.customer,
+    ];
+    if (
+      attributes
+        .filter((value): value is string => !!value)
+        .some((value) => value.toLowerCase().includes(normalized))
+    ) {
+      return true;
+    }
+    return customer.contacts.some((contact) =>
+      [contact.name, contact.email, contact.phone]
+        .filter((value): value is string => !!value)
+        .some((value) => value.toLowerCase().includes(normalized)),
+    );
+  }
+
+  private resolveCustomerName(
+    customerId: string | undefined,
+    fallback?: string,
+  ): string | undefined {
+    if (customerId) {
+      const customer = this.customerService.getById(customerId);
+      if (customer) {
+        return customer.name;
+      }
+    }
+    const trimmed = fallback?.trim();
+    return trimmed?.length ? trimmed : undefined;
   }
 
   private ensureItemDefaults(item: OrderItem): OrderItem {
@@ -1025,6 +1169,33 @@ export class OrderService {
     return `${orderId}-OP-${suffix}`;
   }
 
+  private manualStopToTemplatePayload(
+    stop: PlanModificationStopInput,
+  ): CreateScheduleTemplateStopPayload {
+    const arrivalTime = stop.arrivalTime?.trim();
+    const departureTime = stop.departureTime?.trim();
+    const locationName =
+      stop.locationName?.trim() || stop.locationCode?.trim() || 'Unbekannt';
+    const locationCode = stop.locationCode?.trim() || locationName || 'LOC';
+
+    return {
+      type: stop.type,
+      locationCode,
+      locationName,
+      countryCode: stop.countryCode?.trim() || undefined,
+      arrivalEarliest: arrivalTime || undefined,
+      arrivalLatest: arrivalTime || undefined,
+      departureEarliest: departureTime || undefined,
+      departureLatest: departureTime || undefined,
+      offsetDays: stop.arrivalOffsetDays ?? stop.departureOffsetDays ?? undefined,
+      dwellMinutes: stop.dwellMinutes ?? undefined,
+      activities:
+        stop.activities && stop.activities.length ? [...stop.activities] : ['0001'],
+      platformWish: stop.platform,
+      notes: stop.notes,
+    };
+  }
+
   private normalizeTags(tags?: string[]): string[] | undefined {
     if (!tags?.length) {
       return undefined;
@@ -1096,6 +1267,290 @@ export class OrderService {
     }
 
     return updated;
+  }
+
+  private ensureTimetableForPlan(plan: TrainPlan, item: OrderItem): Timetable | null {
+    const refTrainId = this.generateTimetableRefId(plan);
+    const existing = this.timetableService.getByRefTrainId(refTrainId);
+    if (existing) {
+      return existing;
+    }
+    const stops = this.toTimetableStops(plan.stops);
+    if (stops.length < 2) {
+      return null;
+    }
+    const calendar = plan.calendar
+      ? { ...plan.calendar }
+      : {
+          validFrom:
+            this.extractPlanStart(plan)?.slice(0, 10) ?? new Date().toISOString().slice(0, 10),
+          daysBitmap: '1111111',
+        };
+    const payload = {
+      refTrainId,
+      opn: this.generateOpn(plan),
+      title: plan.title,
+      trainNumber: plan.trainNumber,
+      responsibleRu: plan.responsibleRu,
+      calendar,
+      status: 'bedarf',
+      source: {
+        type: 'manual',
+        pathRequestId: plan.pathRequestId,
+        externalSystem: 'OrderManager',
+      },
+      stops,
+      linkedOrderItemId: item.id,
+      notes: `Automatisch erstellt aus Auftragsposition ${item.id}`,
+    } as const;
+
+    try {
+      return this.timetableService.createTimetable(payload);
+    } catch (error) {
+      console.error('Timetable creation failed', error);
+      return null;
+    }
+  }
+
+  private withTimetableMetadata(
+    item: OrderItem,
+    timetable: Timetable | null,
+  ): OrderItem {
+    if (!timetable) {
+      return item;
+    }
+    return {
+      ...item,
+      generatedTimetableRefId: timetable.refTrainId,
+      timetablePhase: timetable.status,
+      originalTimetable: this.buildSnapshotFromTimetable(timetable),
+    };
+  }
+
+  private updateItemTimetableMetadata(itemId: string, timetable: Timetable): void {
+    this.updateItem(itemId, (item) => ({
+      ...item,
+      generatedTimetableRefId: timetable.refTrainId,
+      timetablePhase: timetable.status,
+      originalTimetable: this.buildSnapshotFromTimetable(timetable),
+    }));
+  }
+
+  private buildSnapshotFromTimetable(timetable: Timetable): OrderItemTimetableSnapshot {
+    return {
+      refTrainId: timetable.refTrainId,
+      title: timetable.title,
+      trainNumber: timetable.trainNumber,
+      calendar: {
+        validFrom: timetable.calendar.validFrom,
+        validTo: timetable.calendar.validTo,
+        daysBitmap: timetable.calendar.daysBitmap,
+      },
+      stops: timetable.stops.map((stop) => ({
+        sequence: stop.sequence,
+        locationName: stop.locationName,
+        arrivalTime: stop.commercial.arrivalTime,
+        departureTime: stop.commercial.departureTime,
+      })),
+      variants: timetable.calendarVariants?.map((variant) => ({
+        id: variant.id,
+        description: variant.description,
+        type: variant.type,
+        validFrom: variant.validFrom,
+        validTo: variant.validTo,
+        daysOfWeek: variant.daysOfWeek,
+        dates: variant.dates,
+        appliesTo: variant.appliesTo,
+        variantNumber: variant.variantNumber ?? variant.id,
+        reason: variant.reason,
+      })),
+      modifications: timetable.calendarModifications?.map((mod) => ({
+        date: mod.date,
+        description: mod.description,
+        type: mod.type,
+        notes: mod.notes,
+      })),
+    };
+  }
+
+  private syncTimetableCalendarArtifacts(refTrainId: string | undefined): void {
+    if (!refTrainId) {
+      return;
+    }
+    const relatedItems = this.collectItemsForTimetable(refTrainId);
+    if (!relatedItems.length) {
+      return;
+    }
+    const baseItem = this.findBaseItem(relatedItems);
+    const period = baseItem?.trafficPeriodId
+      ? this.trafficPeriodService.getById(baseItem.trafficPeriodId)
+      : undefined;
+
+    const variants = this.buildCalendarVariants(baseItem, period);
+    if (variants.length) {
+      this.timetableService.updateCalendarVariants(refTrainId, variants);
+    }
+
+    const modifications = this.buildCalendarModifications(relatedItems, period);
+    this.timetableService.updateCalendarModifications(refTrainId, modifications);
+  }
+
+  private collectItemsForTimetable(refTrainId: string): OrderItem[] {
+    return this._orders().flatMap((order) =>
+      order.items.filter((item) => item.generatedTimetableRefId === refTrainId),
+    );
+  }
+
+  private findBaseItem(items: OrderItem[]): OrderItem | undefined {
+    return items.find((item) => !item.parentItemId) ?? items[0];
+  }
+
+  private buildCalendarVariants(
+    baseItem: OrderItem | undefined,
+    period: TrafficPeriod | undefined,
+  ): TimetableCalendarVariant[] {
+    if (period) {
+      return this.buildVariantsFromTrafficPeriod(period);
+    }
+    if (!baseItem) {
+      return [];
+    }
+    const segments = this.resolveValiditySegments(baseItem);
+    if (!segments.length) {
+      return [];
+    }
+    return segments.map((segment, index) => ({
+      id: `${baseItem.id}-segment-${index}`,
+      type: 'series',
+      description: baseItem.name ?? 'Verkehrsperiode',
+      validFrom: segment.startDate,
+      validTo: segment.endDate,
+      appliesTo: 'both',
+    }));
+  }
+
+  private buildVariantsFromTrafficPeriod(
+    period: TrafficPeriod,
+  ): TimetableCalendarVariant[] {
+    if (!period.rules?.length) {
+      return [];
+    }
+    return period.rules.map((rule, index) => ({
+      id: rule.id ?? `${period.id}-rule-${index}`,
+      type: rule.variantType ?? 'series',
+      description: rule.name ?? period.name,
+      validFrom: rule.validityStart,
+      validTo: rule.validityEnd,
+      daysOfWeek: this.daysFromBitmap(rule.daysBitmap),
+      dates: rule.includesDates?.length ? [...rule.includesDates] : undefined,
+      appliesTo: rule.appliesTo ?? 'both',
+      variantNumber: rule.variantNumber ?? `${index}`.padStart(2, '0'),
+      reason: rule.reason ?? period.description,
+    }));
+  }
+
+  private buildCalendarModifications(
+    items: OrderItem[],
+    period: TrafficPeriod | undefined,
+  ): TimetableCalendarModification[] {
+    const modifications: TimetableCalendarModification[] = [];
+
+    period?.rules?.forEach((rule) => {
+      rule.excludesDates?.forEach((date) => {
+        modifications.push({
+          date,
+          description: `${rule.name ?? period.name} · Ausfall`,
+          type: 'cancelled',
+          notes: period.description,
+        });
+      });
+    });
+
+    items
+      .filter((item) => !!item.parentItemId)
+      .forEach((child) => {
+        this.resolveValiditySegments(child).forEach((segment, idx) => {
+          const range =
+            segment.endDate && segment.endDate !== segment.startDate
+              ? `${segment.startDate} – ${segment.endDate}`
+              : segment.startDate;
+          modifications.push({
+            date: segment.startDate,
+            description: `${child.name ?? 'Sub-Auftragsposition'} (${range})`,
+            type: 'modified_timetable',
+            notes: child.deviation ?? `Child ${child.id}-${idx}`,
+          });
+        });
+      });
+
+    return modifications;
+  }
+
+  private resolveValiditySegments(item: OrderItem | undefined): OrderItemValiditySegment[] {
+    if (!item) {
+      return [];
+    }
+    if (item.validity?.length) {
+      return item.validity;
+    }
+    return this.deriveDefaultValidity(item);
+  }
+
+  private daysFromBitmap(bitmap?: string): string[] | undefined {
+    if (!bitmap || bitmap.length !== 7) {
+      return undefined;
+    }
+    const map = ['MO', 'DI', 'MI', 'DO', 'FR', 'SA', 'SO'];
+    const result: string[] = [];
+    bitmap.split('').forEach((bit, index) => {
+      if (bit === '1') {
+        result.push(map[index]);
+      }
+    });
+    return result.length ? result : undefined;
+  }
+
+  private toTimetableStops(stops: TrainPlan['stops']): TimetableStopInput[] {
+    return stops.map((stop) => ({
+      sequence: stop.sequence,
+      type: stop.type,
+      locationCode: stop.locationCode ?? `LOC-${stop.sequence}`,
+      locationName: stop.locationName ?? stop.locationCode ?? 'Unbekannter Halt',
+      countryCode: stop.countryCode,
+      arrivalTime: this.formatIsoToTime(stop.arrivalTime),
+      departureTime: this.formatIsoToTime(stop.departureTime),
+      arrivalOffsetDays: stop.arrivalOffsetDays,
+      departureOffsetDays: stop.departureOffsetDays,
+      dwellMinutes: stop.dwellMinutes,
+      activities: stop.activities?.length ? stop.activities : ['0001'],
+      platform: stop.platform,
+      notes: stop.notes,
+    }));
+  }
+
+  private formatIsoToTime(value: string | undefined): string | undefined {
+    if (!value) {
+      return undefined;
+    }
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) {
+      return undefined;
+    }
+    const hours = date.getHours().toString().padStart(2, '0');
+    const minutes = date.getMinutes().toString().padStart(2, '0');
+    return `${hours}:${minutes}`;
+  }
+
+  private generateTimetableRefId(plan: TrainPlan): string {
+    const sanitized = plan.id.replace(/^TP-?/i, '');
+    return `TT-${sanitized}`;
+  }
+
+  private generateOpn(plan: TrainPlan): string {
+    if (plan.pathRequestId) {
+      return plan.pathRequestId.replace(/^PR/i, 'OPN');
+    }
+    return `OPN-${plan.trainNumber}`;
   }
 
   private combineDateTime(date: string, time: string): string {

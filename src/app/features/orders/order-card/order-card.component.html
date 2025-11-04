@@ -28,28 +28,80 @@
           }
         </div>
       }
-      @if (trainStatusSummaries().length || businessStatusSummaries().length) {
-        <div class="status-aggregates">
-          @if (trainStatusSummaries().length) {
-            <div class="status-group status-group--train">
-              <span class="group-label">
-                <mat-icon inline>train</mat-icon>
-                Züge
+
+      @if (customerDetails(); as customer) {
+        <div class="customer-panel">
+          <div class="customer-panel__keyfacts">
+            <span class="fact" matTooltip="Kundennummer">
+              <mat-icon inline>confirmation_number</mat-icon>
+              {{ customer.customerNumber }}
+            </span>
+            @if (customer.projectNumber) {
+              <span class="fact" matTooltip="Projektnummer">
+                <mat-icon inline>description</mat-icon>
+                {{ customer.projectNumber }}
               </span>
-              <mat-chip-set aria-label="Status der Züge">
+            }
+          </div>
+          @if (customer.contacts.length) {
+            <div class="customer-panel__contacts">
+              @for (contact of customer.contacts; track contact.id) {
+                <div class="contact-chip">
+                  <div class="avatar">
+                    <mat-icon>person</mat-icon>
+                  </div>
+                  <div class="contact-chip__details">
+                    <span class="name">{{ contact.name }}</span>
+                    @if (contact.role) {
+                      <span class="role">{{ contact.role }}</span>
+                    }
+                    <div class="contact-chip__meta">
+                      @if (contact.email) {
+                        <span>
+                          <mat-icon inline>mail</mat-icon>
+                          {{ contact.email }}
+                        </span>
+                      }
+                      @if (contact.phone) {
+                        <span>
+                          <mat-icon inline>call</mat-icon>
+                          {{ contact.phone }}
+                        </span>
+                      }
+                    </div>
+                  </div>
+                </div>
+              }
+            </div>
+          }
+        </div>
+      }
+      @if (
+        timetablePhaseSummaries().length ||
+        businessStatusSummaries().length ||
+        variantSummaries().length
+      ) {
+        <div class="status-aggregates">
+          @if (timetablePhaseSummaries().length) {
+            <div class="status-group status-group--phase">
+              <span class="group-label">
+                <mat-icon inline>timeline</mat-icon>
+                Phasen
+              </span>
+              <mat-chip-set aria-label="Phasen der Fahrpläne">
                 <mat-chip
-                  class="status-chip status-chip--train"
-                  [class.status-chip--active]="isTrainStatusActive('all')"
-                  (click)="clearTrainStatus($event)"
+                  class="status-chip status-chip--phase"
+                  [class.status-chip--active]="isPhaseActive('all')"
+                  (click)="clearPhaseFilter($event)"
                 >
                   Alle
                 </mat-chip>
-                @for (summary of trainStatusSummaries(); track summary.key) {
+                @for (summary of timetablePhaseSummaries(); track summary.key) {
                   <mat-chip
-                    class="status-chip status-chip--train"
+                    class="status-chip status-chip--phase"
                     [ngClass]="summary.key"
-                    [class.status-chip--active]="isTrainStatusActive(summary.value)"
-                    (click)="toggleTrainStatus(summary.value, $event)"
+                    [class.status-chip--active]="isPhaseActive(summary.value)"
+                    (click)="togglePhaseFilter(summary.value, $event)"
                   >
                     {{ summary.label }} · {{ summary.count }}
                   </mat-chip>
@@ -78,6 +130,21 @@
                     [class.status-chip--active]="isBusinessStatusActive(summary.value)"
                     (click)="toggleBusinessStatus(summary.value, $event)"
                   >
+                    {{ summary.label }} · {{ summary.count }}
+                  </mat-chip>
+                }
+              </mat-chip-set>
+            </div>
+          }
+          @if (variantSummaries().length) {
+            <div class="status-group status-group--variant">
+              <span class="group-label">
+                <mat-icon inline>category</mat-icon>
+                Varianten
+              </span>
+              <mat-chip-set aria-label="Kalendervarianten">
+                @for (summary of variantSummaries(); track summary.key) {
+                  <mat-chip class="status-chip status-chip--variant">
                     {{ summary.label }} · {{ summary.count }}
                   </mat-chip>
                 }

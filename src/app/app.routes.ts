@@ -6,6 +6,7 @@ import { TemplatesPageComponent } from './features/templates/templates-page.comp
 import { MasterDataLandingComponent } from './features/master-data/master-data-landing.component';
 import { CustomAttributeSettingsComponent } from './features/settings/custom-attribute-settings.component';
 import { TimetableManagerComponent } from './features/timetable-manager/timetable-manager.component';
+import { CustomerListComponent } from './features/customers/customer-list.component';
 
 export const routes: Routes = [
   {
@@ -18,6 +19,12 @@ export const routes: Routes = [
     path: 'businesses',
     component: BusinessListComponent,
     title: 'Geschäfte',
+    data: { section: 'manager' },
+  },
+  {
+    path: 'customers',
+    component: CustomerListComponent,
+    title: 'Kunden',
     data: { section: 'manager' },
   },
   {

@@ -118,6 +118,114 @@
         }
       }
 
+      .customer-panel {
+        margin-top: 12px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        padding: 12px;
+        border-radius: 12px;
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        background: rgba(15, 23, 42, 0.25);
+
+        &__keyfacts {
+          display: flex;
+          gap: 12px;
+          flex-wrap: wrap;
+
+          .fact {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 10px;
+            border-radius: 999px;
+            border: 1px solid rgba(255, 255, 255, 0.25);
+            font-size: 0.78rem;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            font-weight: 600;
+            color: #e8eaf6;
+
+            mat-icon {
+              font-size: 18px;
+              height: 18px;
+              width: 18px;
+              color: #c5d7ff;
+            }
+          }
+        }
+
+        &__contacts {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+          gap: 10px;
+
+          .contact-chip {
+            display: grid;
+            grid-template-columns: auto 1fr;
+            gap: 10px;
+            align-items: flex-start;
+            padding: 10px;
+            border-radius: 12px;
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+
+            .avatar {
+              width: 36px;
+              height: 36px;
+              border-radius: 50%;
+              background: rgba(255, 255, 255, 0.12);
+              display: inline-flex;
+              align-items: center;
+              justify-content: center;
+
+              mat-icon {
+                color: #c5d7ff;
+              }
+            }
+
+            &__details {
+              display: flex;
+              flex-direction: column;
+              gap: 4px;
+              color: #f5f7fa;
+
+              .name {
+                font-weight: 600;
+              }
+
+              .role {
+                font-size: 0.75rem;
+                text-transform: uppercase;
+                letter-spacing: 0.08em;
+                color: rgba(255, 255, 255, 0.7);
+              }
+
+              .contact-chip__meta {
+                display: flex;
+                flex-direction: column;
+                gap: 2px;
+                font-size: 0.78rem;
+                color: rgba(255, 255, 255, 0.88);
+
+                span {
+                  display: inline-flex;
+                  align-items: center;
+                  gap: 6px;
+
+                  mat-icon {
+                    font-size: 16px;
+                    height: 16px;
+                    width: 16px;
+                    color: #c5d7ff;
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+
       .status-aggregates {
         margin-top: 12px;
         display: grid;
@@ -183,6 +291,18 @@
           --mdc-chip-container-color: rgba(102, 187, 106, 0.23);
           --mdc-chip-outline-color: rgba(200, 230, 201, 0.9);
           --mdc-chip-label-text-color: #f1fff0;
+        }
+
+        .status-chip--phase {
+          --mdc-chip-container-color: rgba(149, 117, 205, 0.28);
+          --mdc-chip-outline-color: rgba(209, 196, 233, 0.9);
+          --mdc-chip-label-text-color: #f3e5f5;
+        }
+
+        .status-chip--variant {
+          --mdc-chip-container-color: rgba(100, 181, 246, 0.2);
+          --mdc-chip-outline-color: rgba(66, 165, 245, 0.9);
+          --mdc-chip-label-text-color: #0d47a1;
         }
 
         .status-chip--train.status-requested {
