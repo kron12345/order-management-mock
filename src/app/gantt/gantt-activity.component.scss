@@ -130,6 +130,15 @@
   box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.55), 0 7px 16px rgba(10, 16, 24, 0.28);
 }
 
+.gantt-activity--block {
+  padding: 0;
+  justify-content: center;
+}
+
+.gantt-activity--block .gantt-activity__content {
+  display: none;
+}
+
 .gantt-activity__tooltip {
   padding: 14px 18px;
   border-radius: 10px;

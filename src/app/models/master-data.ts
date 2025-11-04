@@ -13,6 +13,15 @@ export interface PersonnelService {
   startTime?: string;
   endTime?: string;
   isNightService?: boolean;
+  /**
+   * Limit of how often this service may be instantiated per calendar day.
+   * Defaults to 1 to satisfy "ein Dienst pro Tag".
+   */
+  maxDailyInstances?: number;
+  /**
+   * Number of resources that must/can be assigned per service instance.
+   */
+  maxResourcesPerInstance?: number;
 }
 
 export interface PersonnelServicePool {
@@ -56,6 +65,8 @@ export interface VehicleService {
   endTime?: string;
   isOvernight?: boolean;
   primaryRoute?: string;
+  maxDailyInstances?: number;
+  maxResourcesPerInstance?: number;
 }
 
 export interface VehicleServicePool {

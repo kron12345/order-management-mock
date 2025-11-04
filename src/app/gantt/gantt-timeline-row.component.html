@@ -32,6 +32,10 @@
           [leftPx]="bar.left"
           [widthPx]="bar.width"
           [classes]="bar.classes ?? []"
+          [isSelected]="bar.selected ?? false"
+          [displayMode]="viewMode"
+          (activitySelected)="activitySelected.emit($event)"
+          (toggleSelection)="activityToggleSelection.emit($event)"
         />
       }
     </div>

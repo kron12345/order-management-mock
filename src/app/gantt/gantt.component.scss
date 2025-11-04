@@ -56,6 +56,7 @@
   width: calc(100% - var(--gantt-scrollbar-width, 0px));
   margin-right: var(--gantt-scrollbar-width, 0px);
   box-sizing: border-box;
+  touch-action: pan-y;
 }
 
 .gantt__viewport {
@@ -91,6 +92,7 @@
   overflow-y: hidden;
   scrollbar-width: none;
   -ms-overflow-style: none;
+  touch-action: pan-y;
 }
 
 .gantt__timeline-cell--group {

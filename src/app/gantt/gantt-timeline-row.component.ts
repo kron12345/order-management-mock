@@ -1,13 +1,14 @@
-import { Component, Input } from '@angular/core';
+import { Component, EventEmitter, Input, Output } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { Activity } from '../models/activity';
 import { GanttActivityComponent } from './gantt-activity.component';
+import { Activity } from '../models/activity';
 
 export interface GanttBar {
   activity: Activity;
   left: number;
   width: number;
   classes?: string[];
+  selected?: boolean;
 }
 
 export interface GanttBackgroundSegment {
@@ -37,4 +38,8 @@ export class GanttTimelineRowComponent {
   @Input() serviceRanges: GanttServiceRange[] = [];
   @Input() nowMarkerLeft: number | null = null;
   @Input() zebra = false;
+  @Input() viewMode: 'block' | 'detail' = 'detail';
+
+  @Output() activitySelected = new EventEmitter<Activity>();
+  @Output() activityToggleSelection = new EventEmitter<Activity>();
 }

@@ -35,6 +35,8 @@ export const DEMO_MASTER_DATA: DemoMasterData = {
       startTime: '03:45',
       endTime: '12:05',
       isNightService: false,
+      maxDailyInstances: 1,
+      maxResourcesPerInstance: 1,
     },
     {
       id: 'PS-002',
@@ -45,6 +47,8 @@ export const DEMO_MASTER_DATA: DemoMasterData = {
       startTime: '13:55',
       endTime: '22:30',
       isNightService: false,
+      maxDailyInstances: 1,
+      maxResourcesPerInstance: 1,
     },
     {
       id: 'PS-003',
@@ -55,6 +59,8 @@ export const DEMO_MASTER_DATA: DemoMasterData = {
       startTime: '05:50',
       endTime: '19:45',
       isNightService: false,
+      maxDailyInstances: 1,
+      maxResourcesPerInstance: 1,
     },
     {
       id: 'PS-004',
@@ -65,6 +71,8 @@ export const DEMO_MASTER_DATA: DemoMasterData = {
       startTime: '04:20',
       endTime: '12:45',
       isNightService: false,
+      maxDailyInstances: 1,
+      maxResourcesPerInstance: 1,
     },
     {
       id: 'PS-005',
@@ -75,6 +83,8 @@ export const DEMO_MASTER_DATA: DemoMasterData = {
       startTime: '03:50',
       endTime: '11:45',
       isNightService: false,
+      maxDailyInstances: 1,
+      maxResourcesPerInstance: 1,
     },
     {
       id: 'PS-006',
@@ -85,6 +95,8 @@ export const DEMO_MASTER_DATA: DemoMasterData = {
       startTime: '14:15',
       endTime: '23:05',
       isNightService: false,
+      maxDailyInstances: 1,
+      maxResourcesPerInstance: 1,
     },
   ],
   personnelServicePools: [
@@ -229,6 +241,8 @@ export const DEMO_MASTER_DATA: DemoMasterData = {
       endTime: '14:10',
       isOvernight: false,
       primaryRoute: 'Berlin Hbf – Cottbus',
+      maxDailyInstances: 1,
+      maxResourcesPerInstance: 1,
     },
     {
       id: 'VS-002',
@@ -240,6 +254,8 @@ export const DEMO_MASTER_DATA: DemoMasterData = {
       endTime: '21:35',
       isOvernight: false,
       primaryRoute: 'Potsdam – Frankfurt (Oder)',
+      maxDailyInstances: 1,
+      maxResourcesPerInstance: 1,
     },
     {
       id: 'VS-003',
@@ -251,6 +267,8 @@ export const DEMO_MASTER_DATA: DemoMasterData = {
       endTime: '22:10',
       isOvernight: false,
       primaryRoute: 'Berlin Gesundbrunnen – Köln Hbf',
+      maxDailyInstances: 1,
+      maxResourcesPerInstance: 1,
     },
     {
       id: 'VS-004',
@@ -262,6 +280,8 @@ export const DEMO_MASTER_DATA: DemoMasterData = {
       endTime: '12:15',
       isOvernight: false,
       primaryRoute: 'S41 Ringlinie',
+      maxDailyInstances: 1,
+      maxResourcesPerInstance: 1,
     },
     {
       id: 'VS-005',
@@ -273,6 +293,8 @@ export const DEMO_MASTER_DATA: DemoMasterData = {
       endTime: '23:05',
       isOvernight: true,
       primaryRoute: 'Berlin Hbf – München Hbf',
+      maxDailyInstances: 1,
+      maxResourcesPerInstance: 1,
     },
   ],
   vehicleServicePools: [

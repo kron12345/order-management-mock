@@ -119,6 +119,8 @@ function generateAssignmentActivities(
   start: Date,
   totalDays: number,
   stageKey: string,
+  serviceCategory: 'personnel-service' | 'vehicle-service',
+  assignmentCollector?: Map<string, Activity[]>,
 ): Activity[] {
   const activities: Activity[] = [];
   resources.forEach((resource, resourceIndex) => {
@@ -145,17 +147,32 @@ function generateAssignmentActivities(
         definition?.description && definition.description.length > 0
           ? { description: definition.description }
           : undefined;
-      activities.push({
+      const serviceInstanceId = `${serviceId}-${dayKey}`;
+      const activity: Activity = {
         id: `${stageKey}-${resource.id}-${dayKey}-${serviceId}`,
         resourceId: resource.id,
+        participantResourceIds: [resource.id],
         title,
         start: toIsoString(activityStart),
         end: toIsoString(activityEnd),
         type: 'service',
-        serviceId: `${serviceId}-${dayKey}`,
+        serviceId: serviceInstanceId,
+        serviceTemplateId: serviceId,
+        serviceDate: dayKey,
+        serviceCategory,
         serviceRole: 'segment',
         meta,
-      });
+      };
+      if (assignmentCollector) {
+        const bucket = assignmentCollector.get(serviceInstanceId) ?? [];
+        bucket.push(activity);
+        const participantIds = Array.from(new Set(bucket.map((entry) => entry.resourceId)));
+        bucket.forEach((entry) => {
+          entry.participantResourceIds = participantIds;
+        });
+        assignmentCollector.set(serviceInstanceId, bucket);
+      }
+      activities.push(activity);
     }
   });
   return activities;
@@ -167,6 +184,7 @@ function generateServiceActivities(
   totalDays: number,
   stageKey: string,
   segmentsPerDay = 1,
+  serviceCategory: 'personnel-service' | 'vehicle-service',
 ): Activity[] {
   const activities: Activity[] = [];
   resources.forEach((resource) => {
@@ -183,14 +201,19 @@ function generateServiceActivities(
       const activityEnd = ensureEndAfter(activityStart, withTime(dayBase, resourceEnd, '14:00'));
 
       if (segmentsPerDay <= 1) {
+        const serviceInstanceId = `${baseServiceId}-${dayKey}`;
         activities.push({
           id: `${stageKey}-${resource.id}-${dayKey}`,
           resourceId: resource.id,
+          participantResourceIds: [resource.id],
           title: `${resource.name} · ${displayDate}`,
           start: toIsoString(activityStart),
           end: toIsoString(activityEnd),
           type: 'service',
-          serviceId: `${baseServiceId}-${dayKey}`,
+          serviceId: serviceInstanceId,
+          serviceTemplateId: baseServiceId,
+          serviceDate: dayKey,
+          serviceCategory,
           serviceRole: 'segment',
         });
         continue;
@@ -211,14 +234,19 @@ function generateServiceActivities(
         } else if (segment === segmentsPerDay - 1) {
           role = 'end';
         }
+        const serviceInstanceId = `${baseServiceId}-${dayKey}`;
         activities.push({
           id: `${stageKey}-${resource.id}-${dayKey}-seg${segment}`,
           resourceId: resource.id,
+          participantResourceIds: [resource.id],
           title: `${resource.name} · ${displayDate} (${segment + 1}/${segmentsPerDay})`,
           start: toIsoString(segmentStart),
           end: toIsoString(segmentEnd),
           type: 'service',
-          serviceId: `${baseServiceId}-${dayKey}`,
+          serviceId: serviceInstanceId,
+          serviceTemplateId: baseServiceId,
+          serviceDate: dayKey,
+          serviceCategory,
           serviceRole: role,
         });
       }
@@ -253,6 +281,7 @@ function generateShiftActivities(
       activities.push({
         id: `${stageKey}-${resource.id}-${dayKey}`,
         resourceId: resource.id,
+        participantResourceIds: [resource.id],
         title: `${shortShifts ? 'Disposition' : 'Einsatz'} ${displayDate} (${isEarly ? 'Früh' : 'Spät'})`,
         start: toIsoString(shiftStart),
         end: toIsoString(shiftEnd),
@@ -267,6 +296,7 @@ function generateShiftActivities(
         activities.push({
           id: `${stageKey}-${resource.id}-${dayKey}-prep`,
           resourceId: resource.id,
+          participantResourceIds: [resource.id],
           title: `Bereitstellung ${displayDate}`,
           start: toIsoString(prepStart),
           end: toIsoString(prepEnd),
@@ -280,6 +310,7 @@ function generateShiftActivities(
         activities.push({
           id: `${stageKey}-${resource.id}-${dayKey}-wrap`,
           resourceId: resource.id,
+          participantResourceIds: [resource.id],
           title: `Abstellung ${displayDate}`,
           start: toIsoString(wrapStart),
           end: toIsoString(wrapEnd),
@@ -360,6 +391,8 @@ function createStageData(): Record<PlanningStageId, PlanningStageData> {
   const vehicleServiceResources: Resource[] = vehicleServices.map((service) => ({
     id: `vehicle-service-${service.id}`,
     name: service.name,
+    kind: 'vehicle-service',
+    dailyServiceCapacity: service.maxDailyInstances ?? 1,
     attributes: createAttributes('vehicle-service', {
       serviceId: service.id,
       poolName: vehicleServicePoolMap.get(service.poolId ?? '')?.name,
@@ -370,12 +403,16 @@ function createStageData(): Record<PlanningStageId, PlanningStageData> {
       startTime: service.startTime,
       endTime: service.endTime,
       isOvernight: service.isOvernight,
+      maxDailyInstances: service.maxDailyInstances,
+      maxResourcesPerInstance: service.maxResourcesPerInstance,
     }),
   }));
 
   const personnelServiceResources: Resource[] = personnelServices.map((service) => ({
     id: `personnel-service-${service.id}`,
     name: service.name,
+    kind: 'personnel-service',
+    dailyServiceCapacity: service.maxDailyInstances ?? 1,
     attributes: createAttributes('personnel-service', {
       serviceId: service.id,
       poolName: personnelServicePoolMap.get(service.poolId ?? '')?.name,
@@ -385,6 +422,8 @@ function createStageData(): Record<PlanningStageId, PlanningStageData> {
       startTime: service.startTime,
       endTime: service.endTime,
       isNightService: service.isNightService,
+      maxDailyInstances: service.maxDailyInstances,
+      maxResourcesPerInstance: service.maxResourcesPerInstance,
     }),
   }));
 
@@ -397,6 +436,8 @@ function createStageData(): Record<PlanningStageId, PlanningStageData> {
     return {
       id: `vehicle-${vehicle.id}`,
       name: labelParts.filter(Boolean).join(' · '),
+      kind: 'vehicle',
+      dailyServiceCapacity: 4,
       attributes: createAttributes('vehicle', {
         vehicleId: vehicle.id,
         vehicleNumber: vehicle.vehicleNumber,
@@ -425,6 +466,8 @@ function createStageData(): Record<PlanningStageId, PlanningStageData> {
     return {
       id: `personnel-${person.id}`,
       name: fullName || person.id,
+      kind: 'personnel',
+      dailyServiceCapacity: 2,
       attributes: createAttributes('personnel', {
         personnelId: person.id,
         preferredName,
@@ -448,20 +491,54 @@ function createStageData(): Record<PlanningStageId, PlanningStageData> {
   const dispatchStart = startOfDay(today);
 
   const baseActivities = [
-    ...generateServiceActivities(vehicleServiceResources, baseStart, 7, 'base', 2),
-    ...generateServiceActivities(personnelServiceResources, baseStart, 7, 'base', 2),
+    ...generateServiceActivities(vehicleServiceResources, baseStart, 7, 'base', 2, 'vehicle-service'),
+    ...generateServiceActivities(personnelServiceResources, baseStart, 7, 'base', 2, 'personnel-service'),
   ];
 
+  const operationsAssignmentCollector = new Map<string, Activity[]>();
   const operationsActivities = [
-    ...generateServiceActivities(vehicleServiceResources, operationsStart, 28, 'operations', 2),
-    ...generateServiceActivities(personnelServiceResources, operationsStart, 28, 'operations', 2),
-    ...generateAssignmentActivities(vehicleResources, vehicleServiceDefinitionMap, operationsStart, 42, 'operations-vehicle'),
-    ...generateAssignmentActivities(personnelResources, personnelServiceDefinitionMap, operationsStart, 42, 'operations-personnel'),
+    ...generateServiceActivities(vehicleServiceResources, operationsStart, 28, 'operations', 2, 'vehicle-service'),
+    ...generateServiceActivities(personnelServiceResources, operationsStart, 28, 'operations', 2, 'personnel-service'),
+    ...generateAssignmentActivities(
+      vehicleResources,
+      vehicleServiceDefinitionMap,
+      operationsStart,
+      42,
+      'operations-vehicle',
+      'vehicle-service',
+      operationsAssignmentCollector,
+    ),
+    ...generateAssignmentActivities(
+      personnelResources,
+      personnelServiceDefinitionMap,
+      operationsStart,
+      42,
+      'operations-personnel',
+      'personnel-service',
+      operationsAssignmentCollector,
+    ),
   ];
 
+  const dispatchAssignmentCollector = new Map<string, Activity[]>();
   const dispatchActivities = [
-    ...generateAssignmentActivities(vehicleResources, vehicleServiceDefinitionMap, dispatchStart, 14, 'dispatch-vehicle'),
-    ...generateAssignmentActivities(personnelResources, personnelServiceDefinitionMap, dispatchStart, 14, 'dispatch-personnel'),
+    ...generateAssignmentActivities(
+      vehicleResources,
+      vehicleServiceDefinitionMap,
+      dispatchStart,
+      14,
+      'dispatch-vehicle',
+      'vehicle-service',
+      dispatchAssignmentCollector,
+    ),
+    ...generateAssignmentActivities(
+      personnelResources,
+      personnelServiceDefinitionMap,
+      dispatchStart,
+      14,
+      'dispatch-personnel',
+      'personnel-service',
+      dispatchAssignmentCollector,
+    ),
     ...generateShiftActivities(vehicleResources, dispatchStart, 14, 'dispatch-vehicle-shift', true),
     ...generateShiftActivities(personnelResources, dispatchStart, 14, 'dispatch-personnel-shift', true),
   ];

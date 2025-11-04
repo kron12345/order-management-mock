@@ -28,7 +28,7 @@
 }
 
 .planning-toolbar__info {
-  margin-left: auto;
+  margin-left: 0;
 }
 
 .planning-toolbar__summary {
@@ -39,6 +39,10 @@
 
 .planning-toolbar__button {
   min-height: 36px;
+}
+
+.planning-toolbar__creation-toggle {
+  margin-left: auto;
 }
 
 .planning-stage-info-menu {
@@ -196,6 +200,57 @@
   display: flex;
   flex-direction: column;
   min-height: 0;
+}
+
+.planning-side-panels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 0 16px 16px;
+}
+
+.planning-side-panels mat-card {
+  flex: 1 1 360px;
+}
+
+.planning-side-panels__form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.planning-side-panels__form .planning-side-panels__full {
+  grid-column: 1 / -1;
+}
+
+.planning-side-panels__buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.planning-selection-chips {
+  margin-bottom: 12px;
+}
+
+.planning-side-panels__shift {
+  margin-top: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+
+  span {
+    font-size: 0.85rem;
+    color: rgba(0, 0, 0, 0.7);
+    margin-right: 4px;
+  }
+}
+
+.planning-side-panels__field {
+  width: 100%;
 }
 
 .planning-board {

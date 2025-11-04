@@ -40,6 +40,23 @@ export class GanttMenuComponent {
   @Output() filterChange = new EventEmitter<string>();
 
   readonly today = new Date();
+  private readonly zoomLabelMap: Record<ZoomLevel, string> = {
+    quarter: 'Quartal',
+    '2month': '2 Monate',
+    month: 'Monat',
+    '2week': '2 Wochen',
+    week: 'Woche',
+    '3day': '3 Tage',
+    day: 'Tag',
+    '12hour': '12 Stunden',
+    '6hour': '6 Stunden',
+    '3hour': '3 Stunden',
+    hour: '1 Stunde',
+    '30min': '30 Minuten',
+    '15min': '15 Minuten',
+    '10min': '10 Minuten',
+    '5min': '5 Minuten',
+  };
 
   onZoomLevelChange(level: ZoomLevel) {
     this.zoomLevelChange.emit(level);
@@ -54,5 +71,9 @@ export class GanttMenuComponent {
       return;
     }
     this.gotoDate.emit(value);
+  }
+
+  zoomLabel(level: ZoomLevel): string {
+    return this.zoomLabelMap[level] ?? level;
   }
 }

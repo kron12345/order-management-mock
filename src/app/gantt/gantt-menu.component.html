@@ -45,7 +45,7 @@
     @for (level of zoomLevels; track level) {
       <button mat-menu-item (click)="onZoomLevelChange(level)">
         <mat-icon *ngIf="zoomLevel === level" fontIcon="check"></mat-icon>
-        <span>{{ level }}</span>
+        <span>{{ zoomLabel(level) }}</span>
       </button>
     }
   </mat-menu>

@@ -27,14 +27,40 @@ export interface TimeViewport {
   viewCenter(): Date;
 }
 
-const ZOOM_ORDER: ZoomLevel[] = ['month', 'week', 'day', 'hour', '15min'];
+const ZOOM_ORDER: ZoomLevel[] = [
+  'quarter',
+  '2month',
+  'month',
+  '2week',
+  'week',
+  '3day',
+  'day',
+  '12hour',
+  '6hour',
+  '3hour',
+  'hour',
+  '30min',
+  '15min',
+  '10min',
+  '5min',
+];
 
 const ZOOM_RANGE_MS: Record<ZoomLevel, number> = {
-  month: 32 * MS_IN_DAY,
+  quarter: 150 * MS_IN_DAY,
+  '2month': 75 * MS_IN_DAY,
+  month: 40 * MS_IN_DAY,
+  '2week': 18 * MS_IN_DAY,
   week: 10 * MS_IN_DAY,
+  '3day': 4 * MS_IN_DAY,
   day: 2 * MS_IN_DAY,
-  hour: 12 * MS_IN_HOUR,
+  '12hour': 30 * MS_IN_HOUR,
+  '6hour': 24 * MS_IN_HOUR,
+  '3hour': 12 * MS_IN_HOUR,
+  hour: 8 * MS_IN_HOUR,
+  '30min': 6 * MS_IN_HOUR,
   '15min': 4 * MS_IN_HOUR,
+  '10min': 3 * MS_IN_HOUR,
+  '5min': 2 * MS_IN_HOUR,
 };
 
 export function createTimeViewport(options: TimeViewportOptions): TimeViewport {

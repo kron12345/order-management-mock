@@ -9,6 +9,9 @@
   [matTooltip]="tooltipText()"
   matTooltipClass="gantt-activity__tooltip"
   matTooltipShowDelay="180"
+  (click)="handleClick($event)"
+  (keydown.enter)="handleClick($event)"
+  (keydown.space)="handleClick($event)"
 >
   <div class="gantt-activity__content">
     @if (showTitle) {

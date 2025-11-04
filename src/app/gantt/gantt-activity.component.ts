@@ -1,4 +1,4 @@
-import { Component, Input, computed } from '@angular/core';
+import { Component, EventEmitter, Input, Output, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { Activity } from '../models/activity';
@@ -17,6 +17,9 @@ export class GanttActivityComponent {
   @Input({ required: true }) widthPx!: number;
   @Input() isSelected = false;
   @Input() classes: string[] = [];
+  @Input() displayMode: 'block' | 'detail' = 'detail';
+  @Output() activitySelected = new EventEmitter<Activity>();
+  @Output() toggleSelection = new EventEmitter<Activity>();
 
   private readonly dateTime = new Intl.DateTimeFormat('de-DE', {
     weekday: 'short',
@@ -55,12 +58,20 @@ export class GanttActivityComponent {
     lines.push(`Start: ${this.startLabel}`);
     lines.push(`Ende: ${this.endLabel}`);
     lines.push(`Dauer: ${this.durationLabel}`);
+    if (this.activity.remark) {
+      lines.push(`Notiz: ${this.activity.remark}`);
+    }
     return lines.join('\n');
   });
 
   get hostClasses(): string[] {
-    const baseType = this.activity?.type ? `gantt-activity--${this.activity.type}` : 'gantt-activity--service';
-    const classes = [baseType];
+    const classes = ['gantt-activity--service'];
+    if (this.activity?.type) {
+      classes.push(`gantt-activity--${this.activity.type}`);
+    }
+    if (this.displayMode === 'block') {
+      classes.push('gantt-activity--block');
+    }
     if (this.classes?.length) {
       classes.push(...this.classes);
     }
@@ -74,10 +85,16 @@ export class GanttActivityComponent {
   }
 
   get showTitle(): boolean {
+    if (this.displayMode === 'block') {
+      return false;
+    }
     return this.widthPx >= 54;
   }
 
   get showRoute(): boolean {
+    if (this.displayMode === 'block') {
+      return false;
+    }
     return this.widthPx >= 120 && !!(this.activity?.from || this.activity?.to);
   }
 
@@ -137,5 +154,19 @@ export class GanttActivityComponent {
       return '';
     }
     return this.tooltipText().replace(/\n+/g, ', ');
+  }
+
+  protected handleClick(event: Event): void {
+    event.stopPropagation();
+    event.preventDefault();
+    if (event instanceof MouseEvent && (event.metaKey || event.ctrlKey)) {
+      if (this.activity) {
+        this.toggleSelection.emit(this.activity);
+      }
+      return;
+    }
+    if (this.activity) {
+      this.activitySelected.emit(this.activity);
+    }
   }
 }

@@ -31,6 +31,22 @@ const hourLabel = format({ hour: '2-digit' });
 const hourMinuteLabel = format({ hour: '2-digit', minute: '2-digit' });
 
 const zoomConfigs: Record<ZoomLevel, ZoomConfig> = {
+  quarter: {
+    pxPerMs: 90 / MS_IN_DAY,
+    stepMs: MS_IN_DAY,
+    majorStepMs: 7 * MS_IN_DAY,
+    label: (date) => dayNumberLabel.format(date),
+    majorLabel: (date) => monthLabel.format(date),
+    minorLabel: (date) => `${weekdayShortLabel.format(date)} ${dayNumberLabel.format(date)}`,
+  },
+  '2month': {
+    pxPerMs: 120 / MS_IN_DAY,
+    stepMs: MS_IN_DAY,
+    majorStepMs: 7 * MS_IN_DAY,
+    label: (date) => dayNumberLabel.format(date),
+    majorLabel: (date) => monthLabel.format(date),
+    minorLabel: (date) => `${weekdayShortLabel.format(date)} ${dayNumberLabel.format(date)}`,
+  },
   month: {
     pxPerMs: 180 / MS_IN_DAY,
     stepMs: MS_IN_DAY,
@@ -39,11 +55,25 @@ const zoomConfigs: Record<ZoomLevel, ZoomConfig> = {
     majorLabel: (date) => monthLabel.format(date),
     minorLabel: (date) => `${weekdayShortLabel.format(date)} ${dayNumberLabel.format(date)}`,
   },
+  '2week': {
+    pxPerMs: 24 / MS_IN_HOUR,
+    stepMs: 12 * MS_IN_HOUR,
+    majorStepMs: MS_IN_DAY,
+    label: (date) => `${weekdayShortLabel.format(date)} ${dayNumberLabel.format(date)}`,
+    majorLabel: (date) => monthLabel.format(date),
+  },
   week: {
-    pxPerMs: 54 / MS_IN_HOUR,
+    pxPerMs: 36 / MS_IN_HOUR,
     stepMs: 6 * MS_IN_HOUR,
     majorStepMs: MS_IN_DAY,
     label: (date) => hourMinuteLabel.format(date),
+    majorLabel: (date) => weekdayWithDateLabel.format(date),
+  },
+  '3day': {
+    pxPerMs: 64 / MS_IN_HOUR,
+    stepMs: 6 * MS_IN_HOUR,
+    majorStepMs: MS_IN_DAY,
+    label: (date) => hourLabel.format(date),
     majorLabel: (date) => weekdayWithDateLabel.format(date),
   },
   day: {
@@ -53,9 +83,37 @@ const zoomConfigs: Record<ZoomLevel, ZoomConfig> = {
     label: (date) => hourLabel.format(date),
     majorLabel: (date) => weekdayWithDateLabel.format(date),
   },
+  '12hour': {
+    pxPerMs: 128 / MS_IN_HOUR,
+    stepMs: 30 * MS_IN_MINUTE,
+    majorStepMs: 2 * MS_IN_HOUR,
+    label: (date) => hourMinuteLabel.format(date),
+    majorLabel: (date) => weekdayWithDateLabel.format(date),
+  },
+  '6hour': {
+    pxPerMs: 160 / MS_IN_HOUR,
+    stepMs: MS_IN_HOUR,
+    majorStepMs: 6 * MS_IN_HOUR,
+    label: (date) => hourLabel.format(date),
+    majorLabel: (date) => weekdayWithDateLabel.format(date),
+  },
+  '3hour': {
+    pxPerMs: 220 / MS_IN_HOUR,
+    stepMs: 10 * MS_IN_MINUTE,
+    majorStepMs: MS_IN_HOUR,
+    label: (date) => hourMinuteLabel.format(date),
+    majorLabel: (date) => weekdayWithDateLabel.format(date),
+  },
   hour: {
     pxPerMs: 320 / MS_IN_HOUR,
     stepMs: 15 * MS_IN_MINUTE,
+    majorStepMs: MS_IN_HOUR,
+    label: (date) => hourMinuteLabel.format(date),
+    majorLabel: (date) => weekdayWithDateLabel.format(date),
+  },
+  '30min': {
+    pxPerMs: 480 / MS_IN_HOUR,
+    stepMs: 30 * MS_IN_MINUTE,
     majorStepMs: MS_IN_HOUR,
     label: (date) => hourMinuteLabel.format(date),
     majorLabel: (date) => weekdayWithDateLabel.format(date),
@@ -64,6 +122,20 @@ const zoomConfigs: Record<ZoomLevel, ZoomConfig> = {
     pxPerMs: 12 / MS_IN_MINUTE,
     stepMs: 5 * MS_IN_MINUTE,
     majorStepMs: 15 * MS_IN_MINUTE,
+    label: (date) => hourMinuteLabel.format(date),
+    majorLabel: (date) => weekdayWithDateLabel.format(date),
+  },
+  '10min': {
+    pxPerMs: 16 / MS_IN_MINUTE,
+    stepMs: 2 * MS_IN_MINUTE,
+    majorStepMs: 10 * MS_IN_MINUTE,
+    label: (date) => hourMinuteLabel.format(date),
+    majorLabel: (date) => weekdayWithDateLabel.format(date),
+  },
+  '5min': {
+    pxPerMs: 20 / MS_IN_MINUTE,
+    stepMs: MS_IN_MINUTE,
+    majorStepMs: 5 * MS_IN_MINUTE,
     label: (date) => hourMinuteLabel.format(date),
     majorLabel: (date) => weekdayWithDateLabel.format(date),
   },

@@ -88,7 +88,23 @@ function arraysEqual<T>(a: T[], b: T[]): boolean {
   return true;
 }
 
-const ZOOM_LEVELS: ZoomLevel[] = ['month', 'week', 'day', 'hour', '15min'];
+const ZOOM_LEVELS: ZoomLevel[] = [
+  'quarter',
+  '2month',
+  'month',
+  '2week',
+  'week',
+  '3day',
+  'day',
+  '12hour',
+  '6hour',
+  '3hour',
+  'hour',
+  '30min',
+  '15min',
+  '10min',
+  '5min',
+];
 
 @Component({
   selector: 'app-gantt',
@@ -119,6 +135,12 @@ export class GanttComponent implements AfterViewInit {
   private readonly cursorTimeSignal = signal<Date | null>(null);
   private readonly viewportReady = signal(false);
   private readonly expandedGroups = signal<Set<string>>(new Set());
+  private readonly selectedActivityIdsSignal = signal<Set<string>>(new Set());
+  private readonly activeTouchPointers = new Map<number, { x: number; y: number }>();
+  private pinchReferenceDistance: number | null = null;
+  private touchPanLastX: number | null = null;
+  private touchPointerContainer: HTMLElement | null = null;
+  private readonly pinchLogThreshold = 0.08;
 
   private viewport!: TimeViewport;
   private viewportInitialized = false;
@@ -133,6 +155,16 @@ export class GanttComponent implements AfterViewInit {
   private rowScrollerDirs?: QueryList<TrackHorizontalScrollDirective>;
 
   @Output() removeResource = new EventEmitter<Resource['id']>();
+  @Output() activitySelectionToggle = new EventEmitter<{ resource: Resource; activity: Activity }>();
+  @Output() resourceViewModeChange = new EventEmitter<{ resourceId: string; mode: 'block' | 'detail' }>();
+  @Output() serviceAssignmentRequested = new EventEmitter<Resource>();
+  @Output() activityCreateRequested = new EventEmitter<{ resource: Resource; start: Date }>();
+  @Output() activityEditRequested = new EventEmitter<{ resource: Resource; activity: Activity }>();
+
+  @Input()
+  set selectedActivityIds(value: string[] | null) {
+    this.selectedActivityIdsSignal.set(new Set(value ?? []));
+  }
 
   @Input({ required: true })
   set resources(value: Resource[]) {
@@ -145,6 +177,9 @@ export class GanttComponent implements AfterViewInit {
     this.resourcesSignal.set(list);
     this.resetExpandedGroups(list);
   }
+
+  @Input()
+  resourceViewModes: Record<string, 'block' | 'detail'> = {};
 
   @Input({ required: true })
   set activities(value: Activity[]) {
@@ -226,7 +261,10 @@ export class GanttComponent implements AfterViewInit {
     const rows: GanttDisplayRow[] = [];
     let resourceIndex = 0;
 
-    const timelineData = this.viewportReady() ? this.buildTimelineData(resources) : new Map<string, { bars: GanttBar[]; services: GanttServiceRange[] }>();
+    const selectedIds = this.selectedActivityIdsSignal();
+    const timelineData = this.viewportReady()
+      ? this.buildTimelineData(resources, selectedIds)
+      : new Map<string, { bars: GanttBar[]; services: GanttServiceRange[] }>();
 
     groups.forEach((group) => {
       const isExpanded = expanded.has(group.id);
@@ -413,6 +451,7 @@ export class GanttComponent implements AfterViewInit {
       return;
     }
     this.viewport.zoomIn(this.viewport.viewCenter());
+    this.syncTimeScaleToViewport();
   }
 
   onZoomOut() {
@@ -420,6 +459,7 @@ export class GanttComponent implements AfterViewInit {
       return;
     }
     this.viewport.zoomOut(this.viewport.viewCenter());
+    this.syncTimeScaleToViewport();
   }
 
   onZoomLevelChange(level: ZoomLevel) {
@@ -427,6 +467,7 @@ export class GanttComponent implements AfterViewInit {
       return;
     }
     this.viewport.setZoom(level, this.viewport.viewCenter());
+    this.syncTimeScaleToViewport();
   }
 
   onFilterChange(value: string) {
@@ -469,6 +510,7 @@ export class GanttComponent implements AfterViewInit {
       } else {
         this.viewport.zoomOut(focus);
       }
+      this.syncTimeScaleToViewport();
       return;
     }
     if (event.shiftKey) {
@@ -476,6 +518,87 @@ export class GanttComponent implements AfterViewInit {
       const delta = event.deltaY;
       this.viewport.scrollBy(delta);
       return;
+    }
+  }
+
+  onTimelinePointerDown(event: PointerEvent, container?: HTMLElement | null) {
+    if (!this.viewportReady() || !this.isTouchPointer(event)) {
+      return;
+    }
+    const host = container ?? (event.currentTarget as HTMLElement | null);
+    if (!host) {
+      return;
+    }
+    this.touchPointerContainer = host;
+    host.setPointerCapture?.(event.pointerId);
+    this.activeTouchPointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    if (this.activeTouchPointers.size === 1) {
+      this.touchPanLastX = event.clientX;
+      this.pinchReferenceDistance = null;
+    } else if (this.activeTouchPointers.size === 2) {
+      this.touchPanLastX = null;
+      this.pinchReferenceDistance = this.computePointerDistance();
+    }
+    event.preventDefault();
+  }
+
+  onTimelinePointerMove(event: PointerEvent) {
+    if (!this.viewportReady() || !this.isTouchPointer(event)) {
+      return;
+    }
+    if (!this.activeTouchPointers.has(event.pointerId)) {
+      return;
+    }
+    this.activeTouchPointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    if (this.activeTouchPointers.size === 1 && this.touchPanLastX !== null) {
+      const deltaX = event.clientX - this.touchPanLastX;
+      if (Math.abs(deltaX) > 0.5) {
+        this.viewport.scrollBy(-deltaX);
+        this.touchPanLastX = event.clientX;
+      }
+      event.preventDefault();
+      return;
+    }
+    if (this.activeTouchPointers.size >= 2) {
+      const distance = this.computePointerDistance();
+      if (distance && this.pinchReferenceDistance) {
+        const scale = distance / this.pinchReferenceDistance;
+        if (Math.abs(Math.log(scale)) >= this.pinchLogThreshold) {
+          const midpointX = this.computePointerMidpointX();
+          const focus = this.getPointerTime(midpointX, this.touchPointerContainer);
+          if (scale > 1) {
+            this.viewport.zoomIn(focus);
+          } else {
+            this.viewport.zoomOut(focus);
+          }
+          this.syncTimeScaleToViewport();
+          this.pinchReferenceDistance = distance;
+        }
+      } else {
+        this.pinchReferenceDistance = distance;
+      }
+      event.preventDefault();
+    }
+  }
+
+  onTimelinePointerUp(event: PointerEvent) {
+    if (!this.isTouchPointer(event)) {
+      return;
+    }
+    if (this.activeTouchPointers.has(event.pointerId)) {
+      this.activeTouchPointers.delete(event.pointerId);
+    }
+    const target = (event.currentTarget as HTMLElement | null) ?? this.touchPointerContainer;
+    target?.hasPointerCapture?.(event.pointerId) && target.releasePointerCapture(event.pointerId);
+    if (this.activeTouchPointers.size === 0) {
+      this.touchPanLastX = null;
+      this.touchPointerContainer = null;
+    } else if (this.activeTouchPointers.size === 1) {
+      const remaining = Array.from(this.activeTouchPointers.values())[0];
+      this.touchPanLastX = remaining.x;
+    }
+    if (this.activeTouchPointers.size < 2) {
+      this.pinchReferenceDistance = null;
     }
   }
 
@@ -505,6 +628,31 @@ export class GanttComponent implements AfterViewInit {
     this.removeResource.emit(resourceId);
   }
 
+  onResourceViewModeChange(resourceId: string, mode: 'block' | 'detail') {
+    this.resourceViewModeChange.emit({ resourceId, mode });
+  }
+
+  onServiceAssignRequest(resource: Resource) {
+    this.serviceAssignmentRequested.emit(resource);
+  }
+
+  onTimelineCellClick(event: MouseEvent, resource: Resource, container?: HTMLElement | null) {
+    if (!this.viewportReady()) {
+      return;
+    }
+    const target = container ?? (event.currentTarget as HTMLElement | null) ?? null;
+    const start = this.getPointerTime(event.clientX, target);
+    this.activityCreateRequested.emit({ resource, start });
+  }
+
+  onActivitySelected(resource: Resource, activity: Activity) {
+    this.activityEditRequested.emit({ resource, activity });
+  }
+
+  onActivitySelectionToggle(resource: Resource, activity: Activity) {
+    this.activitySelectionToggle.emit({ resource, activity });
+  }
+
   @HostListener('window:keydown', ['$event'])
   handleKeydown(event: KeyboardEvent) {
     if (!this.viewportReady()) {
@@ -527,11 +675,13 @@ export class GanttComponent implements AfterViewInit {
       case '=':
         event.preventDefault();
         this.viewport.zoomIn(this.viewport.viewCenter());
+        this.syncTimeScaleToViewport();
         break;
       case '-':
       case '_':
         event.preventDefault();
         this.viewport.zoomOut(this.viewport.viewCenter());
+        this.syncTimeScaleToViewport();
         break;
       default:
         break;
@@ -549,10 +699,9 @@ export class GanttComponent implements AfterViewInit {
       initialZoom: 'week',
       initialCenter: start,
     });
-    this.viewport.setPixelsPerMs(this.timeScale.pixelsPerMs());
     this.viewportInitialized = true;
+    this.syncTimeScaleToViewport();
     this.viewportReady.set(true);
-    this.registerViewportReactions();
   }
 
   private resetViewport(start: Date, end: Date) {
@@ -566,23 +715,8 @@ export class GanttComponent implements AfterViewInit {
       initialZoom: previousZoom,
       initialCenter: this.clampCenter(previousCenter, start, end),
     });
-    this.viewport.setPixelsPerMs(this.timeScale.pixelsPerMs());
+    this.syncTimeScaleToViewport();
     this.viewportReady.set(true);
-  }
-
-  private registerViewportReactions() {
-    runInInjectionContext(this.injector, () => {
-      effect(
-        () => {
-          if (!this.viewportReady()) {
-            return;
-          }
-          this.timeScale.setZoomLevel(this.viewport.zoomLevel());
-          this.viewport.setPixelsPerMs(this.timeScale.pixelsPerMs());
-        },
-        { allowSignalWrites: true },
-      );
-    });
   }
 
   private setupScrollSyncEffects() {
@@ -617,6 +751,7 @@ export class GanttComponent implements AfterViewInit {
 
   private buildTimelineData(
     resources: Resource[],
+    selectedIds: ReadonlySet<string>,
   ): Map<string, { bars: GanttBar[]; services: GanttServiceRange[] }> {
     const map = new Map<string, { bars: GanttBar[]; services: GanttServiceRange[] }>();
     if (!this.viewportReady()) {
@@ -651,6 +786,7 @@ export class GanttComponent implements AfterViewInit {
           left,
           width,
           classes: this.resolveBarClasses(activity),
+          selected: selectedIds.has(activity.id),
         });
         const serviceId = activity.serviceId;
         if (!serviceId) {
@@ -775,6 +911,46 @@ export class GanttComponent implements AfterViewInit {
 
   private resetExpandedGroups(_resources: Resource[]): void {
     this.expandedGroups.set(new Set());
+  }
+
+  resourceViewMode(resourceId: string): 'block' | 'detail' {
+    return this.resourceViewModes?.[resourceId] ?? 'detail';
+  }
+
+  private computePointerDistance(): number {
+    const points = Array.from(this.activeTouchPointers.values());
+    if (points.length < 2) {
+      return 0;
+    }
+    const [a, b] = points;
+    const dx = a.x - b.x;
+    const dy = a.y - b.y;
+    return Math.hypot(dx, dy);
+  }
+
+  private computePointerMidpointX(): number {
+    if (this.activeTouchPointers.size === 0) {
+      return this.touchPointerContainer
+        ? this.touchPointerContainer.getBoundingClientRect().left + this.touchPointerContainer.clientWidth / 2
+        : 0;
+    }
+    const total = Array.from(this.activeTouchPointers.values()).reduce((sum, point) => sum + point.x, 0);
+    return total / this.activeTouchPointers.size;
+  }
+
+  private isTouchPointer(event: PointerEvent): boolean {
+    return event.pointerType === 'touch' || event.pointerType === 'pen';
+  }
+
+  private syncTimeScaleToViewport(): void {
+    if (!this.viewport) {
+      return;
+    }
+    const desiredZoom = this.viewport.zoomLevel();
+    if (this.timeScale.zoomLevel() !== desiredZoom) {
+      this.timeScale.setZoomLevel(desiredZoom);
+    }
+    this.viewport.setPixelsPerMs(this.timeScale.pixelsPerMs());
   }
 
   private categorySortKey(category: string | null): number {

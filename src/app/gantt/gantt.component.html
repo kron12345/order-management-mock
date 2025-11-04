@@ -24,6 +24,10 @@
         [appScrollLeft]="scrollX()"
         (appHorizontalScroll)="onTimelineScroll($event)"
         (wheel)="onTimelineWheel($event, headerScroller.element)"
+        (pointerdown)="onTimelinePointerDown($event, headerScroller.element)"
+        (pointermove)="onTimelinePointerMove($event)"
+        (pointerup)="onTimelinePointerUp($event)"
+        (pointercancel)="onTimelinePointerUp($event)"
       >
         <app-gantt-timeline-header
           [ticks]="ticks()"
@@ -52,7 +56,15 @@
                   <span class="gantt-resource-group__count">{{ row.resourceCount }}</span>
                 </button>
               } @else {
-                <app-gantt-resources [resource]="row.resource" (remove)="onResourceRemove(row.resource.id)" />
+                <app-gantt-resources
+                  [resource]="row.resource"
+                  [viewMode]="resourceViewMode(row.resource.id)"
+                  [viewModeToggleEnabled]="row.resource.kind === 'personnel' || row.resource.kind === 'vehicle'"
+                  [canAssignService]="row.resource.kind === 'personnel-service' || row.resource.kind === 'vehicle-service'"
+                  (viewModeChange)="onResourceViewModeChange(row.resource.id, $event)"
+                  (assignService)="onServiceAssignRequest(row.resource)"
+                  (remove)="onResourceRemove(row.resource.id)"
+                />
               }
             </div>
 
@@ -73,6 +85,11 @@
                 (wheel)="onTimelineWheel($event, rowScroller.element)"
                 (mousemove)="onTimelineMouseMove($event, rowScroller.element)"
                 (mouseleave)="onTimelineMouseLeave()"
+                (pointerdown)="onTimelinePointerDown($event, rowScroller.element)"
+                (pointermove)="onTimelinePointerMove($event)"
+                (pointerup)="onTimelinePointerUp($event)"
+                (pointercancel)="onTimelinePointerUp($event)"
+                (click)="onTimelineCellClick($event, row.resource, rowScroller.element)"
               >
                 <app-gantt-timeline-row
                   [bars]="row.bars"
@@ -81,6 +98,9 @@
                   [serviceRanges]="row.services"
                   [nowMarkerLeft]="nowMarkerLeft()"
                   [zebra]="row.zebra"
+                  [viewMode]="resourceViewMode(row.resource.id)"
+                  (activitySelected)="onActivitySelected(row.resource, $event)"
+                  (activityToggleSelection)="onActivitySelectionToggle(row.resource, $event)"
                 />
               </div>
             }

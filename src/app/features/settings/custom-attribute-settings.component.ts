@@ -28,6 +28,7 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatDividerModule } from '@angular/material/divider';
 import { MatCardModule } from '@angular/material/card';
+import { ActivityTypeSettingsComponent } from './activity-type-settings.component';
 
 @Component({
   selector: 'app-custom-attribute-settings',
@@ -43,6 +44,7 @@ import { MatCardModule } from '@angular/material/card';
     MatTooltipModule,
     MatDividerModule,
     MatCardModule,
+    ActivityTypeSettingsComponent,
   ],
   templateUrl: './custom-attribute-settings.component.html',
   styleUrl: './custom-attribute-settings.component.scss',
