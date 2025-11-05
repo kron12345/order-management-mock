@@ -40,6 +40,8 @@
                 [class.empty]="!cell.date"
                 [class.weekend]="cell.weekday !== null && cell.weekday >= 5"
                 [class.selected]="isSelected(cell.date)"
+                [class.disabled]="isDisabled(cell.date)"
+                [class.accent]="isAccent(cell.date)"
                 (click)="toggleCell(cell, $event)"
               >
                 {{ cell.label }}

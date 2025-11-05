@@ -150,7 +150,7 @@
 
   @if (trafficCtrl) {
     <mat-form-field appearance="outline">
-      <mat-label>Verkehrsperiode</mat-label>
+      <mat-label>Referenzkalender</mat-label>
       <mat-select [formControlName]="trafficCtrl!">
         @for (period of trafficPeriods; track period.id) {
           <mat-option [value]="period.id">{{ period.name }}</mat-option>
@@ -163,7 +163,7 @@
           type="button"
           class="help-icon"
           [matTooltip]="description('trafficPeriod')!"
-          aria-label="Verkehrsperiode Hilfe"
+          aria-label="Referenzkalender Hilfe"
         >
           <mat-icon>help_outline</mat-icon>
         </button>
@@ -172,7 +172,7 @@
         form.controls[trafficCtrl!].touched &&
         form.controls[trafficCtrl!].invalid
       ) {
-        <mat-error>Bitte eine Verkehrsperiode auswählen.</mat-error>
+        <mat-error>Bitte einen Referenzkalender auswählen.</mat-error>
       }
     </mat-form-field>
   }

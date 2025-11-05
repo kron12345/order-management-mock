@@ -1,9 +1,11 @@
 import { CommonModule } from '@angular/common';
 import { Component, computed, inject, signal } from '@angular/core';
 import {
+  AbstractControl,
   FormBuilder,
   FormControl,
   ReactiveFormsModule,
+  ValidationErrors,
   Validators,
 } from '@angular/forms';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
@@ -17,14 +19,16 @@ import {
   CreatePlanOrderItemsPayload,
   CreateServiceOrderItemPayload,
   ImportedRailMlStop,
+  ImportedRailMlTemplateMatch,
   ImportedRailMlTrain,
+  ImportedTemplateStopComparison,
   OrderService,
 } from '../../core/services/order.service';
 import { Order } from '../../core/models/order.model';
 import { ScheduleTemplateService } from '../../core/services/schedule-template.service';
 import { TrafficPeriodService } from '../../core/services/traffic-period.service';
+import { ScheduleTemplate, ScheduleTemplateStop } from '../../core/models/schedule-template.model';
 import { ScheduleTemplateCreateDialogComponent } from '../schedule-templates/schedule-template-create-dialog.component';
-import { TrafficPeriodEditorComponent } from '../traffic-periods/traffic-period-editor.component';
 import {
   OrderItemGeneralFieldsComponent,
   OrderItemGeneralLabels,
@@ -37,9 +41,24 @@ import {
 } from './plan-assembly-dialog/plan-assembly-dialog.component';
 import { PlanModificationStopInput } from '../../core/services/train-plan.service';
 import { TrainPlanStop } from '../../core/models/train-plan.model';
+import { OrderPlanPreviewComponent } from './order-plan-preview/order-plan-preview.component';
+import {
+  PlanGenerationPreview,
+  PlanTemplateStats,
+} from './order-plan-preview/plan-preview.models';
+import { OrderImportFiltersComponent } from './order-import-filters/order-import-filters.component';
+import { ReferenceCalendarInlineFormComponent } from './reference-calendar-inline-form/reference-calendar-inline-form.component';
 
 interface OrderPositionDialogData {
   order: Order;
+}
+
+function nonEmptyDates(control: AbstractControl<string[] | null>): ValidationErrors | null {
+  const value = control.value;
+  if (Array.isArray(value) && value.length > 0) {
+    return null;
+  }
+  return { required: true };
 }
 
 @Component({
@@ -51,6 +70,9 @@ interface OrderPositionDialogData {
     ...MATERIAL_IMPORTS,
     OrderItemGeneralFieldsComponent,
     OrderItemServiceFieldsComponent,
+    OrderPlanPreviewComponent,
+    OrderImportFiltersComponent,
+    ReferenceCalendarInlineFormComponent,
   ],
   templateUrl: './order-position-dialog.component.html',
   styleUrl: './order-position-dialog.component.scss',
@@ -68,6 +90,7 @@ export class OrderPositionDialogComponent {
     'service',
     { nonNullable: true },
   );
+  readonly defaultCalendarYear = new Date().getFullYear();
 
   readonly serviceForm = this.fb.group({
     serviceType: ['', Validators.required],
@@ -75,14 +98,19 @@ export class OrderPositionDialogComponent {
     toLocation: ['', Validators.required],
     start: ['', Validators.required],
     end: ['', Validators.required],
-    trafficPeriodId: ['', Validators.required],
+    calendarYear: this.fb.nonNullable.control(this.defaultCalendarYear, {
+      validators: [Validators.required, Validators.min(1900), Validators.max(2100)],
+    }),
+    calendarDates: this.fb.nonNullable.control<string[]>([], {
+      validators: [nonEmptyDates],
+    }),
+    calendarExclusions: this.fb.nonNullable.control<string[]>([]),
     deviation: [''],
     name: [''],
   });
 
   readonly planForm = this.fb.group({
     templateId: ['', Validators.required],
-    trafficPeriodId: ['', Validators.required],
     startTime: ['04:00', Validators.required],
     endTime: ['23:00', Validators.required],
     intervalMinutes: [30, [Validators.required, Validators.min(1)]],
@@ -90,20 +118,36 @@ export class OrderPositionDialogComponent {
     responsible: [''],
     otn: [''],
     otnInterval: [1, [Validators.min(1)]],
+    calendarYear: this.fb.nonNullable.control(this.defaultCalendarYear, {
+      validators: [Validators.required, Validators.min(1900), Validators.max(2100)],
+    }),
+    calendarDates: this.fb.nonNullable.control<string[]>([], {
+      validators: [nonEmptyDates],
+    }),
+    calendarExclusions: this.fb.nonNullable.control<string[]>([]),
   });
 
   readonly manualPlanForm = this.fb.group({
-    departureDate: [''],
-    trafficPeriodId: [''],
     trainNumber: ['', Validators.required],
     name: [''],
     responsible: [''],
+    calendarYear: this.fb.nonNullable.control(this.defaultCalendarYear, {
+      validators: [Validators.required, Validators.min(1900), Validators.max(2100)],
+    }),
+    calendarDates: this.fb.nonNullable.control<string[]>([], {
+      validators: [nonEmptyDates],
+    }),
+    calendarExclusions: this.fb.nonNullable.control<string[]>([]),
   });
 
   readonly importFilters = this.fb.group({
     search: [''],
     start: [''],
     end: [''],
+    templateId: [''],
+    irregularOnly: [false],
+    minDeviation: [0],
+    deviationSort: ['none'],
   });
   readonly importOptionsForm = this.fb.group({
     trafficPeriodId: [''],
@@ -112,6 +156,9 @@ export class OrderPositionDialogComponent {
   });
 
   readonly templates = computed(() => this.templateService.templates());
+  readonly taktTemplates = computed(() =>
+    this.templates().filter((template) => !!template.recurrence),
+  );
   readonly trafficPeriods = computed(() => this.trafficPeriodService.periods());
   readonly mode = signal<'service' | 'plan' | 'manualPlan' | 'import'>(
     this.modeControl.value,
@@ -125,6 +172,10 @@ export class OrderPositionDialogComponent {
     search: '',
     start: '',
     end: '',
+    templateId: '',
+    irregularOnly: false,
+    minDeviation: 0,
+    deviationSort: 'none',
   });
   readonly serviceFieldsConfig = {
     startControl: 'start',
@@ -132,7 +183,6 @@ export class OrderPositionDialogComponent {
     serviceTypeControl: 'serviceType',
     fromControl: 'fromLocation',
     toControl: 'toLocation',
-    trafficPeriodControl: 'trafficPeriodId',
   } as const;
   readonly serviceGeneralLabels: OrderItemGeneralLabels = {
     name: 'Positionsname (optional)',
@@ -145,12 +195,12 @@ export class OrderPositionDialogComponent {
     deviation: 'Kurze Notiz zu Besonderheiten, z. B. +3 min.',
   } as const;
   readonly serviceFieldDescriptions = {
-    start: 'Startuhrzeit der Leistung (HH:MM). Das Datum ergibt sich aus der Verkehrsperiode.',
+    start: 'Startuhrzeit der Leistung (HH:MM). Das Datum ergibt sich aus dem Referenzkalender.',
     end: 'Enduhrzeit. Liegt sie vor der Startzeit, wird automatisch der Folgetag verwendet.',
     serviceType: 'Art der Leistung, z. B. Werkstatt, Reinigung, Begleitung.',
     from: 'Ausgangsort oder Bereich, an dem die Leistung startet.',
     to: 'Zielort oder Bereich, an dem die Leistung endet.',
-    trafficPeriod: 'Verkehrsperiode, in der die Leistung gelten soll.',
+    trafficPeriod: 'Referenzkalender, in dem die Leistung gelten soll.',
   } as const;
   readonly manualGeneralLabels: OrderItemGeneralLabels = {
     name: 'Positionsname',
@@ -164,7 +214,6 @@ export class OrderPositionDialogComponent {
   } as const;
   readonly planFieldDescriptions = {
     templateId: 'Vorlage mit Strecke und Zeiten, die für die Serie genutzt wird.',
-    trafficPeriodId: 'Verkehrsperiode, in der die Serie generiert wird.',
     startTime: 'Erste Abfahrt am Tag der Serie (HH:MM).',
     endTime: 'Letzte Abfahrt am Tag der Serie (HH:MM).',
     intervalMinutes: 'Abstand zwischen den Zügen in Minuten.',
@@ -174,12 +223,10 @@ export class OrderPositionDialogComponent {
     otnInterval: 'Differenz zwischen den OTN der nacheinander erzeugten Züge.',
   } as const;
   readonly manualFieldDescriptions = {
-    departureDate: 'Datum, an dem der Fahrplan ausgeführt werden soll.',
-    trafficPeriodId: 'Alternativ zur Einzeldatumsauswahl: Verkehrsperiode für wiederkehrende Fahrten.',
     trainNumber: 'Offizielle Zugnummer (OTN), unter der der Zug geführt wird.',
   } as const;
   readonly importOptionsDescriptions = {
-    trafficPeriodId: 'Optional: überschreibt die aus der RailML-Datei erzeugte Verkehrsperiode.',
+    trafficPeriodId: 'Optional: überschreibt den aus der RailML-Datei erzeugten Referenzkalender.',
     namePrefix: 'Optionaler Zusatz für erzeugte Positionsnamen.',
     responsible: 'Verantwortliche Person für importierte Fahrpläne.',
   } as const;
@@ -187,6 +234,10 @@ export class OrderPositionDialogComponent {
     search: 'Suche nach Zugname oder ID innerhalb der importierten Datei.',
     start: 'Filtere nach Startort im RailML-Datensatz.',
     end: 'Filtere nach Zielort im RailML-Datensatz.',
+    templateId: 'Beziehe den Vergleich nur auf eine bestimmte Vorlage mit Takt.',
+    irregularOnly: 'Zeige nur Züge, die den erwarteten Takt der Vorlage verletzen.',
+    minDeviation: 'Blendt Züge aus, deren größte Abweichung unter diesem Wert (Minuten) liegt.',
+    deviationSort: 'Sortiert die Ergebnisliste nach der größten Abweichung.',
   } as const;
 
   readonly filteredTrains = computed(() => {
@@ -195,6 +246,9 @@ export class OrderPositionDialogComponent {
     const search = filters.search.trim().toLowerCase();
     const startFilter = filters.start.trim().toLowerCase();
     const endFilter = filters.end.trim().toLowerCase();
+    const templateFilter = filters.templateId.trim();
+    const irregularOnly = filters.irregularOnly;
+    const minDeviation = Math.max(0, Number(filters.minDeviation) || 0);
     return trains.filter((train) => {
       const matchesSearch =
         !search ||
@@ -204,30 +258,97 @@ export class OrderPositionDialogComponent {
         !startFilter || train.start?.toLowerCase().includes(startFilter);
       const matchesEnd =
         !endFilter || train.end?.toLowerCase().includes(endFilter);
-      return matchesSearch && matchesStart && matchesEnd;
+      const matchesTemplate =
+        !templateFilter || train.templateMatch?.templateId === templateFilter;
+      const matchesRegularity = !irregularOnly
+        ? true
+        : train.templateMatch?.status === 'warning';
+      const deviationMagnitude = this.trainDeviationMagnitude(train);
+      const matchesDeviation = deviationMagnitude >= minDeviation;
+      return (
+        matchesSearch &&
+        matchesStart &&
+        matchesEnd &&
+        matchesTemplate &&
+        matchesRegularity &&
+        matchesDeviation
+      );
+    }).sort((a, b) => {
+      const sort = filters.deviationSort;
+      if (!sort || sort === 'none') {
+        return 0;
+      }
+      const diff =
+        this.trainDeviationMagnitude(b) - this.trainDeviationMagnitude(a);
+      return sort === 'desc' ? diff : -diff;
     });
   });
   errorMessage = signal<string | null>(null);
 
   readonly order = this.data.order;
 
+  get serviceCalendarYearControl(): FormControl<number> {
+    return this.serviceForm.controls['calendarYear'] as FormControl<number>;
+  }
+
+  get serviceCalendarDatesControl(): FormControl<string[]> {
+    return this.serviceForm.controls['calendarDates'] as FormControl<string[]>;
+  }
+
+  get serviceCalendarExclusionsControl(): FormControl<string[]> {
+    return this.serviceForm.controls['calendarExclusions'] as FormControl<string[]>;
+  }
+
+  get planCalendarYearControl(): FormControl<number> {
+    return this.planForm.controls['calendarYear'] as FormControl<number>;
+  }
+
+  get planCalendarDatesControl(): FormControl<string[]> {
+    return this.planForm.controls['calendarDates'] as FormControl<string[]>;
+  }
+
+  get planCalendarExclusionsControl(): FormControl<string[]> {
+    return this.planForm.controls['calendarExclusions'] as FormControl<string[]>;
+  }
+
+  get manualCalendarYearControl(): FormControl<number> {
+    return this.manualPlanForm.controls['calendarYear'] as FormControl<number>;
+  }
+
+  get manualCalendarDatesControl(): FormControl<string[]> {
+    return this.manualPlanForm.controls['calendarDates'] as FormControl<string[]>;
+  }
+
+  get manualCalendarExclusionsControl(): FormControl<string[]> {
+    return this.manualPlanForm.controls['calendarExclusions'] as FormControl<string[]>;
+  }
+
+  manualEffectiveCount(): number {
+    return this.resolveCalendarDates(
+      this.manualCalendarDatesControl.value,
+      this.manualCalendarExclusionsControl.value,
+    ).length;
+  }
+
   constructor() {
-    const periodList = this.trafficPeriodService.periods();
     const templateList = this.templateService.templates();
 
-    const firstPeriod = periodList[0];
     const firstTemplate = templateList[0];
 
-    if (firstPeriod) {
-      this.planForm.controls.trafficPeriodId.setValue(firstPeriod.id);
-      this.serviceForm.controls.trafficPeriodId.setValue(firstPeriod.id);
-    }
     if (firstTemplate) {
       this.planForm.controls.templateId.setValue(firstTemplate.id);
       this.planForm.controls.namePrefix.setValue(firstTemplate.title);
     }
 
-    this.importFilterValues.set({ search: '', start: '', end: '' });
+    this.importFilterValues.set({
+      search: '',
+      start: '',
+      end: '',
+      templateId: '',
+      irregularOnly: false,
+      minDeviation: 0,
+      deviationSort: 'none',
+    });
 
     this.modeControl.valueChanges.pipe(takeUntilDestroyed()).subscribe((value) => {
       this.mode.set(value);
@@ -244,33 +365,34 @@ export class OrderPositionDialogComponent {
           search: value?.search ?? '',
           start: value?.start ?? '',
           end: value?.end ?? '',
+          templateId: value?.templateId ?? '',
+          irregularOnly: !!value?.irregularOnly,
+          minDeviation: Number(value?.minDeviation) || 0,
+          deviationSort: (value?.deviationSort as 'none' | 'asc' | 'desc') ?? 'none',
         });
       });
 
-    this.manualPlanForm.controls.departureDate.valueChanges
-      .pipe(takeUntilDestroyed())
-      .subscribe((value) => {
-        if (value) {
-          this.manualPlanForm.controls.trafficPeriodId.setValue('', {
-            emitEvent: false,
-          });
-        }
-      });
-
-    this.manualPlanForm.controls.trafficPeriodId.valueChanges
-      .pipe(takeUntilDestroyed())
-      .subscribe((value) => {
-        if (value) {
-          this.manualPlanForm.controls.departureDate.setValue('', {
-            emitEvent: false,
-          });
-        }
-      });
   }
 
   onImportFiltersReset() {
-    this.importFilters.reset({ search: '', start: '', end: '' });
-    this.importFilterValues.set({ search: '', start: '', end: '' });
+    this.importFilters.reset({
+      search: '',
+      start: '',
+      end: '',
+      templateId: '',
+      irregularOnly: false,
+      minDeviation: 0,
+      deviationSort: 'none',
+    });
+    this.importFilterValues.set({
+      search: '',
+      start: '',
+      end: '',
+      templateId: '',
+      irregularOnly: false,
+      minDeviation: 0,
+      deviationSort: 'none',
+    });
   }
 
   openTemplateCreateDialog() {
@@ -294,6 +416,10 @@ export class OrderPositionDialogComponent {
         this.planForm.controls.responsible.setValue(template.responsibleRu);
       }
       this.errorMessage.set(null);
+      const currentTrains = this.importedTrains();
+      if (currentTrains.length) {
+        this.importedTrains.set(this.applyTemplateMatching(currentTrains));
+      }
     });
   }
 
@@ -318,50 +444,6 @@ export class OrderPositionDialogComponent {
         this.errorMessage.set(null);
       }
     });
-  }
-
-  openTrafficPeriodEditor(target: 'service' | 'plan' | 'import') {
-    const dialogRef = this.dialog.open(TrafficPeriodEditorComponent, {
-      width: '95vw',
-      maxWidth: '1200px',
-      data: {
-        defaultYear: new Date().getFullYear(),
-      },
-    });
-
-    dialogRef.afterClosed().subscribe((result) => {
-      if (!result) {
-        return;
-      }
-
-      let periodId = result.periodId;
-      if (periodId) {
-        this.trafficPeriodService.updatePeriod(periodId, result.payload);
-      } else {
-        periodId = this.trafficPeriodService.createPeriod(result.payload);
-      }
-
-      if (periodId) {
-        this.setTrafficPeriodControl(target, periodId);
-      }
-    });
-  }
-
-  private setTrafficPeriodControl(
-    target: 'service' | 'plan' | 'import',
-    periodId: string,
-  ) {
-    switch (target) {
-      case 'service':
-        this.serviceForm.controls.trafficPeriodId.setValue(periodId);
-        break;
-      case 'plan':
-        this.planForm.controls.trafficPeriodId.setValue(periodId);
-        break;
-      case 'import':
-        this.importOptionsForm.controls.trafficPeriodId.setValue(periodId);
-        break;
-    }
   }
 
   clearManualTemplate() {
@@ -418,20 +500,17 @@ export class OrderPositionDialogComponent {
       return;
     }
 
-    const baseDate = this.deriveServiceBaseDate(value.trafficPeriodId!);
-    if (!baseDate) {
-      this.errorMessage.set('Die Verkehrsperiode enthält kein gültiges Datum.');
+    const selectedDates = this.resolveCalendarDates(
+      value.calendarDates,
+      value.calendarExclusions,
+    );
+    if (!selectedDates.length) {
+      this.errorMessage.set('Bitte mindestens einen Kalendertag auswählen.');
+      this.serviceForm.controls.calendarDates.markAsTouched();
       return;
     }
 
     const endOffsetDays = endMinutes < startMinutes ? 1 : 0;
-    const start = this.buildIsoFromMinutes(baseDate, startMinutes);
-    const end = this.buildIsoFromMinutes(baseDate, endMinutes, endOffsetDays);
-
-    if (!start || !end) {
-      this.errorMessage.set('Start/Ende konnten nicht berechnet werden.');
-      return;
-    }
 
     const fromLocation = value.fromLocation?.trim();
     const toLocation = value.toLocation?.trim();
@@ -440,19 +519,40 @@ export class OrderPositionDialogComponent {
       return;
     }
 
-    const payload: CreateServiceOrderItemPayload = {
-      orderId: this.order.id,
-      serviceType,
-      fromLocation,
-      toLocation,
-      start,
-      end,
-      trafficPeriodId: value.trafficPeriodId!,
-      deviation: value.deviation?.trim() || undefined,
-      name: value.name?.trim() || undefined,
-    };
+    try {
+      selectedDates.forEach((date) => {
+        const start = this.buildIsoFromMinutes(date, startMinutes);
+        const end = this.buildIsoFromMinutes(date, endMinutes, endOffsetDays);
+        if (!start || !end) {
+          throw new Error('Start/Ende konnten nicht berechnet werden.');
+        }
+        const trafficPeriodId = this.trafficPeriodService.createSingleDayPeriod({
+          name: `${serviceType} ${date}`,
+          date,
+          variantType: 'special_day',
+        });
+        if (!trafficPeriodId) {
+          throw new Error('Referenzkalender konnte nicht erstellt werden.');
+        }
+        const payload: CreateServiceOrderItemPayload = {
+          orderId: this.order.id,
+          serviceType,
+          fromLocation,
+          toLocation,
+          start,
+          end,
+          trafficPeriodId,
+          deviation: value.deviation?.trim() || undefined,
+          name: value.name?.trim() || undefined,
+        };
+        this.orderService.addServiceOrderItem(payload);
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unbekannter Fehler';
+      this.errorMessage.set(message);
+      return;
+    }
 
-    this.orderService.addServiceOrderItem(payload);
     this.dialogRef.close(true);
   }
 
@@ -464,38 +564,14 @@ export class OrderPositionDialogComponent {
     }
 
     const value = this.manualPlanForm.getRawValue();
-    const departureDate = value.departureDate?.trim() || '';
-    const selectedPeriodId = value.trafficPeriodId?.trim() || '';
-
-    if (!departureDate && !selectedPeriodId) {
-      this.errorMessage.set('Bitte entweder einen Fahrtag oder eine Verkehrsperiode auswählen.');
+    const selectedDates = this.resolveCalendarDates(
+      value.calendarDates,
+      value.calendarExclusions,
+    );
+    if (!selectedDates.length) {
+      this.errorMessage.set('Bitte mindestens einen Kalendertag auswählen.');
+      this.manualPlanForm.controls.calendarDates.markAsTouched();
       return;
-    }
-
-    if (departureDate && selectedPeriodId) {
-      this.errorMessage.set('Fahrtag und Verkehrsperiode dürfen nicht gleichzeitig gewählt werden.');
-      return;
-    }
-
-    let departureIso: string | null = null;
-    let trafficPeriodId: string | undefined;
-
-    if (departureDate) {
-      const departure = new Date(`${departureDate}T00:00:00`);
-      if (Number.isNaN(departure.getTime())) {
-        this.errorMessage.set('Bitte ein gültiges Datum wählen.');
-        return;
-      }
-      departureIso = departure.toISOString();
-    } else {
-      trafficPeriodId = selectedPeriodId;
-      const periodDate = this.firstDateOfTrafficPeriod(trafficPeriodId);
-      if (!periodDate) {
-        this.errorMessage.set('Die ausgewählte Verkehrsperiode enthält keine verwertbaren Tage.');
-        return;
-      }
-      const departure = new Date(`${periodDate}T00:00:00`);
-      departureIso = departure.toISOString();
     }
 
     const trainNumber = value.trainNumber?.trim();
@@ -505,23 +581,37 @@ export class OrderPositionDialogComponent {
     }
 
     try {
-      const payload = {
-        orderId: this.order.id,
-        departure: departureIso,
-        stops,
-        trainNumber,
-        name: value.name?.trim() || undefined,
-        responsible: value.responsible?.trim() || undefined,
-        trafficPeriodId,
-      };
-      this.orderService.addManualPlanOrderItem(payload);
+      selectedDates.forEach((date) => {
+        const departure = new Date(`${date}T00:00:00`);
+        if (Number.isNaN(departure.getTime())) {
+          throw new Error('Bitte ein gültiges Datum wählen.');
+        }
+        const trafficPeriodId = this.trafficPeriodService.createSingleDayPeriod({
+          name: `${value.name?.trim() || 'Manueller Fahrplan'} ${date}`,
+          date,
+          variantType: 'special_day',
+          responsible: value.responsible?.trim() || undefined,
+        });
+        if (!trafficPeriodId) {
+          throw new Error('Referenzkalender konnte nicht erstellt werden.');
+        }
+        const payload = {
+          orderId: this.order.id,
+          departure: departure.toISOString(),
+          stops,
+          trainNumber,
+          name: value.name?.trim() || undefined,
+          responsible: value.responsible?.trim() || undefined,
+          trafficPeriodId,
+        };
+        this.orderService.addManualPlanOrderItem(payload);
+      });
       this.dialogRef.close(true);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unbekannter Fehler';
       this.errorMessage.set(message);
     }
   }
-
   private createImportedPlanItems() {
     const trains = this.importedTrains();
     const selected = this.selectedTrainIds();
@@ -556,7 +646,7 @@ export class OrderPositionDialogComponent {
 
       if (missingPeriods.length) {
         this.errorMessage.set(
-          `Für folgende Züge konnte keine Verkehrsperiode bestimmt werden: ${missingPeriods
+          `Für folgende Züge konnte kein Referenzkalender bestimmt werden: ${missingPeriods
             .slice(0, 5)
             .join(', ')}${missingPeriods.length > 5 ? ' …' : ''}`,
         );
@@ -608,6 +698,15 @@ export class OrderPositionDialogComponent {
 
   private createPlanItems() {
     const value = this.planForm.getRawValue();
+    const selectedDates = this.resolveCalendarDates(
+      value.calendarDates,
+      value.calendarExclusions,
+    );
+    if (!selectedDates.length) {
+      this.errorMessage.set('Bitte mindestens einen Kalendertag auswählen.');
+      this.planForm.controls.calendarDates.markAsTouched();
+      return;
+    }
     const startMinutes = this.parseTimeToMinutes(value.startTime);
     const endMinutes = this.parseTimeToMinutes(value.endTime);
     const interval = value.intervalMinutes ?? 0;
@@ -663,10 +762,10 @@ export class OrderPositionDialogComponent {
     const planPayload: CreatePlanOrderItemsPayload = {
       orderId: this.order.id,
       templateId: value.templateId!,
-      trafficPeriodId: value.trafficPeriodId!,
       startTime: value.startTime!,
       intervalMinutes: value.intervalMinutes!,
-      count,
+      departuresPerDay: count,
+      calendarDates: selectedDates,
       namePrefix: value.namePrefix?.trim() || undefined,
       responsible: value.responsible?.trim() || undefined,
       responsibleRu: value.responsible?.trim() || undefined,
@@ -698,25 +797,6 @@ export class OrderPositionDialogComponent {
     return this.defaultManualStops();
   }
 
-  private firstDateOfTrafficPeriod(periodId: string): string | null {
-    const period = this.trafficPeriodService.getById(periodId);
-    if (!period) {
-      return null;
-    }
-    const includeDates = period.rules
-      .flatMap((rule) => rule.includesDates ?? [])
-      .filter((date): date is string => !!date)
-      .sort();
-    if (includeDates.length) {
-      return includeDates[0];
-    }
-    const validityStarts = period.rules
-      .map((rule) => rule.validityStart)
-      .filter((date): date is string => !!date)
-      .sort();
-    return validityStarts[0] ?? null;
-  }
-
   private manualStopsToPlanStops(stops: PlanModificationStopInput[]): TrainPlanStop[] {
     return stops.map((stop, index) => ({
       id: `MANUAL-ST-${String(index + 1).padStart(3, '0')}`,
@@ -735,6 +815,27 @@ export class OrderPositionDialogComponent {
       platform: stop.platform,
       notes: stop.notes,
     }));
+  }
+
+  private resolveCalendarDates(
+    include: readonly string[] | null | undefined,
+    exclusions?: readonly string[] | null | undefined,
+  ): string[] {
+    const includeSet = new Set(
+      (include ?? []).map((date) => date?.trim()).filter((date): date is string => !!date),
+    );
+    if (!includeSet.size) {
+      return [];
+    }
+    if (!exclusions?.length) {
+      return Array.from(includeSet).sort();
+    }
+    const exclusionSet = new Set(
+      exclusions.map((date) => date?.trim()).filter((date): date is string => !!date),
+    );
+    return Array.from(includeSet)
+      .filter((date) => !exclusionSet.has(date))
+      .sort();
   }
 
   trafficPeriodName(periodId: string | null | undefined): string | null {
@@ -757,6 +858,499 @@ export class OrderPositionDialogComponent {
       return `${earliest} · ${latest}`;
     }
     return earliest ?? latest ?? '—';
+  }
+
+  private trainDeviationMagnitude(train: ImportedRailMlTrain): number {
+    const match = train.templateMatch;
+    if (!match) {
+      return 0;
+    }
+    const candidates = [
+      match.deviationMinutes,
+      match.arrivalDeviationMinutes,
+      match.travelTimeDeviationMinutes,
+      match.maxStopDeviationMinutes,
+    ]
+      .filter((value): value is number => typeof value === 'number')
+      .map((value) => Math.abs(value));
+    return candidates.length ? Math.max(...candidates) : 0;
+  }
+
+  hasDeviation(value: number | null | undefined): boolean {
+    return typeof value === 'number' && Math.abs(value) > 0.01;
+  }
+
+  stopHasDeviation(comparison: ImportedTemplateStopComparison): boolean {
+    return (
+      this.hasDeviation(comparison.arrivalDeviationMinutes) ||
+      this.hasDeviation(comparison.departureDeviationMinutes)
+    );
+  }
+
+  selectedTemplate(): ScheduleTemplate | undefined {
+    const templateId = this.planForm.controls.templateId.value;
+    if (!templateId) {
+      return undefined;
+    }
+    return this.templates().find((tpl) => tpl.id === templateId);
+  }
+
+  planPreview(): PlanGenerationPreview {
+    const template = this.selectedTemplate();
+    const value = this.planForm.getRawValue();
+    const startMinutes = this.parseTimeToMinutes(value.startTime);
+    const endMinutes = this.parseTimeToMinutes(value.endTime);
+    const interval = Number(value.intervalMinutes) || 0;
+    const warnings: string[] = [];
+
+    if (!template) {
+      warnings.push('Bitte eine Vorlage auswählen, um die Serie vorzubereiten.');
+    }
+    if (startMinutes === null || endMinutes === null) {
+      warnings.push('Gültige Start- und Endzeiten angeben.');
+    }
+    if (interval <= 0) {
+      warnings.push('Der Takt muss größer als 0 sein.');
+    }
+
+    let totalDepartures = 0;
+    let sampleDepartures: string[] = [];
+    const ready =
+      warnings.length === 0 &&
+      startMinutes !== null &&
+      endMinutes !== null &&
+      interval > 0 &&
+      endMinutes > startMinutes &&
+      !!template;
+
+    if (!ready && startMinutes !== null && endMinutes !== null && endMinutes <= startMinutes) {
+      warnings.push('Die letzte Abfahrt muss nach der ersten Abfahrt liegen.');
+    }
+
+    if (ready && startMinutes !== null && endMinutes !== null) {
+      for (let current = startMinutes; current <= endMinutes; current += interval) {
+        totalDepartures += 1;
+        if (sampleDepartures.length < 4) {
+          sampleDepartures.push(this.minutesToTime(current) ?? '--:--');
+        }
+      }
+    } else {
+      sampleDepartures = [];
+    }
+
+    const otnValue = value.otn ? Number(value.otn) : null;
+    const otnInterval = Number(value.otnInterval) || 1;
+    const otnRange =
+      ready && otnValue !== null && totalDepartures > 0
+        ? `${otnValue} – ${otnValue + (totalDepartures - 1) * otnInterval}`
+        : undefined;
+
+    const durationMinutes =
+      ready && startMinutes !== null && endMinutes !== null ? endMinutes - startMinutes : 0;
+    const durationLabel =
+      ready && durationMinutes > 0 ? this.formatDuration(durationMinutes) : undefined;
+
+    return {
+      ready,
+      warnings,
+      totalDepartures,
+      durationMinutes,
+      durationLabel,
+      firstDeparture: value.startTime || undefined,
+      lastDeparture: value.endTime || undefined,
+      sampleDepartures,
+      otnRange,
+    };
+  }
+
+  planTemplateStats(template: ScheduleTemplate | undefined): PlanTemplateStats | null {
+    if (!template) {
+      return null;
+    }
+    const stops = template.stops;
+    if (!stops.length) {
+      return null;
+    }
+    const first = stops[0];
+    const last = stops[stops.length - 1];
+    const travelMinutes = this.estimateTemplateTravelMinutes(template);
+    return {
+      origin: first.locationName ?? first.locationCode,
+      destination: last.locationName ?? last.locationCode,
+      stopCount: stops.length,
+      travelMinutes: travelMinutes ?? undefined,
+      travelLabel: travelMinutes ? this.formatDuration(travelMinutes) : undefined,
+      stopNames: stops.map((stop) => stop.locationName ?? stop.locationCode),
+    };
+  }
+
+  private applyTemplateMatching(trains: ImportedRailMlTrain[]): ImportedRailMlTrain[] {
+    const templates = this.taktTemplates();
+    if (!templates.length) {
+      return trains;
+    }
+    return trains.map((train) => ({
+      ...train,
+      templateMatch: this.findTemplateMatch(train, templates),
+    }));
+  }
+
+  private findTemplateMatch(
+    train: ImportedRailMlTrain,
+    templates: ScheduleTemplate[],
+  ): ImportedRailMlTemplateMatch | undefined {
+    if (!train.stops.length || !train.departureTime) {
+      return undefined;
+    }
+    const departureMinutes = this.parseTimeToMinutes(train.departureTime);
+    if (departureMinutes === null) {
+      return undefined;
+    }
+    const trainStartKey = this.normalizeStopKey(
+      train.stops[0].locationCode,
+      train.stops[0].locationName,
+    );
+    const trainEndKey = this.normalizeStopKey(
+      train.stops[train.stops.length - 1].locationCode,
+      train.stops[train.stops.length - 1].locationName,
+    );
+    if (!trainStartKey || !trainEndKey) {
+      return undefined;
+    }
+
+    let best: ImportedRailMlTemplateMatch | null = null;
+
+    templates.forEach((template) => {
+      const recurrence = template.recurrence;
+      if (!recurrence?.intervalMinutes || !template.stops.length) {
+        return;
+      }
+      const templateStartKey = this.normalizeStopKey(
+        template.stops[0].locationCode,
+        template.stops[0].locationName,
+      );
+      const templateEndKey = this.normalizeStopKey(
+        template.stops[template.stops.length - 1].locationCode,
+        template.stops[template.stops.length - 1].locationName,
+      );
+      if (!templateStartKey || !templateEndKey) {
+        return;
+      }
+      if (trainStartKey !== templateStartKey || trainEndKey !== templateEndKey) {
+        return;
+      }
+      const startMinutes = this.parseTimeToMinutes(recurrence.startTime);
+      const endMinutes = this.parseTimeToMinutes(recurrence.endTime);
+      if (startMinutes === null || endMinutes === null) {
+        return;
+      }
+      const expected = this.closestRecurrenceDeparture(
+        departureMinutes,
+        startMinutes,
+        endMinutes,
+        recurrence.intervalMinutes,
+      );
+      const deviation = departureMinutes - expected;
+      const templateBaseDeparture = this.templateStopTime(
+        template.stops[0],
+        'departure',
+      );
+      const templateBaseMinutes = this.parseTimeToMinutes(templateBaseDeparture ?? null);
+      const offsetMinutes =
+        templateBaseMinutes !== null ? expected - templateBaseMinutes : 0;
+      const tolerance = Math.max(2, Math.round(recurrence.intervalMinutes * 0.25));
+      const status: 'ok' | 'warning' =
+        Math.abs(deviation) <= tolerance ? 'ok' : 'warning';
+      const comparisons = this.buildStopComparisons(
+        train.stops,
+        template.stops,
+        offsetMinutes,
+      );
+      const sharedStops = comparisons.filter((comp) => comp.matched).length;
+      const stopDelta = Math.abs(train.stops.length - template.stops.length);
+      const baseScore = 10 + sharedStops - stopDelta * 0.5;
+      const maxStopDeviation = this.maxStopDeviation(comparisons);
+      const timePenalty =
+        Math.abs(deviation) / Math.max(1, tolerance) +
+        (maxStopDeviation ? Math.abs(maxStopDeviation) / 10 : 0);
+      const matchScore = baseScore - timePenalty;
+      const arrivalDeviation = this.compareTerminalArrival(
+        train,
+        template,
+        offsetMinutes,
+      );
+      const travelDeviation = this.compareTravelTime(train, template);
+      if (!best || matchScore > best.matchScore) {
+        best = {
+          templateId: template.id,
+          templateTitle: template.title,
+          templateTrainNumber: template.trainNumber,
+          intervalMinutes: recurrence.intervalMinutes,
+          expectedDeparture: this.minutesToTime(expected),
+          deviationMinutes: deviation,
+          deviationLabel: this.formatDeviationLabel(deviation),
+          toleranceMinutes: tolerance,
+          status,
+          matchScore,
+          arrivalDeviationMinutes: arrivalDeviation ?? undefined,
+          arrivalDeviationLabel:
+            arrivalDeviation !== null && arrivalDeviation !== undefined
+              ? this.formatDeviationLabel(arrivalDeviation)
+              : undefined,
+          travelTimeDeviationMinutes: travelDeviation ?? undefined,
+          travelTimeDeviationLabel:
+            travelDeviation !== null && travelDeviation !== undefined
+              ? this.formatDeviationLabel(travelDeviation)
+              : undefined,
+          maxStopDeviationMinutes: maxStopDeviation ?? undefined,
+          maxStopDeviationLabel:
+            maxStopDeviation !== null && maxStopDeviation !== undefined
+              ? this.formatDeviationLabel(maxStopDeviation)
+              : undefined,
+          stopComparisons: comparisons,
+        };
+      }
+    });
+
+    return best ?? undefined;
+  }
+
+  private normalizeStopKey(code?: string | null, name?: string | null): string {
+    return (code ?? name ?? '').trim().toLowerCase();
+  }
+
+  private buildStopComparisons(
+    trainStops: ImportedRailMlStop[],
+    templateStops: ScheduleTemplateStop[],
+    offsetMinutes: number,
+  ): ImportedTemplateStopComparison[] {
+    const actualByKey = new Map<string, ImportedRailMlStop>();
+    trainStops.forEach((stop) => {
+      const key = this.normalizeStopKey(stop.locationCode, stop.locationName);
+      if (key && !actualByKey.has(key)) {
+        actualByKey.set(key, stop);
+      }
+    });
+
+    return templateStops.map((templateStop) => {
+      const key = this.normalizeStopKey(templateStop.locationCode, templateStop.locationName);
+      const actual = key ? actualByKey.get(key) : undefined;
+      const templateArrival = this.templateStopTime(templateStop, 'arrival');
+      const templateDeparture = this.templateStopTime(templateStop, 'departure');
+      const actualArrival = actual ? this.importedStopTime(actual, 'arrival') : undefined;
+      const actualDeparture = actual ? this.importedStopTime(actual, 'departure') : undefined;
+      const arrivalDeviation = this.differenceBetweenTimes(
+        actualArrival,
+        templateArrival,
+        offsetMinutes,
+      );
+      const departureDeviation = this.differenceBetweenTimes(
+        actualDeparture,
+        templateDeparture,
+        offsetMinutes,
+      );
+
+      return {
+        locationCode: templateStop.locationCode,
+        locationName: templateStop.locationName ?? templateStop.locationCode,
+        type: templateStop.type,
+        templateArrival,
+        templateDeparture,
+        alignedTemplateArrival: this.shiftTimeLabel(templateArrival, offsetMinutes),
+        alignedTemplateDeparture: this.shiftTimeLabel(templateDeparture, offsetMinutes),
+        actualArrival,
+        actualDeparture,
+        arrivalDeviationMinutes: arrivalDeviation ?? undefined,
+        arrivalDeviationLabel:
+          arrivalDeviation !== null && arrivalDeviation !== undefined
+            ? this.formatDeviationLabel(arrivalDeviation)
+            : undefined,
+        departureDeviationMinutes: departureDeviation ?? undefined,
+        departureDeviationLabel:
+          departureDeviation !== null && departureDeviation !== undefined
+            ? this.formatDeviationLabel(departureDeviation)
+            : undefined,
+        matched: !!actual,
+      };
+    });
+  }
+
+  private maxStopDeviation(comparisons: ImportedTemplateStopComparison[]): number | null {
+    let max: number | null = null;
+    comparisons.forEach((comparison) => {
+      const arrival = comparison.arrivalDeviationMinutes ?? null;
+      const departure = comparison.departureDeviationMinutes ?? null;
+      [arrival, departure].forEach((value) => {
+        if (value === null || value === undefined) {
+          return;
+        }
+        const abs = Math.abs(value);
+        if (max === null || abs > Math.abs(max)) {
+          max = value;
+        }
+      });
+    });
+    return max;
+  }
+
+  private compareTerminalArrival(
+    train: ImportedRailMlTrain,
+    template: ScheduleTemplate,
+    offsetMinutes: number,
+  ): number | null {
+    const actualArrival =
+      this.importedStopTime(train.stops[train.stops.length - 1], 'arrival') ?? train.arrivalTime;
+    const templateArrival = this.templateStopTime(
+      template.stops[template.stops.length - 1],
+      'arrival',
+    );
+    return this.differenceBetweenTimes(actualArrival, templateArrival, offsetMinutes);
+  }
+
+  private compareTravelTime(
+    train: ImportedRailMlTrain,
+    template: ScheduleTemplate,
+  ): number | null {
+    const actualDeparture =
+      this.importedStopTime(train.stops[0], 'departure') ?? train.departureTime;
+    const actualArrival =
+      this.importedStopTime(train.stops[train.stops.length - 1], 'arrival') ?? train.arrivalTime;
+    const templateDeparture = this.templateStopTime(template.stops[0], 'departure');
+    const templateArrival = this.templateStopTime(
+      template.stops[template.stops.length - 1],
+      'arrival',
+    );
+
+    const actualTime = this.durationBetweenTimes(actualDeparture, actualArrival);
+    const templateTime = this.durationBetweenTimes(templateDeparture, templateArrival);
+    if (actualTime === null || templateTime === null) {
+      return null;
+    }
+    return actualTime - templateTime;
+  }
+
+  private closestRecurrenceDeparture(
+    departure: number,
+    startMinutes: number,
+    endMinutes: number,
+    interval: number,
+  ): number {
+    if (interval <= 0) {
+      return departure;
+    }
+    if (departure <= startMinutes) {
+      return startMinutes;
+    }
+    if (departure >= endMinutes) {
+      return endMinutes;
+    }
+    const steps = Math.round((departure - startMinutes) / interval);
+    const candidate = startMinutes + steps * interval;
+    return Math.max(startMinutes, Math.min(endMinutes, candidate));
+  }
+
+  private minutesToTime(value: number | null | undefined): string | undefined {
+    if (value === null || value === undefined || Number.isNaN(value)) {
+      return undefined;
+    }
+    const totalMinutes = Math.round(value);
+    const minutesInDay = 24 * 60;
+    const normalized =
+      ((totalMinutes % minutesInDay) + minutesInDay) % minutesInDay;
+    const hours = Math.floor(normalized / 60);
+    const mins = normalized % 60;
+    return `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}`;
+  }
+
+  private formatDeviationLabel(deviation: number): string {
+    const prefix = deviation > 0 ? '+' : '';
+    return `${prefix}${deviation} min`;
+  }
+
+  private templateStopTime(
+    stop: ScheduleTemplateStop,
+    type: 'arrival' | 'departure',
+  ): string | undefined {
+    const window = type === 'arrival' ? stop.arrival : stop.departure;
+    return window?.earliest ?? window?.latest ?? undefined;
+  }
+
+  private importedStopTime(
+    stop: ImportedRailMlStop,
+    type: 'arrival' | 'departure',
+  ): string | undefined {
+    if (type === 'arrival') {
+      return stop.arrivalEarliest ?? stop.arrivalLatest ?? undefined;
+    }
+    return stop.departureEarliest ?? stop.departureLatest ?? undefined;
+  }
+
+  private differenceBetweenTimes(
+    actual: string | undefined | null,
+    template: string | undefined | null,
+    offsetMinutes = 0,
+  ): number | null {
+    const actualMinutes = this.parseTimeToMinutes(actual ?? null);
+    const templateMinutes = this.parseTimeToMinutes(template ?? null);
+    if (actualMinutes === null || templateMinutes === null) {
+      return null;
+    }
+    return actualMinutes - (templateMinutes + offsetMinutes);
+  }
+
+  private durationBetweenTimes(
+    start: string | undefined | null,
+    end: string | undefined | null,
+  ): number | null {
+    const startMinutes = this.parseTimeToMinutes(start ?? null);
+    const endMinutes = this.parseTimeToMinutes(end ?? null);
+    if (startMinutes === null || endMinutes === null) {
+      return null;
+    }
+    return endMinutes - startMinutes;
+  }
+
+  private shiftTimeLabel(time: string | undefined, offsetMinutes: number): string | undefined {
+    if (!time) {
+      return undefined;
+    }
+    const templateMinutes = this.parseTimeToMinutes(time);
+    if (templateMinutes === null) {
+      return time;
+    }
+    return this.minutesToTime(templateMinutes + offsetMinutes);
+  }
+
+  private estimateTemplateTravelMinutes(template: ScheduleTemplate): number | null {
+    if (!template.stops.length) {
+      return null;
+    }
+    const first = template.stops[0];
+    const last = template.stops[template.stops.length - 1];
+    const departure =
+      this.parseTimeToMinutes(first.departure?.earliest ?? first.departure?.latest ?? null) ??
+      this.parseTimeToMinutes(first.arrival?.earliest ?? first.arrival?.latest ?? null);
+    const arrival =
+      this.parseTimeToMinutes(last.arrival?.earliest ?? last.arrival?.latest ?? null) ??
+      this.parseTimeToMinutes(last.departure?.earliest ?? last.departure?.latest ?? null);
+    if (departure === null || arrival === null) {
+      return null;
+    }
+    const diff = arrival - departure;
+    return diff >= 0 ? diff : diff + 24 * 60;
+  }
+
+  private formatDuration(minutes: number): string {
+    const abs = Math.abs(Math.round(minutes));
+    const hours = Math.floor(abs / 60);
+    const mins = abs % 60;
+    if (hours && mins) {
+      return `${hours} h ${mins} min`;
+    }
+    if (hours) {
+      return `${hours} h`;
+    }
+    return `${mins} min`;
   }
 
   private defaultManualStops(): TrainPlanStop[] {
@@ -792,7 +1386,7 @@ export class OrderPositionDialogComponent {
     reader.onload = () => {
       try {
         const text = String(reader.result ?? '');
-        const trains = this.parseRailMl(text);
+        const trains = this.applyTemplateMatching(this.parseRailMl(text));
         if (!trains.length) {
           throw new Error('Im RailML konnten keine Züge gefunden werden.');
         }
@@ -800,8 +1394,24 @@ export class OrderPositionDialogComponent {
         this.selectedTrainIds.set(new Set(trains.map((train) => train.id)));
         this.importError.set(null);
         this.errorMessage.set(null);
-        this.importFilters.reset({ search: '', start: '', end: '' });
-        this.importFilterValues.set({ search: '', start: '', end: '' });
+        this.importFilters.reset({
+          search: '',
+          start: '',
+          end: '',
+          templateId: '',
+          irregularOnly: false,
+          minDeviation: 0,
+          deviationSort: 'none',
+        });
+        this.importFilterValues.set({
+          search: '',
+          start: '',
+          end: '',
+          templateId: '',
+          irregularOnly: false,
+          minDeviation: 0,
+          deviationSort: 'none',
+        });
         if (input) {
           input.value = '';
         }
@@ -827,8 +1437,24 @@ export class OrderPositionDialogComponent {
     this.importedTrains.set([]);
     this.selectedTrainIds.set(new Set());
     this.importError.set(null);
-    this.importFilters.reset({ search: '', start: '', end: '' });
-    this.importFilterValues.set({ search: '', start: '', end: '' });
+    this.importFilters.reset({
+      search: '',
+      start: '',
+      end: '',
+      templateId: '',
+      irregularOnly: false,
+      minDeviation: 0,
+      deviationSort: 'none',
+    });
+    this.importFilterValues.set({
+      search: '',
+      start: '',
+      end: '',
+      templateId: '',
+      irregularOnly: false,
+      minDeviation: 0,
+      deviationSort: 'none',
+    });
     this.importOptionsForm.patchValue(
       { namePrefix: '', responsible: '', trafficPeriodId: '' },
       { emitEvent: false },
@@ -895,23 +1521,6 @@ export class OrderPositionDialogComponent {
     const hours = Number.parseInt(match[1], 10);
     const minutes = Number.parseInt(match[2], 10);
     return hours * 60 + minutes;
-  }
-
-  private deriveServiceBaseDate(periodId: string): string | null {
-    const period = this.trafficPeriodService.getById(periodId);
-    if (!period?.rules?.length) {
-      return null;
-    }
-    let candidate: string | null = null;
-    period.rules.forEach((rule) => {
-      const dates = [rule.validityStart, ...(rule.includesDates ?? [])];
-      dates.forEach((date) => {
-        if (date && (!candidate || date < candidate)) {
-          candidate = date;
-        }
-      });
-    });
-    return candidate;
   }
 
   private buildIsoFromMinutes(
@@ -1338,6 +1947,10 @@ interface ImportFilterValues {
   search: string;
   start: string;
   end: string;
+  templateId: string;
+  irregularOnly: boolean;
+  minDeviation: number;
+  deviationSort: 'none' | 'asc' | 'desc';
 }
 
 interface RailMlOperatingPeriod {

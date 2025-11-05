@@ -1,17 +1,17 @@
 <div class="period-page">
   <header class="period-header">
     <div>
-      <h2>Verkehrsperioden</h2>
+      <h2>Referenzkalender</h2>
       <p>
-        Kalenderdefinitionen für Serienfahrten. Diese Perioden werden beim Rollout von
+        Kalenderdefinitionen für Serienfahrten. Diese Referenzkalender werden beim Rollout von
         Vorlagen zugeordnet, um Verkehrstage zu steuern.
       </p>
     </div>
     <div class="header-actions">
-      <mat-chip color="primary" selected>{{ periods().length }} Perioden</mat-chip>
+      <mat-chip color="primary" selected>{{ periods().length }} Kalender</mat-chip>
       <button mat-flat-button color="primary" (click)="openCreateDialog()">
         <mat-icon>add</mat-icon>
-        Neue Verkehrsperiode
+        Neuer Referenzkalender
       </button>
     </div>
   </header>
@@ -69,7 +69,7 @@
       <mat-card-content>
         <mat-icon>event_busy</mat-icon>
         <div>
-          <h3>Keine Verkehrsperioden gefunden</h3>
+          <h3>Keine Referenzkalender gefunden</h3>
           <p>Passe die Filter an oder importiere Daten aus dem Fahrplanmanagement.</p>
         </div>
       </mat-card-content>

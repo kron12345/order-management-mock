@@ -25,10 +25,11 @@ export interface TrainPlanSort {
 
 export interface CreatePlansFromTemplatePayload {
   templateId: string;
-  trafficPeriodId: string;
   startTime: string; // HH:mm
   intervalMinutes: number;
-  count: number;
+  departuresPerDay: number;
+  trafficPeriodId?: string;
+  calendarDates?: string[];
   responsibleRu?: string;
   trainNumberStart?: number;
   trainNumberInterval?: number;
@@ -170,6 +171,20 @@ export class TrainPlanService {
     );
   }
 
+  assignTrafficPeriod(planId: string, trafficPeriodId: string): TrainPlan | undefined {
+    let updatedPlan: TrainPlan | undefined;
+    this._plans.update((plans) =>
+      plans.map((plan) => {
+        if (plan.id !== planId) {
+          return plan;
+        }
+        updatedPlan = { ...plan, trafficPeriodId };
+        return updatedPlan;
+      }),
+    );
+    return updatedPlan;
+  }
+
   createPlansFromTemplate(
     payload: CreatePlansFromTemplatePayload,
   ): TrainPlan[] {
@@ -181,19 +196,13 @@ export class TrainPlanService {
       ReturnType<ScheduleTemplateService['getById']>
     >;
 
-    const period = this.trafficPeriodService.getById(payload.trafficPeriodId);
-    if (!period) {
-      throw new Error('Verkehrsperiode nicht gefunden');
-    }
-
-    const dates = Array.from(
-      new Set(
-        period.rules.flatMap((rule) => rule.includesDates ?? []),
-      ),
-    ).sort();
+    const dates = this.resolveCalendarDates(
+      payload.calendarDates,
+      payload.trafficPeriodId,
+    );
 
     if (!dates.length) {
-      throw new Error('Verkehrsperiode enthält keine aktiven Tage');
+      throw new Error('Referenzkalender enthält keine aktiven Tage');
     }
 
     const startMinutes = this.parseTimeToMinutes(payload.startTime);
@@ -202,44 +211,41 @@ export class TrainPlanService {
     }
 
     const interval = Math.max(1, payload.intervalMinutes);
-    const count = Math.max(1, payload.count);
+    const departuresPerDay = Math.max(1, payload.departuresPerDay);
 
     const nowIso = new Date().toISOString();
     const plans: TrainPlan[] = [];
-    let dateIndex = 0;
-    let minutesWithinDay = startMinutes;
+    let sequenceIndex = 0;
 
-    for (let i = 0; i < count; i++) {
-      if (dateIndex >= dates.length) {
-        break;
+    dates.forEach((currentDate) => {
+      let minutesWithinDay = startMinutes;
+      for (let i = 0; i < departuresPerDay; i++) {
+        if (minutesWithinDay >= 24 * 60) {
+          break;
+        }
+
+        const departureDate = this.buildDateTime(currentDate, minutesWithinDay);
+        const trainNumberOverride = this.resolveTrainNumberOverride(
+          payload.trainNumberStart,
+          payload.trainNumberInterval,
+          sequenceIndex,
+        );
+
+        const plan = this.buildPlanFromTemplate(
+          templateEntity,
+          payload.trafficPeriodId,
+          departureDate,
+          sequenceIndex,
+          payload.responsibleRu ?? template.responsibleRu,
+          nowIso,
+          trainNumberOverride,
+        );
+
+        plans.push(plan);
+        sequenceIndex++;
+        minutesWithinDay += interval;
       }
-
-      const currentDate = dates[dateIndex];
-      const departureDate = this.buildDateTime(currentDate, minutesWithinDay);
-      const trainNumberOverride = this.resolveTrainNumberOverride(
-        payload.trainNumberStart,
-        payload.trainNumberInterval,
-        i,
-      );
-
-      const plan = this.buildPlanFromTemplate(
-        templateEntity,
-        period.id,
-        departureDate,
-        i,
-        payload.responsibleRu ?? template.responsibleRu,
-        nowIso,
-        trainNumberOverride,
-      );
-
-      plans.push(plan);
-
-      minutesWithinDay += interval;
-      if (minutesWithinDay >= 24 * 60) {
-        minutesWithinDay = minutesWithinDay % (24 * 60);
-        dateIndex++;
-      }
-    }
+    });
 
     if (!plans.length) {
       throw new Error('Keine Fahrpläne konnten erzeugt werden');
@@ -425,7 +431,7 @@ export class TrainPlanService {
 
   private buildPlanFromTemplate(
     template: NonNullable<ReturnType<ScheduleTemplateService['getById']>>,
-    trafficPeriodId: string,
+    trafficPeriodId: string | undefined,
     departureDate: Date,
     sequence: number,
     responsibleRu: string,
@@ -469,6 +475,36 @@ export class TrainPlanService {
       linkedOrderItemId: undefined,
       notes: undefined,
     } satisfies TrainPlan;
+  }
+
+  private resolveCalendarDates(
+    overrideDates: string[] | undefined,
+    trafficPeriodId: string | undefined,
+  ): string[] {
+    if (overrideDates?.length) {
+      return Array.from(
+        new Set(
+          overrideDates
+            .map((date) => date?.trim())
+            .filter((date): date is string => !!date),
+        ),
+      ).sort();
+    }
+
+    if (!trafficPeriodId) {
+      return [];
+    }
+
+    const period = this.trafficPeriodService.getById(trafficPeriodId);
+    if (!period) {
+      throw new Error('Referenzkalender nicht gefunden');
+    }
+
+    return Array.from(
+      new Set(period.rules.flatMap((rule) => rule.includesDates ?? [])),
+    )
+      .filter((date): date is string => !!date)
+      .sort();
   }
 
   private toTemplateStop(

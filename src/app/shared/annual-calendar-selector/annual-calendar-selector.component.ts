@@ -28,9 +28,11 @@ interface CalendarCell {
 export class AnnualCalendarSelectorComponent implements OnChanges {
   @Input() title = 'Kalender';
   @Input({ required: true }) year!: number;
-  @Input() hint =
+  @Input() hint: string | null =
     'Tipp: Shift + Klick für Bereichsauswahl, Strg/Cmd + Klick um bestehende Auswahl zu erweitern.';
   @Input() selectedDates: readonly string[] | null = [];
+  @Input() allowedDates: readonly string[] | null = null;
+  @Input() accentDates: readonly string[] | null = null;
 
   @Output() selectedDatesChange = new EventEmitter<string[]>();
 
@@ -53,6 +55,8 @@ export class AnnualCalendarSelectorComponent implements OnChanges {
 
   private readonly yearSignal = signal<number>(new Date().getFullYear());
   private readonly selected = signal<Set<string>>(new Set());
+  private readonly allowed = signal<Set<string> | null>(null);
+  private readonly accent = signal<Set<string>>(new Set());
   private lastSelectedDate: string | null = null;
 
   readonly selectedCount = computed(() => this.selected().size);
@@ -82,6 +86,18 @@ export class AnnualCalendarSelectorComponent implements OnChanges {
       );
       this.selected.set(incoming);
     }
+    if (changes['allowedDates']) {
+      const allowedSet = this.allowedDates?.length
+        ? new Set(this.allowedDates.map((date) => date.trim()).filter(Boolean))
+        : null;
+      this.allowed.set(allowedSet);
+    }
+    if (changes['accentDates']) {
+      const accentSet = new Set(
+        (this.accentDates ?? []).map((date) => date.trim()).filter(Boolean),
+      );
+      this.accent.set(accentSet);
+    }
   }
 
   isSelected(date: string | null): boolean {
@@ -91,12 +107,30 @@ export class AnnualCalendarSelectorComponent implements OnChanges {
     return this.selected().has(date);
   }
 
+  isDisabled(date: string | null): boolean {
+    if (!date) {
+      return true;
+    }
+    const allowed = this.allowed();
+    if (!allowed) {
+      return false;
+    }
+    return !allowed.has(date);
+  }
+
+  isAccent(date: string | null): boolean {
+    if (!date) {
+      return false;
+    }
+    return this.accent().has(date);
+  }
+
   currentYear(): number {
     return this.yearSignal();
   }
 
   toggleCell(cell: CalendarCell, event: MouseEvent) {
-    if (!cell.date || cell.kind !== 'day') {
+    if (!cell.date || cell.kind !== 'day' || this.isDisabled(cell.date)) {
       return;
     }
 
@@ -133,11 +167,15 @@ export class AnnualCalendarSelectorComponent implements OnChanges {
       return;
     }
     const next = new Set(this.selected());
-    const activate = !dates.every((date) => next.has(date));
+    const allowedDates = dates.filter((date) => !this.isDisabled(date));
+    if (!allowedDates.length) {
+      return;
+    }
+    const activate = !allowedDates.every((date) => next.has(date));
     if (activate) {
-      dates.forEach((date) => next.add(date));
+      allowedDates.forEach((date) => next.add(date));
     } else {
-      dates.forEach((date) => next.delete(date));
+      allowedDates.forEach((date) => next.delete(date));
     }
     this.updateSelection(next);
   }
@@ -148,7 +186,11 @@ export class AnnualCalendarSelectorComponent implements OnChanges {
       return false;
     }
     const selected = this.selected();
-    return dates.every((date) => selected.has(date));
+    const allowedDates = dates.filter((date) => !this.isDisabled(date));
+    if (!allowedDates.length) {
+      return false;
+    }
+    return allowedDates.every((date) => selected.has(date));
   }
 
   headerLabelsForRender(): string[] {
@@ -171,6 +213,9 @@ export class AnnualCalendarSelectorComponent implements OnChanges {
   }
 
   private toggleDate(date: string, additive: boolean) {
+    if (this.isDisabled(date)) {
+      return;
+    }
     const next = new Set(this.selected());
     if (next.has(date) && !additive) {
       next.delete(date);
@@ -191,7 +236,10 @@ export class AnnualCalendarSelectorComponent implements OnChanges {
     }
 
     while (cursor <= target) {
-      base.add(this.formatDateString(cursor));
+      const date = this.formatDateString(cursor);
+      if (!this.isDisabled(date)) {
+        base.add(date);
+      }
       cursor.setDate(cursor.getDate() + 1);
     }
 
@@ -210,8 +258,9 @@ export class AnnualCalendarSelectorComponent implements OnChanges {
 
     while (cursor <= end) {
       const weekday = (cursor.getDay() + 6) % 7;
-      if (predicate(weekday)) {
-        next.add(this.formatDateString(cursor));
+      const formatted = this.formatDateString(cursor);
+      if (predicate(weekday) && !this.isDisabled(formatted)) {
+        next.add(formatted);
       }
       cursor.setDate(cursor.getDate() + 1);
     }

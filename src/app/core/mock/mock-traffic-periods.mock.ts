@@ -22,6 +22,7 @@ export const MOCK_TRAFFIC_PERIODS: TrafficPeriod[] = [
         appliesTo: 'both',
         variantNumber: '00',
         reason: 'Grundserie werktags',
+        primary: true,
       },
       {
         id: 'TPER-2030-ICE-R2',
@@ -57,6 +58,7 @@ export const MOCK_TRAFFIC_PERIODS: TrafficPeriod[] = [
         appliesTo: 'both',
         variantNumber: '00',
         reason: 'Grundangebot',
+        primary: true,
       },
       {
         id: 'TPER-2030-REGIO-R2',
@@ -92,6 +94,7 @@ export const MOCK_TRAFFIC_PERIODS: TrafficPeriod[] = [
         appliesTo: 'operational',
         variantNumber: '00',
         reason: 'Regelmäßige Nachtläufe',
+        primary: true,
       },
       {
         id: 'TPER-2030-CARGO-R2',

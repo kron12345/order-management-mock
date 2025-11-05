@@ -40,13 +40,13 @@
         class="mode-toggle"
         [value]="validityMode()"
       >
-        <mat-button-toggle value="trafficPeriod">Verkehrsperiode</mat-button-toggle>
+        <mat-button-toggle value="trafficPeriod">Referenzkalender</mat-button-toggle>
         <mat-button-toggle value="custom">Individuell</mat-button-toggle>
       </mat-button-toggle-group>
 
       @if (validityMode() === 'trafficPeriod') {
         <mat-form-field appearance="outline">
-          <mat-label>Verkehrsperiode</mat-label>
+          <mat-label>Referenzkalender</mat-label>
           <mat-select formControlName="trafficPeriodId">
             <mat-option value="">Bitte wählen</mat-option>
             @for (period of periods(); track trackByPeriodId($index, period)) {
@@ -54,7 +54,7 @@
             }
           </mat-select>
           @if (form.controls.trafficPeriodId.touched && form.controls.trafficPeriodId.invalid) {
-            <mat-error>Verkehrsperiode erforderlich.</mat-error>
+            <mat-error>Referenzkalender erforderlich.</mat-error>
           }
         </mat-form-field>
       } @else {

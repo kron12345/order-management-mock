@@ -275,7 +275,7 @@ export class OrderItemEditDialogComponent {
         const period =
           this.trafficPeriodService.getById(plan.trafficPeriodId)?.name ??
           plan.trafficPeriodId;
-        labelParts.push(`Verkehrsperiode ${period}`);
+        labelParts.push(`Referenzkalender ${period}`);
       }
       const rangeParts: string[] = [];
       if (plan.calendar.validFrom) {

@@ -2,7 +2,7 @@
   <header class="templates-header">
     <div>
       <h1>Vorlagen</h1>
-      <p>Verwalte Fahrplanvorlagen und dazugehörige Verkehrsperioden für Rollouts.</p>
+      <p>Verwalte Fahrplanvorlagen und dazugehörige Referenzkalender für Rollouts.</p>
     </div>
   </header>
 
@@ -13,7 +13,7 @@
     <mat-tab label="Fahrplanvorlagen">
       <app-schedule-template-list [highlightId]="templateHighlight()" />
     </mat-tab>
-    <mat-tab label="Verkehrsperioden">
+    <mat-tab label="Referenzkalender">
       <app-traffic-period-list [highlightId]="periodHighlight()" />
     </mat-tab>
   </mat-tab-group>

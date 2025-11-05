@@ -177,7 +177,7 @@ export class TrafficPeriodListComponent {
     const dialogRef = this.dialog.open(ConfirmDialogComponent, {
       width: '420px',
       data: {
-        title: 'Verkehrsperiode löschen',
+        title: 'Referenzkalender löschen',
         message: `"${period.name}" dauerhaft entfernen?`,
         confirmLabel: 'Löschen',
         cancelLabel: 'Abbrechen',

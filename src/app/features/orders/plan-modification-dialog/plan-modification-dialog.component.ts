@@ -227,7 +227,7 @@ export class PlanModificationDialogComponent {
     const mode = value.validityMode;
     if (mode === 'trafficPeriod') {
       if (!value.trafficPeriodId) {
-        this.errorMessage.set('Bitte eine Verkehrsperiode auswählen.');
+        this.errorMessage.set('Bitte einen Referenzkalender auswählen.');
         return;
       }
     } else {
@@ -541,7 +541,7 @@ export class PlanModificationDialogComponent {
   ): { validFrom: string; validTo?: string; daysBitmap: string } {
     const period = this.trafficPeriodService.getById(periodId);
     if (!period) {
-      throw new Error('Verkehrsperiode nicht gefunden.');
+      throw new Error('Referenzkalender nicht gefunden.');
     }
     let earliest: string | undefined;
     let latest: string | undefined;

@@ -1,105 +1,27 @@
 <h2 mat-dialog-title>
-  {{ isEditMode ? 'Verkehrsperiode bearbeiten' : 'Neue Verkehrsperiode' }}
+  {{ isEditMode ? 'Referenzkalender bearbeiten' : 'Neuer Referenzkalender' }}
 </h2>
 
 <mat-dialog-content>
   <form [formGroup]="form" class="editor-form">
-    <section class="form-section">
-      <div class="grid grid--two">
-        <mat-form-field appearance="outline">
-          <mat-label>Name</mat-label>
-          <input matInput formControlName="name" />
-          @if (form.controls.name.invalid && form.controls.name.touched) {
-            <mat-error>Name ist erforderlich.</mat-error>
-          }
-        </mat-form-field>
+    <app-traffic-period-general-form [form]="form" [typeOptions]="typeOptions" />
 
-        <mat-form-field appearance="outline">
-          <mat-label>Typ</mat-label>
-          <mat-select formControlName="type">
-            @for (option of typeOptions; track option.value) {
-              <mat-option [value]="option.value">{{ option.label }}</mat-option>
-            }
-          </mat-select>
-        </mat-form-field>
-      </div>
-
-      <mat-form-field appearance="outline">
-        <mat-label>Beschreibung</mat-label>
-        <textarea matInput rows="2" formControlName="description"></textarea>
-      </mat-form-field>
-
-      <div class="grid grid--two">
-        <mat-form-field appearance="outline">
-          <mat-label>Verantwortlich</mat-label>
-          <input matInput formControlName="responsible" placeholder="z. B. Fahrplanplanung" />
-        </mat-form-field>
-
-        <mat-form-field appearance="outline">
-          <mat-label>Jahr</mat-label>
-          <input
-            matInput
-            type="number"
-            formControlName="year"
-          />
-        </mat-form-field>
-      </div>
-
-      <mat-form-field appearance="outline">
-        <mat-label>Tags (kommagetrennt)</mat-label>
-        <input matInput formControlName="tags" placeholder="Werktage, Baustelle" />
-      </mat-form-field>
-    </section>
-
-    <section class="variant-section">
-      <div class="grid grid--three">
-        <mat-form-field appearance="outline">
-          <mat-label>Variantentyp</mat-label>
-          <mat-select formControlName="variantType">
-            @for (option of variantTypeOptions; track option.value) {
-              <mat-option [value]="option.value">{{ option.label }}</mat-option>
-            }
-          </mat-select>
-        </mat-form-field>
-
-        <mat-form-field appearance="outline">
-          <mat-label>Gültig für</mat-label>
-          <mat-select formControlName="appliesTo">
-            @for (option of appliesOptions; track option.value) {
-              <mat-option [value]="option.value">{{ option.label }}</mat-option>
-            }
-          </mat-select>
-        </mat-form-field>
-
-        <mat-form-field appearance="outline">
-          <mat-label>Variantennummer</mat-label>
-          <input matInput formControlName="variantNumber" placeholder="z. B. 00 oder A1" />
-        </mat-form-field>
-      </div>
-
-      <mat-form-field appearance="outline">
-        <mat-label>Begründung / Hinweis</mat-label>
-        <textarea matInput rows="2" formControlName="reason"></textarea>
-      </mat-form-field>
-    </section>
-
-    <section class="selection-section">
-      <div class="calendar-grid">
-        <app-annual-calendar-selector
-          [title]="'Verkehrstage'"
-          [year]="selectedYear()"
-          [selectedDates]="selectedDates()"
-          (selectedDatesChange)="onSelectedDatesChange($event)"
-        ></app-annual-calendar-selector>
-
-        <app-annual-calendar-selector
-          [title]="'Ausnahmen (ausgeschlossen)'"
-          [year]="selectedYear()"
-          [selectedDates]="excludedDates()"
-          (selectedDatesChange)="onExcludedDatesChange($event)"
-        ></app-annual-calendar-selector>
-      </div>
-    </section>
+    <app-traffic-period-rules-section
+      [rules]="rulesArray"
+      [variantTypeOptions]="variantTypeOptions"
+      [appliesOptions]="appliesOptions"
+      [calendarMode]="calendarModeAccessor"
+      [ruleReady]="ruleReadyAccessor"
+      [primaryRuleReady]="primaryRuleReady()"
+      [canAddRule]="canAddRule()"
+      [uiWarnings]="uiWarnings()"
+      (addRuleRequested)="addRule()"
+      (setPrimaryRequested)="setPrimaryRule($event)"
+      (removeRuleRequested)="removeRule($event)"
+      (calendarModeChange)="setCalendarMode($event.index, $event.mode)"
+      (selectedDatesChange)="onRuleSelectedDatesChange($event.index, $event.dates)"
+      (excludedDatesChange)="onRuleExcludedDatesChange($event.index, $event.dates)"
+    />
   </form>
 </mat-dialog-content>
 

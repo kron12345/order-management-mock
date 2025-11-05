@@ -75,6 +75,43 @@ export interface CreatePlanOrderItemsPayload
 
 export interface ImportedRailMlStop extends CreateScheduleTemplateStopPayload {}
 
+export interface ImportedRailMlTemplateMatch {
+  templateId: string;
+  templateTitle: string;
+  templateTrainNumber?: string;
+  intervalMinutes?: number;
+  expectedDeparture?: string;
+  deviationMinutes: number;
+  deviationLabel: string;
+  toleranceMinutes: number;
+  status: 'ok' | 'warning';
+  matchScore: number;
+  arrivalDeviationMinutes?: number;
+  arrivalDeviationLabel?: string;
+  travelTimeDeviationMinutes?: number;
+  travelTimeDeviationLabel?: string;
+  maxStopDeviationMinutes?: number;
+  maxStopDeviationLabel?: string;
+  stopComparisons: ImportedTemplateStopComparison[];
+}
+
+export interface ImportedTemplateStopComparison {
+  locationCode: string;
+  locationName: string;
+  type: 'origin' | 'intermediate' | 'destination';
+  templateArrival?: string;
+  templateDeparture?: string;
+  alignedTemplateArrival?: string;
+  alignedTemplateDeparture?: string;
+  actualArrival?: string;
+  actualDeparture?: string;
+  arrivalDeviationMinutes?: number;
+  arrivalDeviationLabel?: string;
+  departureDeviationMinutes?: number;
+  departureDeviationLabel?: string;
+  matched: boolean;
+}
+
 export interface ImportedRailMlTrain {
   id: string;
   name: string;
@@ -96,6 +133,7 @@ export interface ImportedRailMlTrain {
   operatingPeriodRef?: string;
   timetablePeriodRef?: string;
   trainPartId?: string;
+  templateMatch?: ImportedRailMlTemplateMatch;
 }
 
 export interface CreateManualPlanOrderItemPayload {
@@ -285,24 +323,25 @@ export class OrderService {
   }
 
   addPlanOrderItems(payload: CreatePlanOrderItemsPayload) {
-    const plans = this.trainPlanService.createPlansFromTemplate({
-      templateId: payload.templateId,
-      trafficPeriodId: payload.trafficPeriodId,
-      startTime: payload.startTime,
-      intervalMinutes: payload.intervalMinutes,
-      count: payload.count,
-      responsibleRu: payload.responsible,
-    });
+    const { orderId, namePrefix, responsible, ...planConfig } = payload;
+    const plans = this.trainPlanService.createPlansFromTemplate(planConfig);
+    const enrichedPlans =
+      planConfig.trafficPeriodId && planConfig.trafficPeriodId.length
+        ? plans
+        : plans.map((plan) =>
+            this.ensurePlanHasTrafficPeriod(plan, namePrefix ?? plan.title),
+          );
 
-    const items: OrderItem[] = plans.map((plan, index) => {
-      const namePrefix = payload.namePrefix?.trim() ?? plan.title;
-      const itemName = plans.length > 1 ? `${namePrefix} #${index + 1}` : namePrefix;
+    const items: OrderItem[] = enrichedPlans.map((plan, index) => {
+      const basePrefix = namePrefix?.trim() ?? plan.title;
+      const itemName =
+        enrichedPlans.length > 1 ? `${basePrefix} #${index + 1}` : basePrefix;
       const base: OrderItem = {
-        id: this.generateItemId(payload.orderId),
+        id: this.generateItemId(orderId),
         name: itemName,
         type: 'Fahrplan',
         responsible: plan.responsibleRu,
-        linkedTemplateId: payload.templateId,
+        linkedTemplateId: planConfig.templateId,
         linkedTrainPlanId: plan.id,
       } satisfies OrderItem;
 
@@ -311,10 +350,10 @@ export class OrderService {
       return this.withTimetableMetadata(enriched, timetable);
     });
 
-    this.appendItems(payload.orderId, items);
+    this.appendItems(orderId, items);
 
     items.forEach((item, index) => {
-      const plan = plans[index];
+      const plan = enrichedPlans[index];
       this.linkTrainPlanToItem(plan.id, item.id);
     });
 
@@ -1269,6 +1308,19 @@ export class OrderService {
     return updated;
   }
 
+  private ensurePlanHasTrafficPeriod(plan: TrainPlan, baseName: string): TrainPlan {
+    const calendarDate =
+      plan.calendar?.validFrom ?? plan.calendar?.validTo ?? new Date().toISOString().slice(0, 10);
+    const calendarName = `${baseName} ${calendarDate}`;
+    const periodId = this.trafficPeriodService.createSingleDayPeriod({
+      name: calendarName,
+      date: calendarDate,
+      variantType: 'series',
+      responsible: plan.responsibleRu,
+    });
+    return this.trainPlanService.assignTrafficPeriod(plan.id, periodId) ?? plan;
+  }
+
   private ensureTimetableForPlan(plan: TrainPlan, item: OrderItem): Timetable | null {
     const refTrainId = this.generateTimetableRefId(plan);
     const existing = this.timetableService.getByRefTrainId(refTrainId);
@@ -1422,7 +1474,7 @@ export class OrderService {
     return segments.map((segment, index) => ({
       id: `${baseItem.id}-segment-${index}`,
       type: 'series',
-      description: baseItem.name ?? 'Verkehrsperiode',
+      description: baseItem.name ?? 'Referenzkalender',
       validFrom: segment.startDate,
       validTo: segment.endDate,
       appliesTo: 'both',

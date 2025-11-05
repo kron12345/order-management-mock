@@ -26,12 +26,20 @@ export interface TrafficPeriodCreatePayload {
   responsible?: string;
   tags?: string[];
   year: number;
+  rules: TrafficPeriodRulePayload[];
+}
+
+export interface TrafficPeriodRulePayload {
+  id?: string;
+  name: string;
+  year: number;
   selectedDates: string[];
   excludedDates?: string[];
   variantType: TrafficPeriodVariantType;
   variantNumber: string;
   appliesTo: TrafficPeriodVariantScope;
   reason?: string;
+  primary?: boolean;
 }
 
 export interface RailMlTrafficPeriodPayload {
@@ -135,14 +143,14 @@ export class TrafficPeriodService {
   }
 
   createPeriod(payload: TrafficPeriodCreatePayload): string {
-    if (!payload.selectedDates.length) {
+    const filteredRules = payload.rules.filter((rule) => rule.selectedDates.length);
+    if (!filteredRules.length) {
       return '';
     }
 
-    const sortedDates = [...new Set(payload.selectedDates)].sort();
-
     const now = new Date().toISOString();
     const id = this.generateId();
+
 
     const period: TrafficPeriod = {
       id,
@@ -153,43 +161,57 @@ export class TrafficPeriodService {
       createdAt: now,
       updatedAt: now,
       tags: this.normalizeTags(payload.tags),
-      rules: [
-        {
-          id: `${id}-R1`,
-          name: `Kalender ${payload.year}`,
-          daysBitmap: '1111111',
-          validityStart: `${payload.year}-01-01`,
-          validityEnd: `${payload.year}-12-31`,
-          includesDates: sortedDates,
-          excludesDates: payload.excludedDates?.length
-            ? [...new Set(payload.excludedDates)].sort()
-            : undefined,
-          variantType: payload.variantType,
-          appliesTo: payload.appliesTo,
-          variantNumber: payload.variantNumber || '00',
-          reason: payload.reason,
-        },
-      ],
+      rules: this.buildRulesFromPayload(id, filteredRules),
     };
 
     this._periods.update((periods) => [period, ...periods]);
     return id;
   }
 
+  createSingleDayPeriod(options: {
+    name: string;
+    date: string;
+    type?: TrafficPeriodType;
+    appliesTo?: TrafficPeriodVariantScope;
+    variantType?: TrafficPeriodVariantType;
+    tags?: string[];
+    description?: string;
+    responsible?: string;
+  }): string {
+    const isoDate = options.date.slice(0, 10);
+    const year = Number.parseInt(isoDate.slice(0, 4), 10) || new Date().getFullYear();
+    return this.createPeriod({
+      name: options.name,
+      description: options.description,
+      responsible: options.responsible,
+      type: options.type ?? 'standard',
+      year,
+      tags: options.tags,
+      rules: [
+        {
+          name: `${options.name} ${isoDate}`,
+          year,
+          selectedDates: [isoDate],
+          variantType: options.variantType ?? 'special_day',
+          appliesTo: options.appliesTo ?? 'both',
+          variantNumber: '00',
+          primary: true,
+        },
+      ],
+    });
+  }
+
   updatePeriod(periodId: string, payload: TrafficPeriodCreatePayload) {
-    if (!payload.selectedDates.length) {
+    const filteredRules = payload.rules.filter((rule) => rule.selectedDates.length);
+    if (!filteredRules.length) {
       return;
     }
-
-    const sortedDates = [...new Set(payload.selectedDates)].sort();
 
     this._periods.update((periods) =>
       periods.map((period) => {
         if (period.id !== periodId) {
           return period;
         }
-
-        const existingRuleId = period.rules[0]?.id ?? `${periodId}-R1`;
 
         return {
           ...period,
@@ -199,23 +221,7 @@ export class TrafficPeriodService {
           responsible: payload.responsible,
           tags: this.normalizeTags(payload.tags),
           updatedAt: new Date().toISOString(),
-          rules: [
-            {
-              id: existingRuleId,
-              name: `Kalender ${payload.year}`,
-              daysBitmap: '1111111',
-              validityStart: `${payload.year}-01-01`,
-              validityEnd: `${payload.year}-12-31`,
-              includesDates: sortedDates,
-              excludesDates: payload.excludedDates?.length
-                ? [...new Set(payload.excludedDates)].sort()
-                : undefined,
-              variantType: payload.variantType,
-              appliesTo: payload.appliesTo,
-              variantNumber: payload.variantNumber || '00',
-              reason: payload.reason,
-            },
-          ],
+          rules: this.buildRulesFromPayload(periodId, filteredRules, period.rules),
         } satisfies TrafficPeriod;
       }),
     );
@@ -248,6 +254,7 @@ export class TrafficPeriodService {
       variantType: 'series',
       appliesTo: payload.scope ?? 'commercial',
       reason: payload.reason ?? payload.description,
+      primary: true,
     };
 
     const period: TrafficPeriod = {
@@ -320,5 +327,36 @@ export class TrafficPeriodService {
     return Array.from(new Set(tags.filter((tag) => tag.trim().length))).map((tag) =>
       tag.trim(),
     );
+  }
+
+  private buildRulesFromPayload(
+    periodId: string,
+    rulePayloads: TrafficPeriodRulePayload[],
+    existingRules: TrafficPeriodRule[] = [],
+  ): TrafficPeriodRule[] {
+    return rulePayloads.map((payload, index) => {
+      const sortedSelectedDates = [...new Set(payload.selectedDates)].sort();
+      const sortedExcludedDates = payload.excludedDates?.length
+        ? [...new Set(payload.excludedDates)].sort()
+        : undefined;
+      const existingRule = payload.id
+        ? existingRules.find((rule) => rule.id === payload.id)
+        : undefined;
+      const ruleId = payload.id ?? existingRule?.id ?? `${periodId}-R${index + 1}`;
+      return {
+        id: ruleId,
+        name: payload.name?.trim() || `Kalender ${payload.year}`,
+        daysBitmap: '1111111',
+        validityStart: `${payload.year}-01-01`,
+        validityEnd: `${payload.year}-12-31`,
+        includesDates: sortedSelectedDates,
+        excludesDates: sortedExcludedDates,
+        variantType: payload.variantType,
+        appliesTo: payload.appliesTo,
+        variantNumber: payload.variantNumber || '00',
+        reason: payload.reason,
+        primary: payload.primary ?? index === 0,
+      } satisfies TrafficPeriodRule;
+    });
   }
 }

@@ -22,6 +22,7 @@ export interface TrafficPeriodRule {
   appliesTo?: TrafficPeriodVariantScope;
   variantNumber?: string;
   reason?: string;
+  primary?: boolean;
 }
 
 export interface TrafficPeriod {
