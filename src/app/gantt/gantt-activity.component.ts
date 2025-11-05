@@ -1,13 +1,14 @@
-import { Component, EventEmitter, Input, Output, computed } from '@angular/core';
+import { Component, ElementRef, EventEmitter, Input, Output, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { Activity } from '../models/activity';
 import { DurationPipe } from '../shared/pipes/duration.pipe';
+import { CdkDragEnd, CdkDragMove, CdkDragStart, DragDropModule } from '@angular/cdk/drag-drop';
 
 @Component({
   selector: 'app-gantt-activity',
   standalone: true,
-  imports: [CommonModule, MatTooltipModule, DurationPipe],
+  imports: [CommonModule, MatTooltipModule, DurationPipe, DragDropModule],
   templateUrl: './gantt-activity.component.html',
   styleUrl: './gantt-activity.component.scss',
 })
@@ -18,8 +19,13 @@ export class GanttActivityComponent {
   @Input() isSelected = false;
   @Input() classes: string[] = [];
   @Input() displayMode: 'block' | 'detail' = 'detail';
+  @Input({ required: true }) dragData!: GanttActivityDragData;
+  @Input({ required: true }) dragBoundary!: string | HTMLElement | ElementRef<HTMLElement>;
   @Output() activitySelected = new EventEmitter<Activity>();
   @Output() toggleSelection = new EventEmitter<Activity>();
+  @Output() dragStarted = new EventEmitter<CdkDragStart<GanttActivityDragData>>();
+  @Output() dragMoved = new EventEmitter<CdkDragMove<GanttActivityDragData>>();
+  @Output() dragEnded = new EventEmitter<CdkDragEnd<GanttActivityDragData>>();
 
   private readonly dateTime = new Intl.DateTimeFormat('de-DE', {
     weekday: 'short',
@@ -159,14 +165,41 @@ export class GanttActivityComponent {
   protected handleClick(event: Event): void {
     event.stopPropagation();
     event.preventDefault();
-    if (event instanceof MouseEvent && (event.metaKey || event.ctrlKey)) {
-      if (this.activity) {
-        this.toggleSelection.emit(this.activity);
-      }
-      return;
+    const hasModifier =
+      event instanceof MouseEvent
+        ? event.metaKey || event.ctrlKey || event.shiftKey
+        : event instanceof KeyboardEvent
+          ? event.ctrlKey || event.metaKey
+          : false;
+    if (hasModifier && this.activity) {
+      this.toggleSelection.emit(this.activity);
     }
+  }
+
+  protected handleDoubleClick(event: Event): void {
+    event.stopPropagation();
+    event.preventDefault();
     if (this.activity) {
       this.activitySelected.emit(this.activity);
     }
   }
+
+  protected onDragStarted(event: CdkDragStart<GanttActivityDragData>): void {
+    this.dragStarted.emit(event);
+  }
+
+  protected onDragMoved(event: CdkDragMove<GanttActivityDragData>): void {
+    this.dragMoved.emit(event);
+  }
+
+  protected onDragEnded(event: CdkDragEnd<GanttActivityDragData>): void {
+    this.dragEnded.emit(event);
+  }
+}
+
+export interface GanttActivityDragData {
+  activity: Activity;
+  resourceId: string;
+  initialLeft: number;
+  width: number;
 }

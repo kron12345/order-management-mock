@@ -1,5 +1,5 @@
 <div class="gantt-timeline-row" [class.gantt-timeline-row--zebra]="zebra">
-  <div class="gantt-timeline-row__canvas" [style.width.px]="contentWidth">
+  <div class="gantt-timeline-row__canvas" [style.width.px]="contentWidth" #canvas>
     @for (segment of backgroundSegments; track segment.left + ':' + segment.width + ':' + segment.cssClass) {
       <div
         class="gantt-timeline-row__background"
@@ -34,8 +34,13 @@
           [classes]="bar.classes ?? []"
           [isSelected]="bar.selected ?? false"
           [displayMode]="viewMode"
+          [dragData]="{ activity: bar.activity, resourceId, initialLeft: bar.left, width: bar.width }"
+          [dragBoundary]="canvas"
           (activitySelected)="activitySelected.emit($event)"
           (toggleSelection)="activityToggleSelection.emit($event)"
+          (dragStarted)="activityDragStarted.emit($event)"
+          (dragMoved)="activityDragMoved.emit($event)"
+          (dragEnded)="activityDragEnded.emit($event)"
         />
       }
     </div>

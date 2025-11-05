@@ -509,7 +509,20 @@ export class PlanningDashboardComponent {
     this.selectedActivityState.set(event);
   }
 
-  protected handleActivitySelectionToggle(event: { resource: Resource; activity: Activity }): void {
+  protected handleActivitySelectionToggle(event: {
+    resource: Resource;
+    activity: Activity;
+    selectionMode: 'set' | 'toggle';
+  }): void {
+    if (event.selectionMode === 'set') {
+      const current = this.selectedActivityIdsSignal();
+      if (current.size === 1 && current.has(event.activity.id)) {
+        this.selectedActivityIdsSignal.set(new Set());
+      } else {
+        this.selectedActivityIdsSignal.set(new Set([event.activity.id]));
+      }
+      return;
+    }
     this.selectedActivityIdsSignal.update((set) => {
       const next = new Set(set);
       if (next.has(event.activity.id)) {
@@ -519,6 +532,49 @@ export class PlanningDashboardComponent {
       }
       return next;
     });
+  }
+
+  protected handleActivityReposition(event: {
+    activity: Activity;
+    targetResourceId: string;
+    start: Date;
+    end: Date;
+  }): void {
+    const stage = this.activeStageSignal();
+    const targetId = event.targetResourceId;
+    this.updateStageActivities(stage, (activities) =>
+      activities.map((activity) => {
+        if (activity.id !== event.activity.id) {
+          return activity;
+        }
+        const participants = (activity.participantResourceIds ?? []).filter(
+          (participant) => participant !== activity.resourceId && participant !== targetId,
+        );
+        participants.push(targetId);
+        return {
+          ...activity,
+          resourceId: targetId,
+          start: event.start.toISOString(),
+          end: event.end.toISOString(),
+          participantResourceIds: participants,
+        };
+      }),
+    );
+    const activeSelection = this.selectedActivityState();
+    if (activeSelection?.activity.id === event.activity.id) {
+      const resource =
+        this.stageResourceSignals[stage]().find((res) => res.id === targetId) ??
+        activeSelection.resource;
+      this.selectedActivityState.set({
+        activity: {
+          ...activeSelection.activity,
+          resourceId: targetId,
+          start: event.start.toISOString(),
+          end: event.end.toISOString(),
+        },
+        resource,
+      });
+    }
   }
 
   protected clearActivitySelection(): void {

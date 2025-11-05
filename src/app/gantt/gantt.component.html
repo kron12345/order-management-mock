@@ -78,6 +78,7 @@
               <div
                 class="gantt__timeline-cell"
                 role="gridcell"
+                [attr.data-resource-id]="row.resource.id"
                 #rowScroller="appTrackHorizontalScroll"
                 [appTrackHorizontalScroll]="headerScrollerTargets()"
                 [appScrollLeft]="scrollX()"
@@ -99,8 +100,12 @@
                   [nowMarkerLeft]="nowMarkerLeft()"
                   [zebra]="row.zebra"
                   [viewMode]="resourceViewMode(row.resource.id)"
-                  (activitySelected)="onActivitySelected(row.resource, $event)"
+                  [resourceId]="row.resource.id"
+                  (activitySelected)="onActivityEditRequested(row.resource, $event)"
                   (activityToggleSelection)="onActivitySelectionToggle(row.resource, $event)"
+                  (activityDragStarted)="onActivityDragStarted($event)"
+                  (activityDragMoved)="onActivityDragMoved($event)"
+                  (activityDragEnded)="onActivityDragEnded($event)"
                 />
               </div>
             }

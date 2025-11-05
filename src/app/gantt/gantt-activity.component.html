@@ -1,18 +1,4 @@
-<div
-  class="gantt-activity"
-  role="button"
-  tabindex="0"
-  [ngClass]="hostClasses"
-  [style.left.px]="leftPx"
-  [style.width.px]="widthPx"
-  [attr.aria-label]="ariaLabel"
-  [matTooltip]="tooltipText()"
-  matTooltipClass="gantt-activity__tooltip"
-  matTooltipShowDelay="180"
-  (click)="handleClick($event)"
-  (keydown.enter)="handleClick($event)"
-  (keydown.space)="handleClick($event)"
->
+<ng-template #activityContent>
   <div class="gantt-activity__content">
     @if (showTitle) {
       <span class="gantt-activity__title">{{ activity.title }}</span>
@@ -23,4 +9,40 @@
       </span>
     }
   </div>
+</ng-template>
+
+<div
+  class="gantt-activity"
+  role="button"
+  tabindex="0"
+  cdkDrag
+  cdkDragLockAxis="x"
+  [cdkDragBoundary]="dragBoundary"
+  [cdkDragData]="dragData"
+  [ngClass]="hostClasses"
+  [style.left.px]="leftPx"
+  [style.width.px]="widthPx"
+  [attr.aria-label]="ariaLabel"
+  [matTooltip]="tooltipText()"
+  matTooltipClass="gantt-activity__tooltip"
+  matTooltipShowDelay="180"
+  (click)="handleClick($event)"
+  (dblclick)="handleDoubleClick($event)"
+  (keydown.enter)="handleDoubleClick($event)"
+  (keydown.space)="handleDoubleClick($event)"
+  (cdkDragStarted)="onDragStarted($event)"
+  (cdkDragMoved)="onDragMoved($event)"
+  (cdkDragEnded)="onDragEnded($event)"
+>
+  <ng-container [ngTemplateOutlet]="activityContent"></ng-container>
 </div>
+
+<ng-template cdkDragPreview>
+  <div class="gantt-activity gantt-activity--preview" [ngClass]="hostClasses" [style.width.px]="widthPx">
+    <ng-container [ngTemplateOutlet]="activityContent"></ng-container>
+  </div>
+</ng-template>
+
+<ng-template cdkDragPlaceholder>
+  <div class="gantt-activity gantt-activity--placeholder" [style.left.px]="leftPx" [style.width.px]="widthPx"></div>
+</ng-template>

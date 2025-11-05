@@ -21,6 +21,7 @@ import {
 import { CommonModule } from '@angular/common';
 import { ScrollingModule } from '@angular/cdk/scrolling';
 import { MatIconModule } from '@angular/material/icon';
+import { CdkDragEnd, CdkDragMove, CdkDragStart } from '@angular/cdk/drag-drop';
 import { Resource } from '../models/resource';
 import { Activity } from '../models/activity';
 import { ZoomLevel } from '../models/time-scale';
@@ -28,6 +29,7 @@ import { TimeScaleService } from '../core/services/time-scale.service';
 import { createTimeViewport, TimeViewport } from '../core/signals/time-viewport.signal';
 import { GanttMenuComponent } from './gantt-menu.component';
 import { GanttResourcesComponent } from './gantt-resources.component';
+import { GanttActivityDragData } from './gantt-activity.component';
 import {
   GanttBackgroundSegment,
   GanttBar,
@@ -74,6 +76,34 @@ interface GanttGroupDefinition {
   icon: string;
   category: string | null;
   resources: Resource[];
+}
+
+interface ActivityRepositionEventPayload {
+  activity: Activity;
+  targetResourceId: string;
+  start: Date;
+  end: Date;
+}
+
+type ActivitySelectionMode = 'set' | 'toggle';
+
+interface ActivitySelectionEventPayload {
+  resource: Resource;
+  activity: Activity;
+  selectionMode: ActivitySelectionMode;
+}
+
+interface ActivityDragState {
+  activity: Activity;
+  sourceResourceId: string;
+  pointerOffsetPx: number | null;
+  durationMs: number;
+  sourceCell: HTMLElement | null;
+  pendingTarget: {
+    resourceId: string;
+    start: Date;
+    end: Date;
+  } | null;
 }
 
 function arraysEqual<T>(a: T[], b: T[]): boolean {
@@ -141,6 +171,8 @@ export class GanttComponent implements AfterViewInit {
   private touchPanLastX: number | null = null;
   private touchPointerContainer: HTMLElement | null = null;
   private readonly pinchLogThreshold = 0.08;
+  private readonly dragChangeThresholdMs = 60 * 1000;
+  private dragState: ActivityDragState | null = null;
 
   private viewport!: TimeViewport;
   private viewportInitialized = false;
@@ -155,11 +187,12 @@ export class GanttComponent implements AfterViewInit {
   private rowScrollerDirs?: QueryList<TrackHorizontalScrollDirective>;
 
   @Output() removeResource = new EventEmitter<Resource['id']>();
-  @Output() activitySelectionToggle = new EventEmitter<{ resource: Resource; activity: Activity }>();
+  @Output() activitySelectionToggle = new EventEmitter<ActivitySelectionEventPayload>();
   @Output() resourceViewModeChange = new EventEmitter<{ resourceId: string; mode: 'block' | 'detail' }>();
   @Output() serviceAssignmentRequested = new EventEmitter<Resource>();
   @Output() activityCreateRequested = new EventEmitter<{ resource: Resource; start: Date }>();
   @Output() activityEditRequested = new EventEmitter<{ resource: Resource; activity: Activity }>();
+  @Output() activityRepositionRequested = new EventEmitter<ActivityRepositionEventPayload>();
 
   @Input()
   set selectedActivityIds(value: string[] | null) {
@@ -645,12 +678,84 @@ export class GanttComponent implements AfterViewInit {
     this.activityCreateRequested.emit({ resource, start });
   }
 
-  onActivitySelected(resource: Resource, activity: Activity) {
+  onActivityEditRequested(resource: Resource, activity: Activity) {
     this.activityEditRequested.emit({ resource, activity });
   }
 
   onActivitySelectionToggle(resource: Resource, activity: Activity) {
-    this.activitySelectionToggle.emit({ resource, activity });
+    this.activitySelectionToggle.emit({ resource, activity, selectionMode: 'toggle' });
+  }
+
+  onActivityDragStarted(event: CdkDragStart<GanttActivityDragData>) {
+    if (!this.viewportReady()) {
+      return;
+    }
+    const activity = event.source.data.activity;
+    this.dragState = {
+      activity,
+      sourceResourceId: event.source.data.resourceId,
+      pointerOffsetPx: null,
+      durationMs: new Date(activity.end).getTime() - new Date(activity.start).getTime(),
+      sourceCell: this.findTimelineCellForElement(event.source.element.nativeElement),
+      pendingTarget: null,
+    };
+    this.hostElement.nativeElement.classList.add('gantt--dragging');
+  }
+
+  onActivityDragMoved(event: CdkDragMove<GanttActivityDragData>) {
+    if (!this.viewportReady() || !this.dragState) {
+      return;
+    }
+    const pointer = event.pointerPosition;
+    const cell =
+      this.findTimelineCellAtPoint(pointer.x, pointer.y) ?? this.dragState.sourceCell;
+    if (!cell) {
+      return;
+    }
+    if (this.dragState.pointerOffsetPx === null) {
+      const rect = cell.getBoundingClientRect();
+      const pointerRelativeX = pointer.x - rect.left + cell.scrollLeft;
+      const barLeft = event.source.data.initialLeft;
+      this.dragState.pointerOffsetPx = pointerRelativeX - barLeft;
+    }
+    const pointerOffset = this.dragState.pointerOffsetPx ?? 0;
+    const rect = cell.getBoundingClientRect();
+    const relativeX = pointer.x - rect.left + cell.scrollLeft;
+    const targetLeft = relativeX - pointerOffset;
+    const clampedLeft = this.clampTimelineLeftPx(targetLeft);
+    const startTime = this.timeScale.pxToTime(clampedLeft);
+    const endTime = new Date(startTime.getTime() + this.dragState.durationMs);
+    const targetResourceId = cell.dataset['resourceId'] ?? this.dragState.sourceResourceId;
+    this.dragState.pendingTarget = {
+      resourceId: targetResourceId,
+      start: startTime,
+      end: endTime,
+    };
+  }
+
+  onActivityDragEnded(_event: CdkDragEnd<GanttActivityDragData>) {
+    if (!this.dragState) {
+      return;
+    }
+    this.hostElement.nativeElement.classList.remove('gantt--dragging');
+    const pending = this.dragState.pendingTarget;
+    const activity = this.dragState.activity;
+    const originalStartMs = new Date(activity.start).getTime();
+    const originalEndMs = new Date(activity.end).getTime();
+    if (pending) {
+      const changedResource = pending.resourceId !== this.dragState.sourceResourceId;
+      const changedStart = Math.abs(pending.start.getTime() - originalStartMs) >= this.dragChangeThresholdMs;
+      const changedDuration = Math.abs(pending.end.getTime() - originalEndMs) >= this.dragChangeThresholdMs;
+      if (changedResource || changedStart || changedDuration) {
+        this.activityRepositionRequested.emit({
+          activity,
+          start: pending.start,
+          end: pending.end,
+          targetResourceId: pending.resourceId,
+        });
+      }
+    }
+    this.dragState = null;
   }
 
   @HostListener('window:keydown', ['$event'])
@@ -739,6 +844,29 @@ export class GanttComponent implements AfterViewInit {
     const rect = container.getBoundingClientRect();
     const relativeX = clientX - rect.left + container.scrollLeft;
     return this.timeScale.pxToTime(relativeX);
+  }
+
+  private findTimelineCellForElement(element: HTMLElement | null): HTMLElement | null {
+    if (!element) {
+      return null;
+    }
+    return element.closest('.gantt__timeline-cell') as HTMLElement | null;
+  }
+
+  private findTimelineCellAtPoint(x: number, y: number): HTMLElement | null {
+    const target = document.elementFromPoint(x, y) as HTMLElement | null;
+    if (!target) {
+      return null;
+    }
+    return this.findTimelineCellForElement(target);
+  }
+
+  private clampTimelineLeftPx(value: number): number {
+    const width = this.timeScale.contentWidth();
+    if (!Number.isFinite(width) || width <= 0) {
+      return Math.max(0, value);
+    }
+    return Math.min(Math.max(0, value), width);
   }
 
   private inclusiveViewEnd(viewStart: Date): Date {
