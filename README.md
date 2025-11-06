@@ -1,82 +1,132 @@
 # OrderManagementMock
 
-This project was generated with [Angular CLI](https://github.com/angular/angular-cli) version 18.2.11 and erweitert um einen planungsfähigen Gantt-Bereich für Ressourcen- und Aktivitätsplanung.
+Ein Angular-18-Mock, der einen vollständigen Ressourcen- und Aktivitäts-Gantt für Bahn-/SEV-Planung liefert. Das Frontend richtet sich auf eine NestJS-REST-API aus, damit mehrere Disponenten denselben Datenbestand bearbeiten können und Validierungen (Orts-, Kapazitäts-, Arbeitszeit-, Qualifikationskonflikte) serverseitig laufen.
 
-## Wie starten?
+## Inhalt
 
-1. `npm install`
-2. `npm start`
-3. Browser öffnen unter `http://localhost:4200/`
-4. Für den bestehenden Ressourcen-Gantt links „Planung“ anwählen.
-5. Die Planungs-Masterdaten finden Sie jetzt unter „Stammdaten“ → Tab „Topologie“.
+- [Technologie-Stack](#technologie-stack)
+- [Systemvoraussetzungen](#systemvoraussetzungen)
+- [Installation & Erstinbetriebnahme](#installation--erstinbetriebnahme)
+- [Frontend-Entwicklung](#frontend-entwicklung)
+- [Backend-Anbindung (NestJS)](#backend-anbindung-nestjs)
+- [Aktueller Funktionsumfang](#aktueller-funktionsumfang)
+- [Masterdatenbereich](#masterdatenbereich)
+- [OpenAPI & Datenmodell](#openapi--datenmodell)
+- [Tests & bekannte Einschränkungen](#tests--bekannte-einschränkungen)
 
-Der Vite-Dev-Server kompiliert im Strict-Modus (Angular Signals + Standalone Components). Anpassungen an Store/Editoren werden ohne Neustart sofort sichtbar.
+## Technologie-Stack
 
-## Planungsgantt ausprobieren
+- Angular 18 (Standalone Components, Signals, CDK Drag&Drop/Virtual Scroll)
+- Angular Material 18
+- RxJS 7.8
+- Node.js 20 LTS (empfohlen) / npm 10+
+- NestJS (geplant) als REST-Backend, angebunden über OpenAPI-Spezifikation
 
-1. `npm install`
-2. `npm start`
-3. Browser öffnen unter `http://localhost:4200/`
-4. In der linken Navigation „Planung“ auswählen.
+## Systemvoraussetzungen
 
-Der Gantt-Bereich zeigt 30 Demo-Ressourcen mit über 1 000 Aktivitäten. Linke Spalte (Ressourcen) bleibt beim horizontalen Scrollen sichtbar, die Zeitleiste kann per Maus oder Tastatur gezoomt werden. Vertikales Scrollen nutzt Angular CDK Virtual Scroll und bleibt auch bei großen Datenmengen flüssig.
+| Komponente | Version | Hinweis |
+| --- | --- | --- |
+| Node.js | >= 20.x LTS | Node 25 funktioniert lokal, ist aber nicht LTS. |
+| npm | >= 10 | Kommt mit Node 20+. |
+| Browser | Chromium/Chrome, Edge, Firefox | Angular dev-server kompiliert im Strict-Modus. |
 
-### Bedienung & Shortcuts
+## Installation & Erstinbetriebnahme
 
-| Aktion | Interaktion |
-| --- | --- |
-| Horizontal scrollen | `Shift` + Mausrad oder Trackpad-Geste |
-| Zoomen | `Ctrl` + Mausrad, `+` zoomt ein, `-` zoomt aus, Zoomauswahl im Menü |
-| Heute springen | Button „Heute“ oder Taste `H` |
-| Datumssprung | Datepicker im Menü |
-| Cursorzeit | Maus über Timeline bewegen — Statusleiste zeigt den Zeitstempel |
+1. Repository klonen oder als ZIP entpacken.
+2. Abhängigkeiten installieren:
+   ```bash
+   npm install
+   ```
+3. Backend-Endpunkt konfigurieren (optional):
+   - Standardmäßig ruft das Frontend `/api/v1` auf.
+   - Anpassbar, indem `API_CONFIG` überschrieben wird, z. B. in `main.ts`:
+     ```ts
+     bootstrapApplication(AppComponent, {
+       providers: [
+         { provide: API_CONFIG, useValue: { baseUrl: 'http://localhost:3333/api/v1' } },
+       ],
+     });
+     ```
+4. Frontend starten:
+   ```bash
+   npm start
+   ```
+5. Browser öffnen: http://localhost:4200/ und im linken Menü „Planung“ wählen.
 
-### Hinweise
+Ohne laufendes Backend bleibt der Gantt leer, die Anwendung selbst startet aber fehlerfrei.
 
-- Ticks und Raster passen sich der Zoomstufe an (Monat → Tage, Woche/Tag → Stunden, Stunde → 15/5-Minuten).
-- Wochenenden werden als graue Bänder hervorgehoben, die aktuelle Zeit als rote Linie.
-- Ressourcenfilter durchsucht ID, Namen und Attribute.
+## Frontend-Entwicklung
 
-## Masterdaten für Planung (RINF/SEV)
+- Dev-Server: `npm start` (alias `ng serve`). Hot Reload und strenge Signals-Checks sind aktiv.
+- Build: `npm run build`. Achtung: Fonts werden standardmäßig von Google Fonts geladen; offline Builds benötigen ein lokales Stylesheet.
+- Tests: `npm test` (Karma) – deckt Kernlogik wie Tick-Erzeugung ab.
+- Codegen/Scaffolding: `ng generate component|service|...`
 
-Innerhalb der Stammdaten (Tab „Topologie“) steht ein tab-basiertes Backend-loses CRUD-Frontend bereit. Folgende Domänen werden unterstützt:
+## Backend-Anbindung (NestJS)
 
-- Operational Points (RINF-Knoten) inkl. Geokoordinaten.
-- Sections of Line (gerichtete Kanten) mit Validierung start≠end.
-- Personnel Sites (Personalstandorte) mit optionalem OP-Bezug.
-- Replacement Stops & Routes inklusive Edges (SEV-Topologie).
-- OP ↔ Replacement Stop Links (Relationen gemäß Vorgaben).
-- Transfer Edges (Umsteigewege) zwischen OP/Sites/SEV.
+Der aktuelle Stand sieht eine REST-Brücke vor, die alle Activities/Resources verwaltet.
 
-Die Datenspeicherung erfolgt rein im Browser über `PlanningStoreService` (Signals). Mockdaten werden beim ersten Öffnen per `loadMockData()` geladen.
+1. NestJS-Projekt anlegen (z. B. `nest new planning-api`).
+2. OpenAPI übernehmen: `external_documents/openapi/planning-activities.yaml` importieren (Swagger/`@nestjs/swagger`).
+3. Controller anlegen:
+   - `GET /planning/stages/:stageId` liefert Ressourcen, Aktivitäten, Timeline & Version.
+   - `GET /planning/stages/:stageId/activities` für Filterabfragen.
+   - `PUT /planning/stages/:stageId/activities` akzeptiert Batch-Upserts/Deletes (Optimistic Locking optional über `version`).
+   - `POST /planning/stages/:stageId/activities:validate` führt Prüfregeln aus (Orts-, Kapazitäts-, Arbeitszeit-, Qualifikationskonflikte; erweiterbar über `rule = custom`).
+4. Datenhaltung: beliebig (Postgres, Mongo, In-Memory). Wichtig ist, dass IDs stabil bleiben, damit mehrere Clients identische Activities sehen.
+5. Optional: Authentifizierung (z. B. per JWT) lässt sich über einen HTTP-Interceptor ergänzen.
 
-## Wie Daten erweitern?
+## Aktueller Funktionsumfang
 
-- **In-Memory Store:** `src/app/shared/planning-store.service.ts` bietet CRUD-Methoden pro Entität sowie Kaskadenlogik (z. B. Löschen von abhängigen Edges). Für Backend-Anbindung können die Methoden 1:1 an HTTP-Aufrufe adaptiert werden.
-- **Initialdaten:** `src/app/shared/planning-mocks.ts` enthält ein kleines Demo-Netz inkl. SEV. Eigene Datensätze einfach ergänzen oder per Store-Methoden nachladen.
-- **Datenmodell:** Alle Typen, Enums und Regeln liegen in `src/app/shared/planning-types.ts`. Bei Erweiterungen (z. B. weitere TransferModes) hier ergänzen.
-- **UI-Module:** Die Tab-Editoren leben unter `src/app/planning/components`. Jeder Editor kapselt Listen-UI + Formular inkl. Validierung. Neue Domänen lassen sich durch Kopieren eines Editors schnell ergänzen.
+- **Gantt-Board:**
+  - Mehrere Planungsstufen (`base`, `operations`, `dispatch`).
+  - Ressourcen-Gruppierung, Zoomlevels von Monat bis 5-Minuten-Raster, Now-Linie, Wochenenden, Drag&Drop.
+  - Multi-Selection, Boards, Service-Zuordnung zwischen Ressourcen.
+  - REST-basierte Datenquelle (`PlanningDataService` synchronisiert lokale Änderungen sofort mittels `ActivityApiService`).
 
-## Development server
+- **Validierungen (Client-Hooks):**
+  - Frontend kann via `requestActivityValidation` gezielt Prüfungen triggern; Ergebnis-Typ `ActivityValidationIssue` deckt Orte, Kapazität, Arbeitszeit, Qualifikationen ab.
 
-Run `ng serve` for a dev server. Navigate to `http://localhost:4200/`. The application will automatically reload if you change any of the source files.
+- **Masterdatenbereich:**
+  - Eigenständiges CRUD für RINF/SEV-Objekte (Operational Points, Sections of Line, Personnel Sites usw.).
+  - Speicherung clientseitig via `PlanningStoreService`, sofortige Validierung (z. B. Start≠Ende, Referenzen).
 
-## Code scaffolding
+- **Internationalisierung:** UI deutsch, Datenfelder unterstützen Mehrsprachigkeit via `TemporalValue`-Listen.
 
-Run `ng generate component component-name` to generate a new component. You can also use `ng generate directive|pipe|service|class|guard|interface|enum|module`.
+## Masterdatenbereich
 
-## Build
+Navigationspfad: „Stammdaten“ → Tab „Topologie“.
 
-Run `ng build` to build the project. The build artifacts will be stored in the `dist/` directory.
+Bereiche:
 
-## Running unit tests
+- Operational Points (mit Geo-Koordinaten, Unique IDs)
+- Sections of Line (gerichtete Strecken, Längen, Referenzen)
+- Personnel Sites
+- Replacement Stops, Routes & Edges (SEV)
+- OP ↔ Replacement Stop Links
+- Transfer Edges (OP ↔ Site ↔ SEV)
 
-Run `ng test` to execute the unit tests via [Karma](https://karma-runner.github.io). Die Tests prüfen u. a. die Zeit/Pixelfunktionen und Tick-Generierung des neuen TimeScaleService.
+Die Komponenten unter `src/app/planning/components/**` sind modular aufgebaut und lassen sich leicht auf weitere Domänen übertragen. Mockdaten stehen in `src/app/shared/planning-mocks.ts` bereit und können per Store geladen oder ersetzt werden.
 
-## Running end-to-end tests
+## OpenAPI & Datenmodell
 
-Run `ng e2e` to execute the end-to-end tests via a platform of your choice. To use this command, you need to first add a package that implements end-to-end testing capabilities.
+- **OpenAPI:** `external_documents/openapi/planning-activities.yaml` dokumentiert alle Endpunkte sowie Schemas für Activities, Resources, Timeline, Validierungsergebnisse.
+- **Activity-Modell (`src/app/models/activity.ts`):**
+  - Enthält IDs, Zeitfenster, Service-Zuordnung, Ort (`locationId`), Kapazität (`capacityGroupId`), Qualifikationen, Work-Rule-Tags, Client-ID für Mandantenfähigkeit.
+  - `participantResourceIds` erlaubt Multi-Assign (z. B. Fahrzeug + Personal auf derselben Aktivität).
+- **Validierung (`src/app/models/activity-validation.ts`):** standardisierte Rules (`location-conflict`, `capacity-conflict`, `working-time`, `qualification`, `custom`).
+- **API-Config:** `API_CONFIG` (unter `src/app/core/config/api-config.ts`) definiert die Basis-URL und kann überschrieben werden.
 
-## Further help
+## Tests & bekannte Einschränkungen
 
-To get more help on the Angular CLI use `ng help` or go check out the [Angular CLI Overview and Command Reference](https://angular.dev/tools/cli) page.
+- `npm run build` benötigt Onlinezugriff auf Google Fonts oder eine lokale Kopie.
+- Ohne Backend keine Activities im Gantt (Designentscheidung, da Mockdaten entfernt wurden).
+- Validierungsergebnisse müssen serverseitig umgesetzt werden; Client zeigt momentan nur das Interface an.
+- Für produktive Nutzung fehlen Authentifizierung/Autorisierung sowie Persistenzschicht – Fokus liegt aktuell auf der UI-Referenz und API-Vertrag.
+
+## Quick Reference
+
+- Dev-Server: `npm start`
+- Build: `npm run build`
+- Tests: `npm test`
+- Offizielle Angular-Hilfe: `ng help`

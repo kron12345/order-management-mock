@@ -11,6 +11,8 @@ export interface Activity {
    * Additional resources that share this activity. Always includes `resourceId` when present.
    */
   participantResourceIds?: Resource['id'][];
+  /** Identifier of the owning client/tenant to keep multiple frontends in sync. */
+  clientId?: string | null;
   title: string;
   start: string; // ISO
   end?: string | null; // ISO
@@ -32,5 +34,16 @@ export interface Activity {
    */
   serviceCategory?: 'personnel-service' | 'vehicle-service';
   serviceRole?: ServiceRole | null;
+  /** Physical location identifier to detect spatial conflicts. */
+  locationId?: string | null;
+  locationLabel?: string | null;
+  /** Capacity buckets (e.g. same track or maintenance slot). */
+  capacityGroupId?: string | null;
+  /** Required qualifications for the activity; used for validations. */
+  requiredQualifications?: string[];
+  /** Qualifications currently covered by assigned participants. */
+  assignedQualifications?: string[];
+  /** Rule tags for working-time validations (e.g. night shift, rest). */
+  workRuleTags?: string[];
   meta?: Record<string, unknown>;
 }
