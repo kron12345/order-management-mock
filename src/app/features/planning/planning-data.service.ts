@@ -1,10 +1,16 @@
-import { Injectable, Signal, computed, signal } from '@angular/core';
+import { Injectable, Signal, computed, inject, signal } from '@angular/core';
 import { Resource } from '../../models/resource';
 import { Activity } from '../../models/activity';
 import { DEMO_MASTER_DATA } from '../../data/demo-master-data';
 import { PlanningResourceCategory, PlanningStageId } from './planning-stage.model';
 import { TemporalValue, VehicleType } from '../../models/master-data';
 import { addDays, addMinutes, startOfDay, startOfWeek } from '../../core/utils/time-math';
+import {
+  ActivityCategory,
+  ActivityTimeMode,
+  ActivityTypeDefinition,
+  ActivityTypeService,
+} from '../../core/services/activity-type.service';
 
 export interface PlanningTimelineRange {
   start: Date;
@@ -15,6 +21,68 @@ interface PlanningStageData {
   resources: Resource[];
   activities: Activity[];
   timelineRange: PlanningTimelineRange;
+}
+
+type MockResourceKind = Resource['kind'];
+
+interface ActivityTypePickOptions {
+  resourceKind: MockResourceKind;
+  preferred?: string | string[];
+  category?: ActivityCategory;
+  requiresTimeMode?: ActivityTimeMode;
+}
+
+class ActivityTypePicker {
+  constructor(private readonly definitions: ActivityTypeDefinition[]) {}
+
+  pick(options: ActivityTypePickOptions): ActivityTypeDefinition {
+    const listByKind = this.definitions.filter((definition) =>
+      this.matchesKind(definition, options.resourceKind),
+    );
+    const preferredIds = Array.isArray(options.preferred)
+      ? options.preferred
+      : options.preferred
+        ? [options.preferred]
+        : [];
+    const candidateBuckets: ActivityTypeDefinition[][] = [];
+    if (preferredIds.length > 0) {
+      candidateBuckets.push(
+        preferredIds
+          .map((id) => listByKind.find((definition) => definition.id === id))
+          .filter((definition): definition is ActivityTypeDefinition => !!definition),
+      );
+    }
+    if (options.category) {
+      candidateBuckets.push(
+        listByKind.filter((definition) => definition.category === options.category),
+      );
+    }
+    candidateBuckets.push(listByKind);
+    candidateBuckets.push(this.definitions);
+    for (const bucket of candidateBuckets) {
+      const match = bucket.find((definition) =>
+        this.matchesTimeMode(definition, options.requiresTimeMode),
+      );
+      if (match) {
+        return match;
+      }
+    }
+    return this.definitions[0]!;
+  }
+
+  private matchesKind(definition: ActivityTypeDefinition, kind: MockResourceKind): boolean {
+    return definition.relevantFor.includes(kind);
+  }
+
+  private matchesTimeMode(
+    definition: ActivityTypeDefinition,
+    required: ActivityTimeMode | undefined,
+  ): boolean {
+    if (!required) {
+      return true;
+    }
+    return definition.timeMode === required;
+  }
 }
 
 function cloneResources(resources: Resource[]): Resource[] {
@@ -54,6 +122,21 @@ function createAttributes(
     }
   });
   return attributes;
+}
+
+function setOptionalTextField(
+  activity: Activity,
+  definition: ActivityTypeDefinition,
+  key: 'from' | 'to' | 'remark',
+  value: string | null | undefined,
+): void {
+  if (!value || value.length === 0) {
+    return;
+  }
+  if (!definition.fields.includes(key)) {
+    return;
+  }
+  activity[key] = value;
 }
 
 const dayFormatter = new Intl.DateTimeFormat('de-DE', {
@@ -96,6 +179,33 @@ function toIsoString(date: Date): string {
   return new Date(date.getTime()).toISOString();
 }
 
+function createServiceBoundaryActivity(
+  stageKey: string,
+  resource: Resource,
+  dayKey: string,
+  timestamp: Date,
+  definition: ActivityTypeDefinition,
+  role: 'start' | 'end',
+  serviceId: string,
+  serviceTemplateId?: string | null,
+  serviceCategory?: 'personnel-service' | 'vehicle-service',
+): Activity {
+  return {
+    id: `${stageKey}-${resource.id}-${dayKey}-${definition.id}-${role}`,
+    resourceId: resource.id,
+    participantResourceIds: [resource.id],
+    title: definition.label,
+    start: toIsoString(timestamp),
+    end: null,
+    type: definition.id,
+    serviceId,
+    serviceTemplateId: serviceTemplateId ?? undefined,
+    serviceDate: dayKey,
+    serviceCategory,
+    serviceRole: role,
+  };
+}
+
 function getServiceIds(resource: Resource): string[] {
   const raw = resource.attributes?.['serviceIds'];
   if (!Array.isArray(raw)) {
@@ -120,6 +230,7 @@ function generateAssignmentActivities(
   totalDays: number,
   stageKey: string,
   serviceCategory: 'personnel-service' | 'vehicle-service',
+  typePicker: ActivityTypePicker,
   assignmentCollector?: Map<string, Activity[]>,
 ): Activity[] {
   const activities: Activity[] = [];
@@ -142,20 +253,25 @@ function generateAssignmentActivities(
       if (definition?.route) {
         titleParts.push(definition.route);
       }
-      const title = `${titleParts.filter(Boolean).join(' · ')} · ${displayDate}`;
+      const detailLabel = `${titleParts.filter(Boolean).join(' · ')} · ${displayDate}`.trim();
       const meta =
         definition?.description && definition.description.length > 0
           ? { description: definition.description }
           : undefined;
       const serviceInstanceId = `${serviceId}-${dayKey}`;
+      const typeDefinition = typePicker.pick({
+        resourceKind: resource.kind,
+        preferred: 'service',
+        category: 'service',
+      });
       const activity: Activity = {
         id: `${stageKey}-${resource.id}-${dayKey}-${serviceId}`,
         resourceId: resource.id,
         participantResourceIds: [resource.id],
-        title,
+        title: typeDefinition.label,
         start: toIsoString(activityStart),
         end: toIsoString(activityEnd),
-        type: 'service',
+        type: typeDefinition.id,
         serviceId: serviceInstanceId,
         serviceTemplateId: serviceId,
         serviceDate: dayKey,
@@ -173,6 +289,7 @@ function generateAssignmentActivities(
         assignmentCollector.set(serviceInstanceId, bucket);
       }
       activities.push(activity);
+      setOptionalTextField(activity, typeDefinition, 'remark', detailLabel);
     }
   });
   return activities;
@@ -185,9 +302,27 @@ function generateServiceActivities(
   stageKey: string,
   segmentsPerDay = 1,
   serviceCategory: 'personnel-service' | 'vehicle-service',
+  typePicker: ActivityTypePicker,
 ): Activity[] {
   const activities: Activity[] = [];
   resources.forEach((resource) => {
+    const serviceStartDefinition = typePicker.pick({
+      resourceKind: resource.kind,
+      preferred: 'service-start',
+      category: 'service',
+      requiresTimeMode: 'point',
+    });
+    const serviceEndDefinition = typePicker.pick({
+      resourceKind: resource.kind,
+      preferred: 'service-end',
+      category: 'service',
+      requiresTimeMode: 'point',
+    });
+    const segmentDefinition = typePicker.pick({
+      resourceKind: resource.kind,
+      preferred: 'service',
+      category: 'service',
+    });
     const attributes = resource.attributes ?? {};
     const resourceStart = attributes['startTime'];
     const resourceEnd = attributes['endTime'];
@@ -199,57 +334,90 @@ function generateServiceActivities(
       const displayDate = formatDisplayDate(dayBase);
       const activityStart = withTime(dayBase, resourceStart, '06:00');
       const activityEnd = ensureEndAfter(activityStart, withTime(dayBase, resourceEnd, '14:00'));
+      const serviceInstanceId = `${baseServiceId}-${dayKey}`;
+      activities.push(
+        createServiceBoundaryActivity(
+          stageKey,
+          resource,
+          dayKey,
+          activityStart,
+          serviceStartDefinition,
+          'start',
+          serviceInstanceId,
+          baseServiceId,
+          serviceCategory,
+        ),
+      );
 
       if (segmentsPerDay <= 1) {
-        const serviceInstanceId = `${baseServiceId}-${dayKey}`;
-        activities.push({
+        const singleSegment: Activity = {
           id: `${stageKey}-${resource.id}-${dayKey}`,
           resourceId: resource.id,
           participantResourceIds: [resource.id],
-          title: `${resource.name} · ${displayDate}`,
+          title: segmentDefinition.label,
           start: toIsoString(activityStart),
           end: toIsoString(activityEnd),
-          type: 'service',
+          type: segmentDefinition.id,
           serviceId: serviceInstanceId,
           serviceTemplateId: baseServiceId,
           serviceDate: dayKey,
           serviceCategory,
           serviceRole: 'segment',
-        });
-        continue;
-      }
+        };
+        setOptionalTextField(singleSegment, segmentDefinition, 'remark', `${resource.name} · ${displayDate}`);
+        activities.push(singleSegment);
+      } else {
+        const totalDuration = activityEnd.getTime() - activityStart.getTime();
+        const segmentDuration = totalDuration / segmentsPerDay;
 
-      const totalDuration = activityEnd.getTime() - activityStart.getTime();
-      const segmentDuration = totalDuration / segmentsPerDay;
-
-      for (let segment = 0; segment < segmentsPerDay; segment++) {
-        const segmentStart = new Date(activityStart.getTime() + segmentDuration * segment);
-        const segmentEnd =
-          segment === segmentsPerDay - 1
-            ? activityEnd
-            : new Date(activityStart.getTime() + segmentDuration * (segment + 1));
-        let role: Activity['serviceRole'] = 'segment';
-        if (segment === 0) {
-          role = 'start';
-        } else if (segment === segmentsPerDay - 1) {
-          role = 'end';
+        for (let segment = 0; segment < segmentsPerDay; segment++) {
+          const segmentStart = new Date(activityStart.getTime() + segmentDuration * segment);
+          const segmentEnd =
+            segment === segmentsPerDay - 1
+              ? activityEnd
+              : new Date(activityStart.getTime() + segmentDuration * (segment + 1));
+          let role: Activity['serviceRole'] = 'segment';
+          if (segment === 0) {
+            role = 'start';
+          } else if (segment === segmentsPerDay - 1) {
+            role = 'end';
+          }
+          const segmentActivity: Activity = {
+            id: `${stageKey}-${resource.id}-${dayKey}-seg${segment}`,
+            resourceId: resource.id,
+            participantResourceIds: [resource.id],
+            title: segmentDefinition.label,
+            start: toIsoString(segmentStart),
+            end: toIsoString(segmentEnd),
+            type: segmentDefinition.id,
+            serviceId: serviceInstanceId,
+            serviceTemplateId: baseServiceId,
+            serviceDate: dayKey,
+            serviceCategory,
+            serviceRole: role,
+          };
+          setOptionalTextField(
+            segmentActivity,
+            segmentDefinition,
+            'remark',
+            `${resource.name} · ${displayDate} (${segment + 1}/${segmentsPerDay})`,
+          );
+          activities.push(segmentActivity);
         }
-        const serviceInstanceId = `${baseServiceId}-${dayKey}`;
-        activities.push({
-          id: `${stageKey}-${resource.id}-${dayKey}-seg${segment}`,
-          resourceId: resource.id,
-          participantResourceIds: [resource.id],
-          title: `${resource.name} · ${displayDate} (${segment + 1}/${segmentsPerDay})`,
-          start: toIsoString(segmentStart),
-          end: toIsoString(segmentEnd),
-          type: 'service',
-          serviceId: serviceInstanceId,
-          serviceTemplateId: baseServiceId,
-          serviceDate: dayKey,
-          serviceCategory,
-          serviceRole: role,
-        });
       }
+      activities.push(
+        createServiceBoundaryActivity(
+          stageKey,
+          resource,
+          dayKey,
+          activityEnd,
+          serviceEndDefinition,
+          'end',
+          serviceInstanceId,
+          baseServiceId,
+          serviceCategory,
+        ),
+      );
     }
   });
   return activities;
@@ -261,9 +429,37 @@ function generateShiftActivities(
   totalDays: number,
   stageKey: string,
   shortShifts = false,
+  typePicker: ActivityTypePicker,
 ): Activity[] {
   const activities: Activity[] = [];
   resources.forEach((resource, resourceIndex) => {
+    const shiftDefinition = typePicker.pick({
+      resourceKind: resource.kind,
+      preferred: 'service',
+      category: 'service',
+    });
+    const travelDefinition = typePicker.pick({
+      resourceKind: resource.kind,
+      preferred: ['travel', 'transfer', 'commute'],
+      category: 'movement',
+    });
+    const otherDefinition = typePicker.pick({
+      resourceKind: resource.kind,
+      preferred: ['other', 'reserve-buffer'],
+      category: 'other',
+    });
+    const serviceStartDefinition = typePicker.pick({
+      resourceKind: resource.kind,
+      preferred: 'service-start',
+      category: 'service',
+      requiresTimeMode: 'point',
+    });
+    const serviceEndDefinition = typePicker.pick({
+      resourceKind: resource.kind,
+      preferred: 'service-end',
+      category: 'service',
+      requiresTimeMode: 'point',
+    });
     for (let day = 0; day < totalDays; day++) {
       const baseDate = addDays(start, day);
       const dayKey = formatDateKey(baseDate);
@@ -277,47 +473,93 @@ function generateShiftActivities(
         isEarly ? '12:45' : '21:30',
       );
       const shiftEnd = ensureEndAfter(shiftStart, shiftEndCandidate);
+      const serviceInstanceId = `${resource.id}-${dayKey}`;
 
-      activities.push({
+      activities.push(
+        createServiceBoundaryActivity(
+          stageKey,
+          resource,
+          dayKey,
+          shiftStart,
+          serviceStartDefinition,
+          'start',
+          serviceInstanceId,
+        ),
+      );
+
+      const shiftActivity: Activity = {
         id: `${stageKey}-${resource.id}-${dayKey}`,
         resourceId: resource.id,
         participantResourceIds: [resource.id],
-        title: `${shortShifts ? 'Disposition' : 'Einsatz'} ${displayDate} (${isEarly ? 'Früh' : 'Spät'})`,
+        title: shiftDefinition.label,
         start: toIsoString(shiftStart),
         end: toIsoString(shiftEnd),
-        type: 'service',
-        serviceId: `${resource.id}-${dayKey}`,
+        type: shiftDefinition.id,
+        serviceId: serviceInstanceId,
         serviceRole: 'segment',
-      });
+      };
+      setOptionalTextField(
+        shiftActivity,
+        shiftDefinition,
+        'remark',
+        `${displayDate} (${isEarly ? 'Früh' : 'Spät'})`,
+      );
+      activities.push(shiftActivity);
+
+      activities.push(
+        createServiceBoundaryActivity(
+          stageKey,
+          resource,
+          dayKey,
+          shiftEnd,
+          serviceEndDefinition,
+          'end',
+          serviceInstanceId,
+        ),
+      );
 
       if (!shortShifts) {
         const prepStart = addMinutes(shiftStart, -30);
         const prepEnd = addMinutes(shiftStart, -5);
-        activities.push({
+        const prepActivity: Activity = {
           id: `${stageKey}-${resource.id}-${dayKey}-prep`,
           resourceId: resource.id,
           participantResourceIds: [resource.id],
-          title: `Bereitstellung ${displayDate}`,
+          title: travelDefinition.label,
           start: toIsoString(prepStart),
           end: toIsoString(prepEnd),
-          type: 'travel',
+          type: travelDefinition.id,
           serviceId: `${resource.id}-${dayKey}-prep`,
           serviceRole: 'start',
-        });
+        };
+        setOptionalTextField(
+          prepActivity,
+          travelDefinition,
+          'remark',
+          `${resource.name} · ${displayDate}`,
+        );
+        activities.push(prepActivity);
 
         const wrapStart = addMinutes(shiftEnd, 5);
         const wrapEnd = addMinutes(shiftEnd, 35);
-        activities.push({
+        const wrapActivity: Activity = {
           id: `${stageKey}-${resource.id}-${dayKey}-wrap`,
           resourceId: resource.id,
           participantResourceIds: [resource.id],
-          title: `Abstellung ${displayDate}`,
+          title: otherDefinition.label,
           start: toIsoString(wrapStart),
           end: toIsoString(wrapEnd),
-          type: 'other',
+          type: otherDefinition.id,
           serviceId: `${resource.id}-${dayKey}-wrap`,
           serviceRole: 'end',
-        });
+        };
+        setOptionalTextField(
+          wrapActivity,
+          otherDefinition,
+          'remark',
+          `${resource.name} · ${displayDate}`,
+        );
+        activities.push(wrapActivity);
       }
     }
   });
@@ -339,7 +581,7 @@ function resolveTemporalString(value: string | TemporalValue<string>[] | undefin
   return latest?.value ?? value[value.length - 1]?.value;
 }
 
-function createStageData(): Record<PlanningStageId, PlanningStageData> {
+function createStageData(typePicker: ActivityTypePicker): Record<PlanningStageId, PlanningStageData> {
   const {
     vehicleServices,
     personnelServices,
@@ -491,14 +733,46 @@ function createStageData(): Record<PlanningStageId, PlanningStageData> {
   const dispatchStart = startOfDay(today);
 
   const baseActivities = [
-    ...generateServiceActivities(vehicleServiceResources, baseStart, 7, 'base', 2, 'vehicle-service'),
-    ...generateServiceActivities(personnelServiceResources, baseStart, 7, 'base', 2, 'personnel-service'),
+    ...generateServiceActivities(
+      vehicleServiceResources,
+      baseStart,
+      7,
+      'base',
+      2,
+      'vehicle-service',
+      typePicker,
+    ),
+    ...generateServiceActivities(
+      personnelServiceResources,
+      baseStart,
+      7,
+      'base',
+      2,
+      'personnel-service',
+      typePicker,
+    ),
   ];
 
   const operationsAssignmentCollector = new Map<string, Activity[]>();
   const operationsActivities = [
-    ...generateServiceActivities(vehicleServiceResources, operationsStart, 28, 'operations', 2, 'vehicle-service'),
-    ...generateServiceActivities(personnelServiceResources, operationsStart, 28, 'operations', 2, 'personnel-service'),
+    ...generateServiceActivities(
+      vehicleServiceResources,
+      operationsStart,
+      28,
+      'operations',
+      2,
+      'vehicle-service',
+      typePicker,
+    ),
+    ...generateServiceActivities(
+      personnelServiceResources,
+      operationsStart,
+      28,
+      'operations',
+      2,
+      'personnel-service',
+      typePicker,
+    ),
     ...generateAssignmentActivities(
       vehicleResources,
       vehicleServiceDefinitionMap,
@@ -506,6 +780,7 @@ function createStageData(): Record<PlanningStageId, PlanningStageData> {
       42,
       'operations-vehicle',
       'vehicle-service',
+      typePicker,
       operationsAssignmentCollector,
     ),
     ...generateAssignmentActivities(
@@ -515,6 +790,7 @@ function createStageData(): Record<PlanningStageId, PlanningStageData> {
       42,
       'operations-personnel',
       'personnel-service',
+      typePicker,
       operationsAssignmentCollector,
     ),
   ];
@@ -528,6 +804,7 @@ function createStageData(): Record<PlanningStageId, PlanningStageData> {
       14,
       'dispatch-vehicle',
       'vehicle-service',
+      typePicker,
       dispatchAssignmentCollector,
     ),
     ...generateAssignmentActivities(
@@ -537,10 +814,25 @@ function createStageData(): Record<PlanningStageId, PlanningStageData> {
       14,
       'dispatch-personnel',
       'personnel-service',
+      typePicker,
       dispatchAssignmentCollector,
     ),
-    ...generateShiftActivities(vehicleResources, dispatchStart, 14, 'dispatch-vehicle-shift', true),
-    ...generateShiftActivities(personnelResources, dispatchStart, 14, 'dispatch-personnel-shift', true),
+    ...generateShiftActivities(
+      vehicleResources,
+      dispatchStart,
+      14,
+      'dispatch-vehicle-shift',
+      true,
+      typePicker,
+    ),
+    ...generateShiftActivities(
+      personnelResources,
+      dispatchStart,
+      14,
+      'dispatch-personnel-shift',
+      true,
+      typePicker,
+    ),
   ];
 
   return {
@@ -578,8 +870,9 @@ function createStageData(): Record<PlanningStageId, PlanningStageData> {
 
 @Injectable({ providedIn: 'root' })
 export class PlanningDataService {
+  private readonly activityTypeService = inject(ActivityTypeService);
   private readonly stageDataSignal = signal<Record<PlanningStageId, PlanningStageData>>(
-    createStageData(),
+    this.initializeStageData(),
   );
 
   stageResources(stage: PlanningStageId): Signal<Resource[]> {
@@ -601,5 +894,10 @@ export class PlanningDataService {
       [stage]: cloneStageData(updater(cloneStageData(current[stage]))),
     };
     this.stageDataSignal.set(next);
+  }
+
+  private initializeStageData(): Record<PlanningStageId, PlanningStageData> {
+    const typePicker = new ActivityTypePicker(this.activityTypeService.definitions());
+    return createStageData(typePicker);
   }
 }

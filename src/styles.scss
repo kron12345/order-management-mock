@@ -2,3 +2,31 @@
 
 html, body { height: 100%; }
 body { margin: 0; font-family: Roboto, "Helvetica Neue", sans-serif; }
+
+.cdk-drag-preview {
+  z-index: 6000 !important;
+  pointer-events: none;
+}
+
+.cdk-drag.cdk-drag-dragging {
+  z-index: 5000 !important;
+}
+
+.cdk-drag-placeholder {
+  z-index: 1;
+}
+
+.gantt-drag-badge {
+  position: fixed;
+  transform: translate(-50%, -120%);
+  min-width: 80px;
+  padding: 6px 10px;
+  background: rgba(15, 23, 42, 0.92);
+  color: #fff;
+  font-size: 0.72rem;
+  border-radius: 999px;
+  pointer-events: none;
+  box-shadow: 0 10px 25px rgba(15, 23, 42, 0.35);
+  letter-spacing: 0.02em;
+  z-index: 9000;
+}

@@ -6,148 +6,109 @@
         {{ selectionSize() }} ausgewählt
       </span>
 
-      <button
-        mat-stroked-button
-        color="primary"
-        class="planning-toolbar__button"
-        [matMenuTriggerFor]="resourceMenu"
-      >
-        Ressourcen wählen
-      </button>
-
-      <button mat-button class="planning-toolbar__button" (click)="selectAllResources()">
-        Alle
-      </button>
-
-      <button
-        mat-button
-        class="planning-toolbar__button"
-        [disabled]="selectionSize() === 0"
-        (click)="clearSelection()"
-      >
-        Leeren
-      </button>
-
-      <button
-        mat-flat-button
-        color="primary"
-        class="planning-toolbar__button"
-        (click)="createBoardFromSelection()"
-      >
-        Plantafel aus Auswahl
-      </button>
-
-      <button
-        mat-stroked-button
-        class="planning-toolbar__button"
-        [disabled]="!hasSelection()"
-        [matMenuTriggerFor]="selectionAddMenu"
-      >
-        Auswahl hinzufügen
-      </button>
-
-      <button
-        mat-stroked-button
-        color="warn"
-        class="planning-toolbar__button"
-        [disabled]="!hasSelection()"
-        [matMenuTriggerFor]="selectionReplaceMenu"
-      >
-        Plantafel ersetzen
-      </button>
-
-      <mat-button-toggle-group
-        class="planning-toolbar__creation-toggle"
-        [value]="activityCreationTool()"
-        (change)="setActivityCreationTool($event.value)"
-        name="creationMode"
-        aria-label="Aktivitätstyp wählen"
-      >
-        <mat-button-toggle
-          *ngFor="let option of activityCreationOptions(); trackBy: trackActivityType"
-          [value]="option.id"
-        >
-          {{ option.label }}
-        </mat-button-toggle>
-      </mat-button-toggle-group>
-
-      <button
-        mat-icon-button
-        class="planning-toolbar__info"
-        matTooltip="Phasenbeschreibung anzeigen"
-        [matMenuTriggerFor]="stageInfoMenu"
-      >
-        <mat-icon fontIcon="info"></mat-icon>
-      </button>
-    </div>
-  </header>
-
-  <mat-menu #stageInfoMenu="matMenu" class="planning-stage-info-menu" [overlapTrigger]="false">
-    <ng-template matMenuContent>
-      <ng-container *ngIf="activeStageMeta() as stageMeta">
-        <div class="planning-stage-info">
-          <h3>{{ stageMeta.label }}</h3>
-          <p class="planning-stage-info__description">{{ stageMeta.description }}</p>
-          <section>
-            <h4>{{ stageMeta.focusHeadline }}</h4>
-            <mat-chip-set>
-              <mat-chip *ngFor="let focus of stageMeta.focusPoints; trackBy: trackFocus">
-                {{ focus }}
-              </mat-chip>
-            </mat-chip-set>
-          </section>
-          <section>
-            <h4>{{ stageMeta.contextHeadline }}</h4>
-            <ul>
-              <li *ngFor="let detail of stageMeta.contextDetails">{{ detail }}</li>
-            </ul>
-          </section>
-        </div>
-      </ng-container>
-    </ng-template>
-  </mat-menu>
-
-  <mat-menu
-    #resourceMenu="matMenu"
-    class="planning-resource-menu"
-    [hasBackdrop]="true"
-    [overlapTrigger]="false"
-  >
-    <ng-template matMenuContent>
-      <div class="planning-resource-menu__content">
-        <div class="planning-resource-menu__actions">
-          <button mat-stroked-button color="primary" (click)="selectAllResources()">
-            Alle auswählen
+      <div class="planning-filter-bar">
+        <div class="planning-filter" tabindex="0">
+          <button type="button" class="planning-filter__trigger">
+            <mat-icon fontIcon="layers"></mat-icon>
+            <span>{{ activeStageMeta().label }}</span>
           </button>
-          <button mat-button (click)="clearSelection()">Auswahl leeren</button>
-        </div>
-        <div class="planning-resource-menu__groups">
-          <section *ngFor="let group of resourceGroups()">
-            <header class="planning-resource-menu__group-header">
-              <mat-icon fontIcon="{{ group.icon }}"></mat-icon>
-              <div>
-                <span class="planning-resource-menu__group-label">{{ group.label }}</span>
-                <span class="planning-resource-menu__group-meta">
-                  {{ group.resources.length }} Ressourcen
-                </span>
-                <p>{{ group.description }}</p>
-              </div>
-            </header>
-            <div class="planning-resource-menu__list">
-              <mat-checkbox
-                *ngFor="let resource of group.resources; trackBy: trackResource"
-                [checked]="isResourceSelected(resource.id)"
-                (change)="onSelectionToggle(resource.id, $event.checked)"
-              >
-                <span class="planning-resource-menu__resource-name">{{ resource.name }}</span>
-                <span class="planning-resource-menu__resource-id">{{ resource.id }}</span>
-              </mat-checkbox>
+          <div class="planning-filter__panel">
+            <div class="planning-filter__panel-title">Planungsphase</div>
+            <div class="planning-filter__panel-list">
+              @for (stage of stages; track stage.id) {
+                <button
+                  type="button"
+                  class="planning-filter__option"
+                  [class.is-active]="stage.id === activeStageId()"
+                  (click)="onStageChange(stage.id)"
+                >
+                  <strong>{{ stage.label }}</strong>
+                  <span>{{ stage.description }}</span>
+                </button>
+              }
             </div>
-          </section>
+          </div>
+        </div>
+
+        <div class="planning-filter planning-filter--wide" tabindex="0">
+          <button type="button" class="planning-filter__trigger">
+            <mat-icon fontIcon="group"></mat-icon>
+            <span>Ressourcen</span>
+          </button>
+          <div class="planning-filter__panel planning-filter__panel--wide">
+            <div class="planning-filter__panel-title">Ressourcen</div>
+            <div class="planning-filter__panel-actions">
+              <button mat-stroked-button (click)="selectAllResources()">Alle</button>
+              <button mat-button (click)="clearSelection()">Leeren</button>
+            </div>
+            <div class="planning-filter__panel-groups">
+              @for (group of resourceGroups(); track group.label) {
+                <div class="planning-filter__panel-group">
+                  <header>
+                    <strong>{{ group.label }}</strong>
+                    <small>{{ group.resources.length }} Ressourcen</small>
+                  </header>
+                  <div class="planning-filter__panel-list planning-filter__panel-list--resources">
+                    @for (resource of group.resources; track resource.id) {
+                      <mat-checkbox
+                        [checked]="isResourceSelected(resource.id)"
+                        (change)="onSelectionToggle(resource.id, $event.checked)"
+                      >
+                        {{ resource.name }}
+                      </mat-checkbox>
+                    }
+                  </div>
+                </div>
+              }
+            </div>
+          </div>
+        </div>
+
+        <div class="planning-filter" tabindex="0">
+          <button type="button" class="planning-filter__trigger">
+            <mat-icon fontIcon="view_week"></mat-icon>
+            <span>Leistungen</span>
+          </button>
+          <div class="planning-filter__panel">
+            <div class="planning-filter__panel-title">Leistungstypen</div>
+            <div class="planning-filter__tags">
+              @for (definition of activityCreationOptions(); track definition.id) {
+                <button type="button" (click)="selectActivityType(definition.id)">
+                  {{ definition.label }}
+                </button>
+              }
+            </div>
+          </div>
         </div>
       </div>
-    </ng-template>
-  </mat-menu>
+
+      <div class="planning-toolbar__quick">
+        <button
+          mat-icon-button
+          matTooltip="Plantafel aus Auswahl"
+          (click)="createBoardFromSelection()"
+        >
+          <mat-icon fontIcon="library_add"></mat-icon>
+        </button>
+        <button
+          mat-icon-button
+          matTooltip="Auswahl hinzufügen"
+          [disabled]="!hasSelection()"
+          [matMenuTriggerFor]="selectionAddMenu"
+        >
+          <mat-icon fontIcon="playlist_add"></mat-icon>
+        </button>
+        <button
+          mat-icon-button
+          matTooltip="Plantafel ersetzen"
+          [disabled]="!hasSelection()"
+          [matMenuTriggerFor]="selectionReplaceMenu"
+        >
+          <mat-icon fontIcon="sync_alt"></mat-icon>
+        </button>
+      </div>
+    </div>
+  </header>
 
   <mat-menu #selectionAddMenu="matMenu">
     <button
@@ -227,6 +188,7 @@
                   [timelineRange]="timelineRange()"
                   [resourceViewModes]="resourceViewModes()"
                   [selectedActivityIds]="selectedActivityIdsArray()"
+                  [activityTypeInfo]="activityTypeInfoMap()"
                   (resourceViewModeChange)="handleResourceViewModeChange($event)"
                   (serviceAssignmentRequested)="handleServiceAssignRequest($event)"
                   (activityCreateRequested)="handleActivityCreate($event)"
@@ -284,14 +246,20 @@
       </mat-card-actions>
     </mat-card>
 
-    <mat-card *ngIf="selectedActivities().length > 0">
-      <mat-card-header>
-        <mat-card-title>Auswahl ({{ selectedActivities().length }})</mat-card-title>
-      </mat-card-header>
-      <mat-card-content>
+    <div class="planning-panel" *ngIf="selectedActivities().length > 0" cdkDrag>
+      <div class="planning-panel__header" cdkDragHandle>
+        <div>
+          <div class="planning-panel__title">Auswahl</div>
+          <div class="planning-panel__subtitle">{{ selectedActivities().length }} Aktivität(en)</div>
+        </div>
+        <button mat-icon-button type="button" (click)="clearActivitySelection()" aria-label="Auswahl leeren">
+          <mat-icon fontIcon="close"></mat-icon>
+        </button>
+      </div>
+      <div class="planning-panel__body">
         <mat-chip-set class="planning-selection-chips">
           <mat-chip *ngFor="let item of selectedActivities(); trackBy: trackActivity">
-            {{ item.activity.title }}
+            {{ activityTypeLabel(item.activity.type) }}
           </mat-chip>
         </mat-chip-set>
 
@@ -338,55 +306,121 @@
             +30 min
           </button>
         </div>
-      </mat-card-content>
-    </mat-card>
+      </div>
+    </div>
 
-    <mat-card *ngIf="selectedActivity() as selected">
-      <mat-card-header>
-        <mat-card-title>Aktivität bearbeiten</mat-card-title>
-        <mat-card-subtitle>{{ selected.activity.title }}</mat-card-subtitle>
-      </mat-card-header>
-      <mat-card-content>
+    <div class="planning-panel planning-panel--form" *ngIf="selectedActivity() as selected" cdkDrag>
+      <div class="planning-panel__header" cdkDragHandle>
+        <div>
+          <div class="planning-panel__title">Aktivität bearbeiten</div>
+          <div class="planning-panel__subtitle">
+            {{ activityTypeLabel(selected.activity.type) }}
+          </div>
+        </div>
+        <button mat-icon-button type="button" (click)="clearSelectedActivity()" aria-label="Panel schließen">
+          <mat-icon fontIcon="close"></mat-icon>
+        </button>
+      </div>
+      <div class="planning-panel__body">
         <form [formGroup]="activityForm" class="planning-side-panels__form" (ngSubmit)="saveSelectedActivityEdits()">
-          <mat-form-field appearance="outline">
-            <mat-label>Titel</mat-label>
-            <input matInput formControlName="title" />
-          </mat-form-field>
-          <mat-form-field appearance="outline">
-            <mat-label>Start</mat-label>
-            <input matInput type="datetime-local" formControlName="start" />
-          </mat-form-field>
-          <mat-form-field appearance="outline">
-            <mat-label>Ende</mat-label>
-            <input matInput type="datetime-local" formControlName="end" />
-          </mat-form-field>
-          <mat-form-field appearance="outline">
-            <mat-label>Typ</mat-label>
-            <mat-select formControlName="type">
-              <mat-option *ngFor="let option of activityCreationOptions(); trackBy: trackActivityType" [value]="option.id">
-                {{ option.label }}
-              </mat-option>
-            </mat-select>
-          </mat-form-field>
+          <input type="hidden" formControlName="type" />
 
-          <mat-form-field appearance="outline" *ngIf="definitionHasField(selectedActivityDefinition(), 'from')">
-            <mat-label>Von</mat-label>
-            <input matInput formControlName="from" />
-          </mat-form-field>
+          <div class="planning-type-editor">
+            <div class="planning-type-editor__type">
+              @if (activeTypePickerGroup(); as activeGroup) {
+                <div class="planning-type-picker">
+                  <div class="planning-type-picker__header">
+                    <span class="planning-type-picker__title">Typ</span>
+                    <span class="planning-type-picker__current">
+                      {{ selectedActivityDefinition()?.label ?? 'Bitte wählen' }}
+                    </span>
+                  </div>
+                  <div class="planning-type-picker__tabs" *ngIf="activityTypePickerGroups().length > 1">
+                    <button
+                      type="button"
+                      class="planning-type-picker__tab"
+                      *ngFor="let group of activityTypePickerGroups()"
+                      [class.is-active]="group.id === activeGroup.id"
+                      (click)="setActivityTypePickerGroup(group.id)"
+                    >
+                      <mat-icon [fontIcon]="group.icon"></mat-icon>
+                      <span>{{ group.label }}</span>
+                      <small>{{ group.items.length }}</small>
+                    </button>
+                  </div>
+                  <div class="planning-type-picker__list" role="listbox" aria-label="Aktivitätstyp auswählen">
+                    <button
+                      type="button"
+                      class="planning-type-picker__list-item"
+                      *ngFor="let definition of activeGroup.items; trackBy: trackActivityType"
+                      [class.is-selected]="isActivityTypeSelected(definition.id)"
+                      (click)="selectActivityType(definition.id)"
+                    >
+                      <span class="planning-type-picker__option-title">{{ definition.label }}</span>
+                      <span class="planning-type-picker__option-description">
+                        {{ definition.description ?? 'Ohne Beschreibung' }}
+                      </span>
+                    </button>
+                  </div>
+                </div>
+              } @else {
+                <ng-container *ngTemplateOutlet="fallbackTypeSelect"></ng-container>
+              }
+            </div>
 
-          <mat-form-field appearance="outline" *ngIf="definitionHasField(selectedActivityDefinition(), 'to')">
-            <mat-label>Nach</mat-label>
-            <input matInput formControlName="to" />
-          </mat-form-field>
+            <div class="planning-type-editor__fields">
+              <div class="planning-attribute-grid">
+                <mat-form-field appearance="outline" class="planning-attribute-grid__item">
+                  <mat-label>Start</mat-label>
+                  <input matInput type="datetime-local" formControlName="start" />
+                </mat-form-field>
+                <mat-form-field
+                  appearance="outline"
+                  class="planning-attribute-grid__item"
+                  *ngIf="shouldShowEndField(selectedActivityDefinition())"
+                >
+                  <mat-label>Ende</mat-label>
+                  <input matInput type="datetime-local" formControlName="end" />
+                </mat-form-field>
+                <mat-form-field
+                  appearance="outline"
+                  class="planning-attribute-grid__item"
+                  *ngIf="definitionHasField(selectedActivityDefinition(), 'from')"
+                >
+                  <mat-label>Von</mat-label>
+                  <input matInput formControlName="from" />
+                </mat-form-field>
+                <mat-form-field
+                  appearance="outline"
+                  class="planning-attribute-grid__item"
+                  *ngIf="definitionHasField(selectedActivityDefinition(), 'to')"
+                >
+                  <mat-label>Nach</mat-label>
+                  <input matInput formControlName="to" />
+                </mat-form-field>
+              </div>
 
-          <mat-form-field
-            appearance="outline"
-            class="planning-side-panels__full"
-            *ngIf="definitionHasField(selectedActivityDefinition(), 'remark')"
-          >
-            <mat-label>Bemerkung</mat-label>
-            <textarea matInput rows="2" formControlName="remark"></textarea>
-          </mat-form-field>
+              <mat-form-field
+                appearance="outline"
+                class="planning-type-editor__remark"
+                *ngIf="definitionHasField(selectedActivityDefinition(), 'remark')"
+              >
+                <mat-label>Bemerkung</mat-label>
+                <textarea matInput rows="2" formControlName="remark"></textarea>
+              </mat-form-field>
+            </div>
+          </div>
+
+          <ng-template #fallbackTypeSelect>
+            <mat-form-field appearance="outline" class="planning-type-editor__fallback">
+              <mat-label>Typ</mat-label>
+              <mat-select formControlName="type">
+                <mat-option *ngFor="let option of activityCreationOptions(); trackBy: trackActivityType" [value]="option.id">
+                  {{ option.label }}
+                </mat-option>
+              </mat-select>
+            </mat-form-field>
+          </ng-template>
         </form>
         <div class="planning-side-panels__buttons">
           <button mat-stroked-button type="button" (click)="addParticipantsToActiveBoard()">
@@ -396,22 +430,23 @@
             Neue Plantafel mit Teilnehmern
           </button>
         </div>
-      </mat-card-content>
-      <mat-card-actions align="end">
-        <button mat-button type="button" (click)="clearSelectedActivity()">Abbrechen</button>
-        <button mat-button color="warn" type="button" (click)="deleteSelectedActivity()">
-          Löschen
-        </button>
-        <button
-          mat-flat-button
-          color="primary"
-          type="button"
-          [disabled]="activityForm.pristine || activityForm.invalid"
-          (click)="saveSelectedActivityEdits()"
-        >
-          Speichern
-        </button>
-      </mat-card-actions>
-    </mat-card>
+
+        <div class="planning-panel__actions">
+          <button mat-button type="button" (click)="clearSelectedActivity()">Abbrechen</button>
+          <button mat-button color="warn" type="button" (click)="deleteSelectedActivity()">
+            Löschen
+          </button>
+          <button
+            mat-flat-button
+            color="primary"
+            type="button"
+            [disabled]="activityForm.pristine || activityForm.invalid"
+            (click)="saveSelectedActivityEdits()"
+          >
+            Speichern
+          </button>
+        </div>
+      </div>
+    </div>
   </section>
 </section>

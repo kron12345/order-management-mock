@@ -70,11 +70,21 @@
   display: grid;
   grid-template-columns: 260px 1fr;
   height: 64px;
+  position: relative;
+  z-index: 0;
 }
 
 .gantt__row--group {
   height: 44px;
   background: rgba(13, 71, 161, 0.04);
+}
+
+.gantt__row--drag-origin {
+  z-index: 40;
+}
+
+.gantt__row--drag-hover {
+  z-index: 30;
 }
 
 .gantt__resource-cell {
@@ -89,10 +99,26 @@
   position: relative;
   min-width: 0;
   overflow-x: auto;
-  overflow-y: hidden;
+  overflow-y: visible;
   scrollbar-width: none;
   -ms-overflow-style: none;
   touch-action: pan-y;
+  z-index: 1;
+  transition: box-shadow 120ms ease, z-index 0s;
+}
+
+.gantt__timeline-cell--drag-origin {
+  z-index: 20;
+}
+
+.gantt__timeline-cell--drag-hover {
+  z-index: 10;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18);
+}
+
+.gantt__timeline-cell--drag-origin,
+.gantt__timeline-cell--drag-hover {
+  overflow: visible;
 }
 
 .gantt__timeline-cell--group {

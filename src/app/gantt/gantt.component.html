@@ -79,6 +79,7 @@
                 class="gantt__timeline-cell"
                 role="gridcell"
                 [attr.data-resource-id]="row.resource.id"
+                [attr.data-resource-kind]="row.resource.kind"
                 #rowScroller="appTrackHorizontalScroll"
                 [appTrackHorizontalScroll]="headerScrollerTargets()"
                 [appScrollLeft]="scrollX()"
@@ -129,5 +130,6 @@
     [visibleResourceCount]="visibleResourceCount()"
     [activityCount]="totalActivityCount()"
     [visibleActivityCount]="visibleActivityCount()"
+    [dragStatus]="dragStatus()"
   />
 </section>

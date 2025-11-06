@@ -10,6 +10,8 @@ export interface GanttBar {
   width: number;
   classes?: string[];
   selected?: boolean;
+  label?: string;
+  showRoute?: boolean;
 }
 
 export interface GanttBackgroundSegment {
@@ -18,11 +20,14 @@ export interface GanttBackgroundSegment {
   cssClass: string;
 }
 
+export type GanttServiceRangeStatus = 'complete' | 'missing-start' | 'missing-end' | 'missing-both';
+
 export interface GanttServiceRange {
   id: string;
   label: string;
   left: number;
   width: number;
+  status: GanttServiceRangeStatus;
 }
 
 @Component({

@@ -15,6 +15,8 @@ import {
   ActivityTypeDefinition,
   ActivityTypeInput,
   ActivityTypeService,
+  ActivityCategory,
+  ActivityTimeMode,
 } from '../../core/services/activity-type.service';
 import { ResourceKind } from '../../models/resource';
 
@@ -72,10 +74,25 @@ export class ActivityTypeSettingsComponent {
     { key: 'remark', label: 'Bemerkung', description: 'Freitextfeld' },
   ];
 
+  protected readonly categoryOptions: Array<{ value: ActivityCategory; label: string }> = [
+    { value: 'service', label: 'Dienst & Pause' },
+    { value: 'movement', label: 'Rangieren & Wege' },
+    { value: 'rest', label: 'Freitage' },
+    { value: 'other', label: 'Sonstige' },
+  ];
+
+  protected readonly timeModeOptions: Array<{ value: ActivityTimeMode; label: string }> = [
+    { value: 'duration', label: 'Dauerbasiert' },
+    { value: 'range', label: 'Start & Ende (manuell)' },
+    { value: 'point', label: 'Zeitpunkt (ohne Ende)' },
+  ];
+
   protected readonly newTypeForm = this.fb.group({
     label: ['', [Validators.required, Validators.maxLength(80)]],
     id: ['', [Validators.required, Validators.maxLength(80)]],
-    appliesTo: this.fb.control<ResourceKind[]>(['personnel']),
+    relevantFor: this.fb.control<ResourceKind[]>(['personnel']),
+    category: ['service' as ActivityCategory],
+    timeMode: ['duration' as ActivityTimeMode],
     defaultDurationMinutes: [60, [Validators.required, Validators.min(1)]],
     description: [''],
     fieldFrom: [false],
@@ -86,7 +103,9 @@ export class ActivityTypeSettingsComponent {
   protected readonly editTypeForm = this.fb.group({
     label: ['', [Validators.required, Validators.maxLength(80)]],
     id: ['', [Validators.required, Validators.maxLength(80)]],
-    appliesTo: this.fb.control<ResourceKind[]>([]),
+    relevantFor: this.fb.control<ResourceKind[]>([]),
+    category: ['service' as ActivityCategory],
+    timeMode: ['duration' as ActivityTimeMode],
     defaultDurationMinutes: [60, [Validators.required, Validators.min(1)]],
     description: [''],
     fieldFrom: [false],
@@ -124,7 +143,9 @@ export class ActivityTypeSettingsComponent {
     this.newTypeForm.reset({
       label: '',
       id: '',
-      appliesTo: ['personnel'],
+      relevantFor: ['personnel'],
+      category: 'service',
+      timeMode: 'duration',
       defaultDurationMinutes: 60,
       description: '',
       fieldFrom: false,
@@ -138,7 +159,9 @@ export class ActivityTypeSettingsComponent {
     this.editTypeForm.reset({
       label: definition.label,
       id: definition.id,
-      appliesTo: definition.appliesTo,
+      relevantFor: definition.relevantFor,
+      category: definition.category,
+      timeMode: definition.timeMode,
       defaultDurationMinutes: definition.defaultDurationMinutes,
       description: definition.description ?? '',
       fieldFrom: definition.fields.includes('from'),
@@ -152,7 +175,9 @@ export class ActivityTypeSettingsComponent {
     this.editTypeForm.reset({
       label: '',
       id: '',
-      appliesTo: [],
+      relevantFor: [],
+      category: 'service',
+      timeMode: 'duration',
       defaultDurationMinutes: 60,
       description: '',
       fieldFrom: false,
@@ -191,6 +216,10 @@ export class ActivityTypeSettingsComponent {
     return this.resourceOptions.find((option) => option.value === value)?.label ?? value;
   }
 
+  protected categoryLabel(value: ActivityCategory): string {
+    return this.categoryOptions.find((option) => option.value === value)?.label ?? value;
+  }
+
   protected fieldList(definition: ActivityTypeDefinition): string {
     const labels = definition.fields.map((field) => this.fieldOptions.find((option) => option.key === field)?.label ?? field);
     return labels.join(', ');
@@ -216,7 +245,9 @@ export class ActivityTypeSettingsComponent {
   private buildInputFromForm(value: {
     label?: string | null;
     id?: string | null;
-    appliesTo?: ResourceKind[] | null;
+    relevantFor?: (ResourceKind | string | null)[] | null;
+    category?: ActivityCategory | null;
+    timeMode?: ActivityTimeMode | null;
     defaultDurationMinutes?: number | null;
     description?: string | null;
     fieldFrom?: boolean | null;
@@ -233,14 +264,25 @@ export class ActivityTypeSettingsComponent {
     if (value?.fieldRemark) {
       fields.push('remark');
     }
+    const relevantFor = this.normalizeResourceKinds(value?.relevantFor);
     return {
       id: value.id ?? '',
       label: value.label ?? '',
       description: value.description ?? '',
-      appliesTo: value.appliesTo && value.appliesTo.length > 0 ? value.appliesTo : ['personnel'],
+      appliesTo: relevantFor,
+      relevantFor,
+      category: value.category ?? 'service',
+      timeMode: value.timeMode ?? 'duration',
       fields,
       defaultDurationMinutes: value.defaultDurationMinutes ?? 60,
     };
+  }
+
+  private normalizeResourceKinds(values: (ResourceKind | string | null)[] | null | undefined): ResourceKind[] {
+    const allowed: ResourceKind[] = ['personnel', 'vehicle', 'personnel-service', 'vehicle-service'];
+    const list = Array.from(new Set(values ?? []));
+    const filtered = list.filter((value): value is ResourceKind => allowed.includes(value as ResourceKind));
+    return filtered.length > 0 ? filtered : ['personnel'];
   }
 
   private slugify(value: string): string {

@@ -34,10 +34,11 @@ import {
   GanttBackgroundSegment,
   GanttBar,
   GanttServiceRange,
+  GanttServiceRangeStatus,
   GanttTimelineRowComponent,
 } from './gantt-timeline-row.component';
 import { GanttTimelineHeaderComponent } from './gantt-timeline-header.component';
-import { GanttStatusBarComponent } from './gantt-status-bar.component';
+import { GanttStatusBarComponent, GanttDragStatus } from './gantt-status-bar.component';
 import { TrackHorizontalScrollDirective } from '../shared/directives/track-horizontal-scroll.directive';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { addDays, startOfDay } from '../core/utils/time-math';
@@ -78,11 +79,21 @@ interface GanttGroupDefinition {
   resources: Resource[];
 }
 
+interface ServiceRangeAccumulator {
+  id: string;
+  minLeft: number;
+  maxRight: number;
+  startLeft: number | null;
+  endLeft: number | null;
+  startMs: number | null;
+  endMs: number | null;
+}
+
 interface ActivityRepositionEventPayload {
   activity: Activity;
   targetResourceId: string;
   start: Date;
-  end: Date;
+  end: Date | null;
 }
 
 type ActivitySelectionMode = 'set' | 'toggle';
@@ -96,15 +107,24 @@ interface ActivitySelectionEventPayload {
 interface ActivityDragState {
   activity: Activity;
   sourceResourceId: string;
+  sourceResourceKind: Resource['kind'] | null;
+  hasEnd: boolean;
   pointerOffsetPx: number | null;
   durationMs: number;
   sourceCell: HTMLElement | null;
+  hoverCell: HTMLElement | null;
+  hoverRow: HTMLElement | null;
   pendingTarget: {
     resourceId: string;
+    resourceKind: Resource['kind'] | null;
     start: Date;
-    end: Date;
+    end: Date | null;
+    leftPx: number;
   } | null;
 }
+
+type DragFeedbackState = GanttDragStatus['state'];
+type DragFeedback = GanttDragStatus;
 
 function arraysEqual<T>(a: T[], b: T[]): boolean {
   if (a.length !== b.length) {
@@ -135,6 +155,13 @@ const ZOOM_LEVELS: ZoomLevel[] = [
   '10min',
   '5min',
 ];
+
+const RESOURCE_KIND_LABELS: Record<Resource['kind'], string> = {
+  'personnel-service': 'Personaldienst',
+  'vehicle-service': 'Fahrzeugdienst',
+  personnel: 'Personalressource',
+  vehicle: 'Fahrzeugressource',
+};
 
 @Component({
   selector: 'app-gantt',
@@ -171,14 +198,30 @@ export class GanttComponent implements AfterViewInit {
   private touchPanLastX: number | null = null;
   private touchPointerContainer: HTMLElement | null = null;
   private readonly pinchLogThreshold = 0.08;
-  private readonly dragChangeThresholdMs = 60 * 1000;
+  private readonly dragFeedbackSignal = signal<DragFeedback>({ state: 'idle', message: '' });
+  private readonly dragTimeFormat = new Intl.DateTimeFormat('de-DE', {
+    hour: '2-digit',
+    minute: '2-digit',
+  });
   private dragState: ActivityDragState | null = null;
+  private dragOriginCell: HTMLElement | null = null;
+  private dragOriginRow: HTMLElement | null = null;
+  private dragBadgeElement: HTMLElement | null = null;
+  private activityTypeInfoMap: Record<string, { label: string; showRoute: boolean }> = {};
+  private dragEditBlockUntil = 0;
+  private dragEditBlockGlobalUntil = 0;
+  private dragEditBlockActivityId: string | null = null;
+
+  constructor() {
+    this.destroyRef.onDestroy(() => this.updateDragBadge(null));
+  }
 
   private viewport!: TimeViewport;
   private viewportInitialized = false;
   private lastTimelineRange: { start: number; end: number } | null = null;
   private previousResourceIds: string[] | null = null;
   private previousActivityIds: string[] | null = null;
+  private previousActivitySignature: string | null = null;
 
   @ViewChild('headerScroller', { read: TrackHorizontalScrollDirective })
   private headerScrollerDir?: TrackHorizontalScrollDirective;
@@ -219,14 +262,27 @@ export class GanttComponent implements AfterViewInit {
     const prepared = (value ?? []).map((activity) => ({
       ...activity,
       startMs: new Date(activity.start).getTime(),
-      endMs: new Date(activity.end).getTime(),
+      endMs: activity.end ? new Date(activity.end).getTime() : new Date(activity.start).getTime(),
     }));
     const nextIds = prepared.map((activity) => activity.id);
-    if (this.previousActivityIds && arraysEqual(this.previousActivityIds, nextIds)) {
+    const signature = prepared
+      .map((activity) => `${activity.id}:${activity.resourceId}:${activity.startMs}:${activity.endMs}`)
+      .join('|');
+    if (
+      this.previousActivityIds &&
+      arraysEqual(this.previousActivityIds, nextIds) &&
+      this.previousActivitySignature === signature
+    ) {
       return;
     }
     this.previousActivityIds = nextIds;
+    this.previousActivitySignature = signature;
     this.activitiesSignal.set(prepared);
+  }
+
+  @Input()
+  set activityTypeInfo(value: Record<string, { label: string; showRoute: boolean }> | null) {
+    this.activityTypeInfoMap = value ?? {};
   }
 
   @Input({ required: true })
@@ -270,6 +326,18 @@ export class GanttComponent implements AfterViewInit {
         : '';
       return base.includes(term) || attr.includes(term);
     });
+  });
+
+  readonly resourceMap = computed(() => {
+    const map = new Map<string, Resource>();
+    this.resourcesSignal().forEach((resource) => map.set(resource.id, resource));
+    return map;
+  });
+
+  readonly resourceKindMap = computed(() => {
+    const map = new Map<string, Resource['kind']>();
+    this.resourcesSignal().forEach((resource) => map.set(resource.id, resource.kind));
+    return map;
   });
 
   readonly activitiesByResource = computed(() => {
@@ -341,6 +409,8 @@ export class GanttComponent implements AfterViewInit {
     }
     return this.timeScale.getTicks(this.viewport.viewStart(), this.viewport.viewEnd());
   });
+
+  readonly dragStatus = computed<GanttDragStatus>(() => this.dragFeedbackSignal());
 
   readonly tickBackgroundSegments = computed<GanttBackgroundSegment[]>(() => {
     if (!this.viewportReady() || !this.timeScale.hasTimelineRange()) {
@@ -679,6 +749,9 @@ export class GanttComponent implements AfterViewInit {
   }
 
   onActivityEditRequested(resource: Resource, activity: Activity) {
+    if (this.shouldBlockEdit(activity.id)) {
+      return;
+    }
     this.activityEditRequested.emit({ resource, activity });
   }
 
@@ -688,18 +761,33 @@ export class GanttComponent implements AfterViewInit {
 
   onActivityDragStarted(event: CdkDragStart<GanttActivityDragData>) {
     if (!this.viewportReady()) {
+      this.setDragFeedback('invalid', 'Zeitachse nicht bereit.');
       return;
     }
+    this.blockActivityEdit(event.source.data.activity.id);
     const activity = event.source.data.activity;
+    const sourceCell = this.findTimelineCellForElement(event.source.element.nativeElement);
+    const sourceResourceKind =
+      this.resourceKindMap().get(event.source.data.resourceId) ?? null;
     this.dragState = {
       activity,
       sourceResourceId: event.source.data.resourceId,
+      sourceResourceKind,
+      hasEnd: !!activity.end,
       pointerOffsetPx: null,
-      durationMs: new Date(activity.end).getTime() - new Date(activity.start).getTime(),
-      sourceCell: this.findTimelineCellForElement(event.source.element.nativeElement),
+      durationMs:
+        activity.end && activity.end.length > 0
+          ? new Date(activity.end).getTime() - new Date(activity.start).getTime()
+          : 0,
+      sourceCell,
+      hoverCell: null,
+      hoverRow: null,
       pendingTarget: null,
     };
     this.hostElement.nativeElement.classList.add('gantt--dragging');
+    this.setDragOriginCell(sourceCell);
+    this.applyDragHoverCell(sourceCell);
+    this.setDragFeedback('info', 'Leistung wird verschoben …');
   }
 
   onActivityDragMoved(event: CdkDragMove<GanttActivityDragData>) {
@@ -707,54 +795,153 @@ export class GanttComponent implements AfterViewInit {
       return;
     }
     const pointer = event.pointerPosition;
-    const cell =
-      this.findTimelineCellAtPoint(pointer.x, pointer.y) ?? this.dragState.sourceCell;
-    if (!cell) {
+    const pointerCell = this.findResourceCellAtPoint(pointer.x, pointer.y);
+    const positionCell = pointerCell ?? this.dragState.sourceCell;
+    if (!positionCell) {
+      this.dragState.pendingTarget = null;
+      this.applyDragHoverCell(null);
+      this.updateDragBadge('Außerhalb Bereich', pointer);
+      this.setDragFeedback('invalid', 'Zeiger außerhalb der Ressourcen.');
       return;
     }
+    if (pointerCell !== this.dragState.hoverCell) {
+      this.applyDragHoverCell(pointerCell);
+    }
     if (this.dragState.pointerOffsetPx === null) {
-      const rect = cell.getBoundingClientRect();
-      const pointerRelativeX = pointer.x - rect.left + cell.scrollLeft;
+      const rect = positionCell.getBoundingClientRect();
+      const pointerRelativeX = pointer.x - rect.left + positionCell.scrollLeft;
       const barLeft = event.source.data.initialLeft;
       this.dragState.pointerOffsetPx = pointerRelativeX - barLeft;
     }
     const pointerOffset = this.dragState.pointerOffsetPx ?? 0;
-    const rect = cell.getBoundingClientRect();
-    const relativeX = pointer.x - rect.left + cell.scrollLeft;
+    const rect = positionCell.getBoundingClientRect();
+    const relativeX = pointer.x - rect.left + positionCell.scrollLeft;
     const targetLeft = relativeX - pointerOffset;
     const clampedLeft = this.clampTimelineLeftPx(targetLeft);
-    const startTime = this.timeScale.pxToTime(clampedLeft);
-    const endTime = new Date(startTime.getTime() + this.dragState.durationMs);
-    const targetResourceId = cell.dataset['resourceId'] ?? this.dragState.sourceResourceId;
+    const pointerResourceId = pointerCell?.dataset['resourceId'] ?? null;
+    const pointerResourceKind =
+      pointerResourceId ? this.resourceKindMap().get(pointerResourceId) ?? null : null;
+    const fallbackResourceId =
+      this.dragState.pendingTarget?.resourceId ?? this.dragState.sourceResourceId;
+    const targetResourceId = pointerResourceId ?? fallbackResourceId;
+    let targetResourceKind =
+      pointerResourceKind ??
+      (targetResourceId === this.dragState.sourceResourceId
+        ? this.dragState.sourceResourceKind
+        : this.dragState.pendingTarget?.resourceKind ?? null);
+    const sameResource = targetResourceId === this.dragState.sourceResourceId;
+    const sourceKind =
+      this.resourceKindMap().get(this.dragState.sourceResourceId) ?? this.dragState.sourceResourceKind;
+    this.dragState.sourceResourceKind = sourceKind ?? this.dragState.sourceResourceKind ?? null;
+    if (!sameResource) {
+      if (pointerResourceId && pointerResourceId !== this.dragState.sourceResourceId) {
+        if (!pointerResourceKind || !sourceKind || pointerResourceKind !== sourceKind) {
+          this.dragState.pendingTarget = null;
+          this.applyDragHoverCell(pointerCell);
+          this.updateDragBadge(
+            `Nur ${this.describeResourceKind(sourceKind)} erlaubt`,
+            pointer,
+          );
+          this.setDragFeedback(
+            'invalid',
+            `Nur ${this.describeResourceKind(sourceKind)} können dieses Element aufnehmen.`,
+          );
+          return;
+        }
+        targetResourceKind = pointerResourceKind;
+      } else {
+        if (!this.dragState.pendingTarget || this.dragState.pendingTarget.resourceId === this.dragState.sourceResourceId) {
+          this.dragState.pendingTarget = null;
+          this.applyDragHoverCell(pointerCell);
+          this.updateDragBadge('Kein Ziel', pointer);
+          this.setDragFeedback('invalid', 'Kein gültiger Zielbereich ausgewählt.');
+          return;
+        }
+        targetResourceKind = this.dragState.pendingTarget.resourceKind;
+      }
+    }
+    let startTime = this.timeScale.pxToTime(clampedLeft);
+    let endTime =
+      this.dragState.hasEnd && this.dragState.durationMs > 0
+        ? new Date(startTime.getTime() + this.dragState.durationMs)
+        : null;
+    if (!sameResource) {
+      startTime = new Date(this.dragState.activity.start);
+      endTime =
+        this.dragState.hasEnd && this.dragState.activity.end
+          ? new Date(this.dragState.activity.end)
+          : null;
+    }
     this.dragState.pendingTarget = {
       resourceId: targetResourceId,
+      resourceKind: targetResourceKind ?? null,
       start: startTime,
       end: endTime,
+      leftPx: clampedLeft,
     };
+    const badgeLabel = sameResource
+      ? `${this.formatTimeLabel(startTime)}`
+      : `${this.getResourceName(targetResourceId)} • ${this.formatTimeLabel(startTime)}`;
+    this.updateDragBadge(badgeLabel, pointer);
+    if (sameResource) {
+      this.setDragFeedback(
+        'valid',
+        `Loslassen verschiebt Start auf ${this.formatTimeLabel(startTime)}.`,
+      );
+    } else {
+      this.setDragFeedback(
+        'valid',
+        `Loslassen verschiebt auf "${this.getResourceName(targetResourceId)}".`,
+      );
+    }
   }
 
-  onActivityDragEnded(_event: CdkDragEnd<GanttActivityDragData>) {
+  onActivityDragEnded(event: CdkDragEnd<GanttActivityDragData>) {
     if (!this.dragState) {
       return;
     }
+    this.blockActivityEdit(this.dragState.activity.id);
     this.hostElement.nativeElement.classList.remove('gantt--dragging');
+    this.applyDragHoverCell(null);
+    this.setDragOriginCell(null);
+    this.updateDragBadge(null);
     const pending = this.dragState.pendingTarget;
     const activity = this.dragState.activity;
     const originalStartMs = new Date(activity.start).getTime();
-    const originalEndMs = new Date(activity.end).getTime();
-    if (pending) {
-      const changedResource = pending.resourceId !== this.dragState.sourceResourceId;
-      const changedStart = Math.abs(pending.start.getTime() - originalStartMs) >= this.dragChangeThresholdMs;
-      const changedDuration = Math.abs(pending.end.getTime() - originalEndMs) >= this.dragChangeThresholdMs;
-      if (changedResource || changedStart || changedDuration) {
-        this.activityRepositionRequested.emit({
-          activity,
-          start: pending.start,
-          end: pending.end,
-          targetResourceId: pending.resourceId,
-        });
-      }
+    const originalEndMs =
+      this.dragState.hasEnd && activity.end ? new Date(activity.end).getTime() : null;
+    if (!pending) {
+      this.setDragFeedback('invalid', 'Keine gültige Zielposition – Aktion verworfen.');
+      event.source.reset();
+      this.dragState = null;
+      return;
     }
+    const pendingEndMs = pending.end ? pending.end.getTime() : null;
+    const changedStart = pending.start.getTime() !== originalStartMs;
+    const changedDuration = pendingEndMs !== originalEndMs;
+    const resourceChanged = pending.resourceId !== this.dragState.sourceResourceId;
+    if (resourceChanged || changedStart || changedDuration) {
+      const emitEnd =
+        this.dragState.hasEnd && pending.end
+          ? pending.end
+          : this.dragState.hasEnd
+            ? new Date(pending.start)
+            : null;
+      this.activityRepositionRequested.emit({
+        activity,
+        start: pending.start,
+        end: emitEnd,
+        targetResourceId: pending.resourceId,
+      });
+      if (resourceChanged) {
+        this.setDragFeedback('info', `Leistung auf "${this.getResourceName(pending.resourceId)}" verschoben.`);
+      } else if (changedStart || changedDuration) {
+        this.setDragFeedback('info', `Startzeit aktualisiert (${this.formatTimeLabel(pending.start)}).`);
+      }
+    } else {
+      this.setDragFeedback('info', 'Keine Änderung – ursprüngliche Position bleibt erhalten.');
+    }
+    event.source.reset();
     this.dragState = null;
   }
 
@@ -837,6 +1024,97 @@ export class GanttComponent implements AfterViewInit {
     });
   }
 
+  private setDragFeedback(state: DragFeedbackState, message: string) {
+    this.dragFeedbackSignal.set({ state, message });
+  }
+
+  private getResourceName(id: string | null): string {
+    if (!id) {
+      return '';
+    }
+    return this.resourceMap().get(id)?.name ?? id;
+  }
+
+  private formatTimeLabel(date: Date): string {
+    return this.dragTimeFormat.format(date);
+  }
+
+  private describeResourceKind(kind: Resource['kind'] | null): string {
+    if (!kind) {
+      return 'Ressource';
+    }
+    return RESOURCE_KIND_LABELS[kind] ?? 'Ressource';
+  }
+
+  private setDragOriginCell(cell: HTMLElement | null) {
+    if (this.dragOriginCell === cell) {
+      return;
+    }
+    this.dragOriginCell?.classList.remove('gantt__timeline-cell--drag-origin');
+    this.dragOriginRow?.classList.remove('gantt__row--drag-origin');
+    if (cell) {
+      cell.classList.add('gantt__timeline-cell--drag-origin');
+      const row = this.findRowForCell(cell);
+      row?.classList.add('gantt__row--drag-origin');
+      this.dragOriginRow = row;
+    } else {
+      this.dragOriginRow = null;
+    }
+    this.dragOriginCell = cell;
+  }
+
+  private applyDragHoverCell(cell: HTMLElement | null) {
+    if (!this.dragState) {
+      return;
+    }
+    if (this.dragState.hoverCell === cell) {
+      return;
+    }
+    this.dragState.hoverCell?.classList.remove('gantt__timeline-cell--drag-hover');
+    this.dragState.hoverRow?.classList.remove('gantt__row--drag-hover');
+    if (cell) {
+      cell.classList.add('gantt__timeline-cell--drag-hover');
+      const row = this.findRowForCell(cell);
+      if (row) {
+        row.classList.add('gantt__row--drag-hover');
+      }
+      this.dragState.hoverRow = row ?? null;
+    } else {
+      this.dragState.hoverRow = null;
+    }
+    this.dragState.hoverCell = cell;
+  }
+
+  private findRowForCell(cell: HTMLElement | null): HTMLElement | null {
+    if (!cell) {
+      return null;
+    }
+    return cell.closest('.gantt__row') as HTMLElement | null;
+  }
+
+  private updateDragBadge(label: string | null, pointer?: { x: number; y: number }) {
+    if (!label) {
+      if (this.dragBadgeElement) {
+        this.dragBadgeElement.remove();
+        this.dragBadgeElement = null;
+      }
+      return;
+    }
+    if (!this.dragBadgeElement) {
+      const badge = document.createElement('div');
+      badge.className = 'gantt-drag-badge';
+      document.body.appendChild(badge);
+      this.dragBadgeElement = badge;
+    }
+    this.dragBadgeElement.textContent = label;
+    if (pointer) {
+      const offsetX = 0;
+      const offsetY = -30;
+      this.dragBadgeElement.style.left = `${pointer.x + offsetX}px`;
+      this.dragBadgeElement.style.top = `${pointer.y + offsetY}px`;
+    }
+  }
+
   private getPointerTime(clientX: number, container: HTMLElement | null): Date {
     if (!container) {
       return this.viewport.viewCenter();
@@ -853,12 +1131,19 @@ export class GanttComponent implements AfterViewInit {
     return element.closest('.gantt__timeline-cell') as HTMLElement | null;
   }
 
-  private findTimelineCellAtPoint(x: number, y: number): HTMLElement | null {
-    const target = document.elementFromPoint(x, y) as HTMLElement | null;
-    if (!target) {
-      return null;
+  private findResourceCellAtPoint(x: number, y: number): HTMLElement | null {
+    const host = this.hostElement.nativeElement;
+    const stack = document.elementsFromPoint(x, y) as HTMLElement[];
+    for (const element of stack) {
+      if (!host.contains(element)) {
+        continue;
+      }
+      const cell = this.findTimelineCellForElement(element);
+      if (cell && cell.dataset['resourceId']) {
+        return cell;
+      }
     }
-    return this.findTimelineCellForElement(target);
+    return null;
   }
 
   private clampTimelineLeftPx(value: number): number {
@@ -896,52 +1181,77 @@ export class GanttComponent implements AfterViewInit {
     resources.forEach((resource) => {
       const list = this.activitiesByResource().get(resource.id) ?? [];
       const bars: GanttBar[] = [];
-      const serviceMap = new Map<
-        string,
-        { id: string; left: number; right: number; startMs: number; endMs: number }
-      >();
+      const serviceMap = new Map<string, ServiceRangeAccumulator>();
       for (const activity of list) {
         if (activity.endMs < startMs - 2 * 60 * 60 * 1000 || activity.startMs > endMs + 2 * 60 * 60 * 1000) {
           continue;
         }
         const rawLeft = this.timeScale.timeToPx(activity.startMs);
         const rawRight = this.timeScale.timeToPx(activity.endMs);
+        const displayInfo = this.activityDisplayInfo(activity);
+        const isMilestone = !activity.end;
         const left = Math.round(rawLeft);
         const right = Math.round(rawRight);
-        const width = Math.max(1, right - left);
+        let barWidth = Math.max(1, right - left);
+        let barLeft = left;
+        if (isMilestone) {
+          barWidth = 24;
+          barLeft = Math.round(rawLeft) - Math.floor(barWidth / 2);
+          const contentWidth = this.timeScale.contentWidth();
+          const maxLeft = Math.max(0, contentWidth - barWidth);
+          barLeft = Math.min(Math.max(0, barLeft), maxLeft);
+        }
         bars.push({
           activity,
-          left,
-          width,
+          left: barLeft,
+          width: barWidth,
           classes: this.resolveBarClasses(activity),
           selected: selectedIds.has(activity.id),
+          label: displayInfo.label,
+          showRoute: !isMilestone && displayInfo.showRoute && !!(activity.from || activity.to),
         });
+        if (isMilestone) {
+          bars[bars.length - 1].classes?.push('gantt-activity--milestone');
+        }
         const serviceId = activity.serviceId;
         if (!serviceId) {
           continue;
         }
-        const existing = serviceMap.get(serviceId);
-        if (existing) {
-          existing.left = Math.min(existing.left, left);
-          existing.right = Math.max(existing.right, right);
-          existing.startMs = Math.min(existing.startMs, activity.startMs);
-          existing.endMs = Math.max(existing.endMs, activity.endMs);
-        } else {
-          serviceMap.set(serviceId, {
+        const displayStart = isMilestone ? barLeft + Math.round(barWidth / 2) : left;
+        const displayEnd = isMilestone ? barLeft + Math.round(barWidth / 2) : right;
+        let accumulator = serviceMap.get(serviceId);
+        if (!accumulator) {
+          accumulator = {
             id: serviceId,
-            left,
-            right,
-            startMs: activity.startMs,
-            endMs: activity.endMs,
-          });
+            minLeft: Number.POSITIVE_INFINITY,
+            maxRight: Number.NEGATIVE_INFINITY,
+            startLeft: null,
+            endLeft: null,
+            startMs: null,
+            endMs: null,
+          };
+          serviceMap.set(serviceId, accumulator);
+        }
+        accumulator.minLeft = Math.min(accumulator.minLeft, displayStart);
+        accumulator.maxRight = Math.max(accumulator.maxRight, displayEnd);
+        if (
+          (activity.type === 'service-start' || activity.serviceRole === 'start') &&
+          (accumulator.startLeft === null || displayStart < accumulator.startLeft)
+        ) {
+          accumulator.startLeft = displayStart;
+          accumulator.startMs = activity.startMs;
+        }
+        if (
+          (activity.type === 'service-end' || activity.serviceRole === 'end') &&
+          (accumulator.endLeft === null || displayEnd > accumulator.endLeft)
+        ) {
+          accumulator.endLeft = displayEnd;
+          accumulator.endMs = activity.endMs;
         }
       }
-      const services = Array.from(serviceMap.values()).map((entry) => ({
-        id: entry.id,
-        label: `Dienst ${this.serviceLabelFormatter.format(new Date(entry.startMs))} – ${this.serviceLabelFormatter.format(new Date(entry.endMs))}`,
-        left: entry.left,
-        width: Math.max(1, entry.right - entry.left),
-      }));
+      const services = Array.from(serviceMap.values())
+        .map((entry) => this.createServiceRange(entry))
+        .filter((range): range is GanttServiceRange => !!range);
       map.set(resource.id, { bars, services });
     });
 
@@ -1124,4 +1434,98 @@ export class GanttComponent implements AfterViewInit {
     return classes;
   }
 
+  private createServiceRange(entry: ServiceRangeAccumulator): GanttServiceRange | null {
+    const hasStart = entry.startLeft !== null;
+    const hasEnd = entry.endLeft !== null;
+    if (!hasStart && !hasEnd && !Number.isFinite(entry.minLeft) && !Number.isFinite(entry.maxRight)) {
+      return null;
+    }
+    let left: number;
+    let right: number;
+    if (hasStart && hasEnd) {
+      left = Math.min(entry.startLeft!, entry.endLeft!);
+      right = Math.max(entry.startLeft!, entry.endLeft!);
+    } else {
+      const fallbackLeft = Number.isFinite(entry.minLeft) ? entry.minLeft : entry.endLeft ?? entry.startLeft ?? 0;
+      const fallbackRight = Number.isFinite(entry.maxRight) ? entry.maxRight : entry.startLeft ?? entry.endLeft ?? fallbackLeft;
+      left = Math.min(fallbackLeft, fallbackRight);
+      right = Math.max(fallbackLeft, fallbackRight);
+      if (hasStart && !hasEnd) {
+        left = Math.min(left, entry.startLeft!);
+        right = Math.max(right, entry.startLeft! + 32);
+      } else if (!hasStart && hasEnd) {
+        right = Math.max(right, entry.endLeft!);
+        left = Math.min(left, entry.endLeft! - 32);
+      } else if (!hasStart && !hasEnd) {
+        right = Math.max(right, left + 32);
+      }
+    }
+    if (right - left < 12) {
+      right = left + 12;
+    }
+    if (left < 0) {
+      right -= left;
+      left = 0;
+    }
+    const status: GanttServiceRangeStatus = hasStart && hasEnd ? 'complete' : hasStart ? 'missing-end' : hasEnd ? 'missing-start' : 'missing-both';
+    const label = this.buildServiceRangeLabel(entry.startMs, entry.endMs, status);
+    return {
+      id: entry.id,
+      label,
+      left,
+      width: Math.max(4, right - left),
+      status,
+    };
+  }
+
+  private buildServiceRangeLabel(
+    startMs: number | null,
+    endMs: number | null,
+    status: GanttServiceRangeStatus,
+  ): string {
+    const format = (value: number | null) => (value ? this.serviceLabelFormatter.format(new Date(value)) : '—');
+    switch (status) {
+      case 'complete':
+        return `Dienst ${format(startMs)} – ${format(endMs)}`;
+      case 'missing-end':
+        return `Dienst ${format(startMs)} • Ende fehlt`;
+      case 'missing-start':
+        return `Dienst ${format(endMs)} • Start fehlt`;
+      default:
+        return 'Dienst (unvollständig)';
+    }
+  }
+
+  private activityDisplayInfo(activity: Activity): { label: string; showRoute: boolean } {
+    const typeId = activity.type ?? '';
+    const info = this.activityTypeInfoMap[typeId];
+    const label = info?.label ?? (typeId || 'Aktivität');
+    const showRoute = info?.showRoute ?? false;
+    return { label, showRoute };
+  }
+
+  private blockActivityEdit(activityId: string) {
+    this.dragEditBlockActivityId = activityId;
+    this.dragEditBlockUntil = Date.now() + 1500;
+    this.dragEditBlockGlobalUntil = this.dragEditBlockUntil;
+  }
+
+  private shouldBlockEdit(activityId: string): boolean {
+    if (Date.now() < this.dragEditBlockGlobalUntil) {
+      return true;
+    }
+    if (this.dragState && this.dragState.activity.id === activityId) {
+      return true;
+    }
+    if (!this.dragEditBlockActivityId || this.dragEditBlockActivityId !== activityId) {
+      return false;
+    }
+    if (Date.now() < this.dragEditBlockUntil) {
+      return true;
+    }
+    this.dragEditBlockActivityId = null;
+    this.dragEditBlockUntil = 0;
+    this.dragEditBlockGlobalUntil = 0;
+    return false;
+  }
 }

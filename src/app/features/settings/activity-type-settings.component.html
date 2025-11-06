@@ -36,8 +36,8 @@
                 </mat-form-field>
 
                 <mat-form-field appearance="outline">
-                  <mat-label>Gilt für</mat-label>
-                  <mat-select formControlName="appliesTo" multiple>
+                  <mat-label>Relevant für</mat-label>
+                  <mat-select formControlName="relevantFor" multiple>
                     @for (option of resourceOptions; track option.value) {
                       <mat-option [value]="option.value">{{ option.label }}</mat-option>
                     }
@@ -45,6 +45,27 @@
                 </mat-form-field>
 
                 <mat-form-field appearance="outline">
+                  <mat-label>Kategorie</mat-label>
+                  <mat-select formControlName="category">
+                    @for (option of categoryOptions; track option.value) {
+                      <mat-option [value]="option.value">{{ option.label }}</mat-option>
+                    }
+                  </mat-select>
+                </mat-form-field>
+
+                <mat-form-field appearance="outline">
+                  <mat-label>Zeitmodus</mat-label>
+                  <mat-select formControlName="timeMode">
+                    @for (option of timeModeOptions; track option.value) {
+                      <mat-option [value]="option.value">{{ option.label }}</mat-option>
+                    }
+                  </mat-select>
+                </mat-form-field>
+
+                <mat-form-field
+                  appearance="outline"
+                  *ngIf="editTypeForm.controls.timeMode.value === 'duration'"
+                >
                   <mat-label>Dauer (Minuten)</mat-label>
                   <input matInput type="number" min="1" formControlName="defaultDurationMinutes" />
                 </mat-form-field>
@@ -92,12 +113,17 @@
                 <p *ngIf="definition.description">{{ definition.description }}</p>
                 <div class="activity-type-card__meta">
                   <mat-chip-set>
-                    <mat-chip *ngFor="let target of definition.appliesTo">{{ resourceLabel(target) }}</mat-chip>
+                    <mat-chip *ngFor="let target of definition.relevantFor">{{ resourceLabel(target) }}</mat-chip>
                   </mat-chip-set>
                   <code>{{ definition.id }}</code>
                 </div>
                 <div class="activity-type-card__meta">
-                  <span>Dauer: {{ definition.defaultDurationMinutes }} min</span>
+                  <span>{{ categoryLabel(definition.category) }}</span>
+                  <span *ngIf="definition.timeMode === 'duration'">
+                    Dauer: {{ definition.defaultDurationMinutes }} min
+                  </span>
+                  <span *ngIf="definition.timeMode === 'range'">Zeitmodus: Start & Ende (manuell)</span>
+                  <span *ngIf="definition.timeMode === 'point'">Zeitmodus: Zeitpunkt</span>
                   <span>Felder: {{ fieldList(definition) }}</span>
                 </div>
               </div>
@@ -133,8 +159,8 @@
         </mat-form-field>
 
         <mat-form-field appearance="outline">
-          <mat-label>Gilt für</mat-label>
-          <mat-select formControlName="appliesTo" multiple>
+          <mat-label>Relevant für</mat-label>
+          <mat-select formControlName="relevantFor" multiple>
             @for (option of resourceOptions; track option.value) {
               <mat-option [value]="option.value">{{ option.label }}</mat-option>
             }
@@ -142,6 +168,27 @@
         </mat-form-field>
 
         <mat-form-field appearance="outline">
+          <mat-label>Kategorie</mat-label>
+          <mat-select formControlName="category">
+            @for (option of categoryOptions; track option.value) {
+              <mat-option [value]="option.value">{{ option.label }}</mat-option>
+            }
+          </mat-select>
+        </mat-form-field>
+
+        <mat-form-field appearance="outline">
+          <mat-label>Zeitmodus</mat-label>
+          <mat-select formControlName="timeMode">
+            @for (option of timeModeOptions; track option.value) {
+              <mat-option [value]="option.value">{{ option.label }}</mat-option>
+            }
+          </mat-select>
+        </mat-form-field>
+
+        <mat-form-field
+          appearance="outline"
+          *ngIf="newTypeForm.controls.timeMode.value === 'duration'"
+        >
           <mat-label>Dauer (Minuten)</mat-label>
           <input matInput type="number" min="1" formControlName="defaultDurationMinutes" />
         </mat-form-field>

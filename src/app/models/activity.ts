@@ -13,7 +13,7 @@ export interface Activity {
   participantResourceIds?: Resource['id'][];
   title: string;
   start: string; // ISO
-  end: string; // ISO
+  end?: string | null; // ISO
   type?: ActivityType;
   from?: string | null;
   to?: string | null;

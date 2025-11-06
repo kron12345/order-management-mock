@@ -1,9 +1,9 @@
 <ng-template #activityContent>
   <div class="gantt-activity__content">
     @if (showTitle) {
-      <span class="gantt-activity__title">{{ activity.title }}</span>
+      <span class="gantt-activity__title">{{ effectiveTitle }}</span>
     }
-    @if (showRoute) {
+    @if (shouldShowRoute) {
       <span class="gantt-activity__route">
         {{ activity.from ?? '—' }} → {{ activity.to ?? '—' }}
       </span>
@@ -16,14 +16,13 @@
   role="button"
   tabindex="0"
   cdkDrag
-  cdkDragLockAxis="x"
-  [cdkDragBoundary]="dragBoundary"
+  cdkDragPreviewContainer="global"
   [cdkDragData]="dragData"
   [ngClass]="hostClasses"
   [style.left.px]="leftPx"
   [style.width.px]="widthPx"
   [attr.aria-label]="ariaLabel"
-  [matTooltip]="tooltipText()"
+  [matTooltip]="tooltipText"
   matTooltipClass="gantt-activity__tooltip"
   matTooltipShowDelay="180"
   (click)="handleClick($event)"

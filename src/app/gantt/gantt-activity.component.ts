@@ -1,4 +1,4 @@
-import { Component, ElementRef, EventEmitter, Input, Output, computed } from '@angular/core';
+import { Component, EventEmitter, Input, Output } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { Activity } from '../models/activity';
@@ -19,13 +19,18 @@ export class GanttActivityComponent {
   @Input() isSelected = false;
   @Input() classes: string[] = [];
   @Input() displayMode: 'block' | 'detail' = 'detail';
+  @Input() displayTitle: string | null = null;
+  @Input() showRouteDetails = false;
   @Input({ required: true }) dragData!: GanttActivityDragData;
-  @Input({ required: true }) dragBoundary!: string | HTMLElement | ElementRef<HTMLElement>;
   @Output() activitySelected = new EventEmitter<Activity>();
   @Output() toggleSelection = new EventEmitter<Activity>();
   @Output() dragStarted = new EventEmitter<CdkDragStart<GanttActivityDragData>>();
   @Output() dragMoved = new EventEmitter<CdkDragMove<GanttActivityDragData>>();
   @Output() dragEnded = new EventEmitter<CdkDragEnd<GanttActivityDragData>>();
+
+  private isDragging = false;
+  private dragSuppressUntil = 0;
+  private readonly dragSuppressWindowMs = 1500;
 
   private readonly dateTime = new Intl.DateTimeFormat('de-DE', {
     weekday: 'short',
@@ -48,27 +53,24 @@ export class GanttActivityComponent {
     transfer: 'Transfer',
     other: 'Sonstige',
   };
-  readonly tooltipText = computed(() => {
+  get tooltipText(): string {
     if (!this.activity) {
       return '';
     }
     const lines: string[] = [];
-    lines.push(`${this.typeLabel} • ${this.shortStartLabel} – ${this.shortEndLabel}`);
-    lines.push(this.activity.title);
-    if (this.activity.serviceId) {
-      lines.push(`Dienst: ${this.activity.serviceId}`);
-    }
-    if (this.activity.from || this.activity.to) {
-      lines.push(`Route: ${this.routeLabel}`);
-    }
+    lines.push(this.effectiveTitle);
     lines.push(`Start: ${this.startLabel}`);
-    lines.push(`Ende: ${this.endLabel}`);
-    lines.push(`Dauer: ${this.durationLabel}`);
-    if (this.activity.remark) {
-      lines.push(`Notiz: ${this.activity.remark}`);
+    if (this.activity.end) {
+      lines.push(`Ende: ${this.endLabel}`);
+    }
+    if (this.activity.from) {
+      lines.push(`Von: ${this.activity.from}`);
+    }
+    if (this.activity.to) {
+      lines.push(`Nach: ${this.activity.to}`);
     }
     return lines.join('\n');
-  });
+  }
 
   get hostClasses(): string[] {
     const classes = ['gantt-activity--service'];
@@ -97,7 +99,10 @@ export class GanttActivityComponent {
     return this.widthPx >= 54;
   }
 
-  get showRoute(): boolean {
+  get shouldShowRoute(): boolean {
+    if (!this.showRouteDetails) {
+      return false;
+    }
     if (this.displayMode === 'block') {
       return false;
     }
@@ -109,6 +114,14 @@ export class GanttActivityComponent {
       return '';
     }
     return this.typeLabels[this.activity.type ?? 'service'] ?? 'Aktivität';
+  }
+
+  get effectiveTitle(): string {
+    const explicit = (this.displayTitle ?? '').trim();
+    if (explicit) {
+      return explicit;
+    }
+    return this.typeLabel;
   }
 
   get routeLabel(): string {
@@ -128,7 +141,7 @@ export class GanttActivityComponent {
   }
 
   get endLabel(): string {
-    if (!this.activity) {
+    if (!this.activity?.end) {
       return '';
     }
     return this.dateTime.format(new Date(this.activity.end));
@@ -142,15 +155,15 @@ export class GanttActivityComponent {
   }
 
   get shortEndLabel(): string {
-    if (!this.activity) {
+    if (!this.activity?.end) {
       return '';
     }
     return this.timeOnly.format(new Date(this.activity.end));
   }
 
   get durationLabel(): string {
-    if (!this.activity) {
-      return '';
+    if (!this.activity?.end) {
+      return '—';
     }
     return this.durationPipe.transform(this.activity.start, this.activity.end);
   }
@@ -159,7 +172,7 @@ export class GanttActivityComponent {
     if (!this.activity) {
       return '';
     }
-    return this.tooltipText().replace(/\n+/g, ', ');
+    return this.tooltipText.replace(/\n+/g, ', ');
   }
 
   protected handleClick(event: Event): void {
@@ -179,12 +192,16 @@ export class GanttActivityComponent {
   protected handleDoubleClick(event: Event): void {
     event.stopPropagation();
     event.preventDefault();
+    if (this.shouldSuppressEdit()) {
+      return;
+    }
     if (this.activity) {
       this.activitySelected.emit(this.activity);
     }
   }
 
   protected onDragStarted(event: CdkDragStart<GanttActivityDragData>): void {
+    this.isDragging = true;
     this.dragStarted.emit(event);
   }
 
@@ -193,7 +210,19 @@ export class GanttActivityComponent {
   }
 
   protected onDragEnded(event: CdkDragEnd<GanttActivityDragData>): void {
+    this.isDragging = false;
+    this.dragSuppressUntil = Date.now() + this.dragSuppressWindowMs;
     this.dragEnded.emit(event);
+  }
+
+  private shouldSuppressEdit(): boolean {
+    if (this.isDragging) {
+      return true;
+    }
+    if (this.dragSuppressUntil && Date.now() < this.dragSuppressUntil) {
+      return true;
+    }
+    return false;
   }
 }
 

@@ -2,6 +2,13 @@ import { Component, Input } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ZoomLevel } from '../models/time-scale';
 
+export type GanttDragStatusState = 'idle' | 'info' | 'valid' | 'invalid';
+
+export interface GanttDragStatus {
+  state: GanttDragStatusState;
+  message: string;
+}
+
 @Component({
   selector: 'app-gantt-status-bar',
   standalone: true,
@@ -18,6 +25,7 @@ export class GanttStatusBarComponent {
   @Input({ required: true }) activityCount = 0;
   @Input({ required: true }) visibleActivityCount = 0;
   @Input() cursorTime: Date | null = null;
+  @Input() dragStatus: GanttDragStatus | null = null;
 
   private readonly dateRange = new Intl.DateTimeFormat('de-DE', {
     day: '2-digit',
@@ -40,5 +48,16 @@ export class GanttStatusBarComponent {
       return '—';
     }
     return this.timeFormat.format(this.cursorTime);
+  }
+
+  get dragValueClasses(): Record<string, boolean> {
+    if (!this.dragStatus) {
+      return {};
+    }
+    return {
+      'gantt-status__value--valid': this.dragStatus.state === 'valid',
+      'gantt-status__value--invalid': this.dragStatus.state === 'invalid',
+      'gantt-status__value--info': this.dragStatus.state === 'info',
+    };
   }
 }

@@ -12,6 +12,13 @@
     @for (range of serviceRanges; track range.id) {
       <div
         class="gantt-timeline-row__service-range"
+        [ngClass]="{
+          'gantt-timeline-row__service-range--missing-start':
+            range.status === 'missing-start' || range.status === 'missing-both',
+          'gantt-timeline-row__service-range--missing-end':
+            range.status === 'missing-end' || range.status === 'missing-both',
+          'gantt-timeline-row__service-range--incomplete': range.status !== 'complete'
+        }"
         [style.left.px]="range.left"
         [style.width.px]="range.width"
       >
@@ -34,8 +41,9 @@
           [classes]="bar.classes ?? []"
           [isSelected]="bar.selected ?? false"
           [displayMode]="viewMode"
+          [displayTitle]="bar.label ?? ''"
+          [showRouteDetails]="bar.showRoute ?? false"
           [dragData]="{ activity: bar.activity, resourceId, initialLeft: bar.left, width: bar.width }"
-          [dragBoundary]="canvas"
           (activitySelected)="activitySelected.emit($event)"
           (toggleSelection)="activityToggleSelection.emit($event)"
           (dragStarted)="activityDragStarted.emit($event)"
