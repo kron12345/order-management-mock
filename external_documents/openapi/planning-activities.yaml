@@ -24,6 +24,39 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/PlanningStageSnapshot'
+  /planning/stages/{stageId}/resources:
+    get:
+      summary: Listet Ressourcen eines Planungsstadiums.
+      operationId: listStageResources
+      parameters:
+        - $ref: '#/components/parameters/StageId'
+      responses:
+        '200':
+          description: Liste der Ressourcen.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Resource'
+    put:
+      summary: Batch-Synchronisation von Ressourcen (Create/Update/Delete).
+      operationId: mutateStageResources
+      parameters:
+        - $ref: '#/components/parameters/StageId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResourceMutationRequest'
+      responses:
+        '200':
+          description: Ergebnis der Ressourcensynchronisation inkl. neuer Version.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResourceMutationResponse'
   /planning/stages/{stageId}/activities:
     get:
       summary: Listet Aktivitäten gefiltert nach Zeitraum/Ressourcen.
@@ -248,6 +281,35 @@ components:
           type: string
       additionalProperties: false
     ActivityMutationResponse:
+      type: object
+      properties:
+        appliedUpserts:
+          type: array
+          items:
+            type: string
+        deletedIds:
+          type: array
+          items:
+            type: string
+        version:
+          type: string
+          nullable: true
+      required: [appliedUpserts, deletedIds]
+    ResourceMutationRequest:
+      type: object
+      properties:
+        upserts:
+          type: array
+          items:
+            $ref: '#/components/schemas/Resource'
+        deleteIds:
+          type: array
+          items:
+            type: string
+        clientRequestId:
+          type: string
+      additionalProperties: false
+    ResourceMutationResponse:
       type: object
       properties:
         appliedUpserts:

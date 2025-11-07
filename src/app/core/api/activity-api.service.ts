@@ -9,6 +9,8 @@ import {
   ActivityValidationRequest,
   ActivityValidationResponse,
   PlanningStageSnapshotDto,
+  ResourceBatchMutationRequest,
+  ResourceBatchMutationResponse,
 } from './activity-api.types';
 
 export interface ActivityListQuery {
@@ -47,6 +49,17 @@ export class ActivityApiService {
     payload: ActivityBatchMutationRequest,
   ): Observable<ActivityBatchMutationResponse> {
     return this.http.put<ActivityBatchMutationResponse>(`${this.stageUrl(stageId)}/activities`, payload);
+  }
+
+  batchMutateResources(
+    stageId: PlanningStageId,
+    payload: ResourceBatchMutationRequest,
+  ): Observable<ResourceBatchMutationResponse> {
+    return this.http.put<ResourceBatchMutationResponse>(`${this.stageUrl(stageId)}/resources`, payload);
+  }
+
+  listResources(stageId: PlanningStageId): Observable<PlanningStageSnapshotDto['resources']> {
+    return this.http.get<PlanningStageSnapshotDto['resources']>(`${this.stageUrl(stageId)}/resources`);
   }
 
   validateActivities(

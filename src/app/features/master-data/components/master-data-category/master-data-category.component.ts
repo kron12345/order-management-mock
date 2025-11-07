@@ -26,6 +26,7 @@ import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { MatSelectModule } from '@angular/material/select';
 import { MatTooltipModule } from '@angular/material/tooltip';
+import { MatSlideToggleModule } from '@angular/material/slide-toggle';
 import {
   MasterDataCategoryConfig,
   MasterDataFieldConfig,
@@ -45,6 +46,7 @@ import {
     MatInputModule,
     MatSelectModule,
     MatTooltipModule,
+    MatSlideToggleModule,
   ],
   templateUrl: './master-data-category.component.html',
   styleUrl: './master-data-category.component.scss',

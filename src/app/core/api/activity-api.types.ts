@@ -28,6 +28,18 @@ export interface ActivityBatchMutationResponse {
   version?: string | null;
 }
 
+export interface ResourceBatchMutationRequest {
+  upserts?: Resource[];
+  deleteIds?: string[];
+  clientRequestId?: string;
+}
+
+export interface ResourceBatchMutationResponse {
+  appliedUpserts: string[];
+  deletedIds: string[];
+  version?: string | null;
+}
+
 export interface ActivityValidationRequest {
   /**
    * Optional subset of activity IDs for targeted validations. If omitted the

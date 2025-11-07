@@ -11,6 +11,8 @@ import {
   ActivityValidationRequest,
   ActivityValidationResponse,
   PlanningStageSnapshotDto,
+  ResourceBatchMutationRequest,
+  ResourceBatchMutationResponse,
 } from '../../core/api/activity-api.types';
 import { PlanningStageId } from './planning-stage.model';
 
@@ -28,6 +30,10 @@ interface PlanningStageData {
 }
 
 interface ActivityDiff extends ActivityBatchMutationRequest {
+  hasChanges: boolean;
+}
+
+interface ResourceDiff extends ResourceBatchMutationRequest {
   hasChanges: boolean;
 }
 
@@ -157,8 +163,10 @@ export class PlanningDataService {
       ...current,
       [stage]: nextStage,
     });
-    const diff = diffActivities(previousStage.activities, nextStage.activities);
-    this.syncActivities(stage, diff);
+    const activityDiff = diffActivities(previousStage.activities, nextStage.activities);
+    const resourceDiff = diffResources(previousStage.resources, nextStage.resources);
+    this.syncResources(stage, resourceDiff);
+    this.syncActivities(stage, activityDiff);
   }
 
   private applyStageSnapshot(stage: PlanningStageId, snapshot: PlanningStageSnapshotDto): void {
@@ -220,6 +228,27 @@ export class PlanningDataService {
       },
     }));
   }
+
+  private syncResources(stage: PlanningStageId, diff: ResourceDiff): void {
+    if (!diff.hasChanges) {
+      return;
+    }
+    this.api
+      .batchMutateResources(stage, {
+        upserts: diff.upserts,
+        deleteIds: diff.deleteIds,
+        clientRequestId: diff.clientRequestId,
+      })
+      .pipe(
+        take(1),
+        catchError((error) => {
+          console.error(`[PlanningDataService] Failed to sync resources for ${stage}`, error);
+          this.refreshStage(stage);
+          return EMPTY;
+        }),
+      )
+      .subscribe();
+  }
 }
 
 function normalizeStage(stage: PlanningStageData): PlanningStageData {
@@ -256,6 +285,66 @@ function diffActivities(previous: Activity[], next: Activity[]): ActivityDiff {
     clientRequestId: `activity-sync-${Date.now().toString(36)}`,
     hasChanges: upserts.length > 0 || deleteIds.length > 0,
   };
+}
+
+function diffResources(previous: Resource[], next: Resource[]): ResourceDiff {
+  const previousMap = new Map(previous.map((resource) => [resource.id, resource]));
+  const nextMap = new Map(next.map((resource) => [resource.id, resource]));
+  const upserts: Resource[] = [];
+  const deleteIds: string[] = [];
+
+  next.forEach((resource) => {
+    const before = previousMap.get(resource.id);
+    if (!before || !resourcesEqual(before, resource)) {
+      upserts.push(resource);
+    }
+  });
+
+  previous.forEach((resource) => {
+    if (!nextMap.has(resource.id)) {
+      deleteIds.push(resource.id);
+    }
+  });
+
+  return {
+    upserts: upserts.length > 0 ? upserts : undefined,
+    deleteIds: deleteIds.length > 0 ? deleteIds : undefined,
+    clientRequestId: `resource-sync-${Date.now().toString(36)}`,
+    hasChanges: upserts.length > 0 || deleteIds.length > 0,
+  };
+}
+
+function resourcesEqual(a: Resource, b: Resource): boolean {
+  const normalizedA = normalizeResourceForComparison(a);
+  const normalizedB = normalizeResourceForComparison(b);
+  return JSON.stringify(normalizedA) === JSON.stringify(normalizedB);
+}
+
+function normalizeResourceForComparison(resource: Resource): Record<string, unknown> {
+  return {
+    id: resource.id,
+    name: resource.name,
+    kind: resource.kind,
+    dailyServiceCapacity: resource.dailyServiceCapacity ?? null,
+    attributes: sortObject(resource.attributes ?? null),
+  };
+}
+
+function sortObject(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map((entry) => sortObject(entry));
+  }
+  if (value && typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>).sort(([a], [b]) =>
+      a.localeCompare(b),
+    );
+    const sorted: Record<string, unknown> = {};
+    entries.forEach(([key, val]) => {
+      sorted[key] = sortObject(val);
+    });
+    return sorted;
+  }
+  return value;
 }
 
 function activitiesEqual(a: Activity, b: Activity): boolean {
