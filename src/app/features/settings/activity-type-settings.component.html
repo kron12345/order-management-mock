@@ -81,10 +81,7 @@
                 <div class="activity-type-card__field-grid">
                   @for (field of fieldOptions; track field.key) {
                     @if (controlNameForField(field.key); as controlName) {
-                      <mat-checkbox
-                        [formControlName]="controlName"
-                        [disabled]="field.disabled ?? false"
-                      >
+                      <mat-checkbox [formControlName]="controlName">
                         <span>{{ field.label }}</span>
                         <small>{{ field.description }}</small>
                       </mat-checkbox>
@@ -204,7 +201,7 @@
         <div class="activity-type-card__field-grid">
           @for (field of fieldOptions; track field.key) {
             @if (controlNameForField(field.key); as controlName) {
-              <mat-checkbox [formControlName]="controlName" [disabled]="field.disabled ?? false">
+              <mat-checkbox [formControlName]="controlName">
                 <span>{{ field.label }}</span>
                 <small>{{ field.description }}</small>
               </mat-checkbox>

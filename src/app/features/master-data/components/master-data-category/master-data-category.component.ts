@@ -125,7 +125,7 @@ export class MasterDataCategoryComponent<T extends { id: string }> implements On
   }
 
   protected handleCreate(): void {
-    const pendingId = `tmp-${Date.now()}`;
+    const pendingId = this.generateItemId();
     const emptyItem = this.createEmptyItem(pendingId);
     const defaults = this.config.defaultValues?.() ?? {};
     const newItem = { ...emptyItem, ...defaults, id: emptyItem.id } as T;
@@ -145,9 +145,10 @@ export class MasterDataCategoryComponent<T extends { id: string }> implements On
     const rawValue = this.form.getRawValue() as Record<string, unknown>;
     const normalized = this.normalizeFormValue(rawValue);
     const currentItem = this.selectedItem();
-    const updated = this.config.fromFormValue
+    const updatedBase = this.config.fromFormValue
       ? this.config.fromFormValue(normalized, currentItem)
       : ({ ...currentItem, ...normalized } as T);
+    const updated = this.applyCustomAttributes(updatedBase, normalized);
 
     this.items.update((current) =>
       current.map((item) => (item.id === updated.id ? { ...item, ...updated } : item)),
@@ -329,6 +330,9 @@ export class MasterDataCategoryComponent<T extends { id: string }> implements On
       }
       return acc;
     }, {});
+    if (this.config.fields.some((field) => field.custom)) {
+      empty['attributes'] = {};
+    }
 
     return { id, ...empty } as T;
   }
@@ -371,7 +375,8 @@ export class MasterDataCategoryComponent<T extends { id: string }> implements On
         continue;
       }
 
-      const normalized = this.normalizeControlValue(field, formValue[field.key]);
+      const sourceValue = this.resolveFieldValue(field, formValue, item);
+      const normalized = this.normalizeControlValue(field, sourceValue);
       control.setValue(normalized, { emitEvent: false });
       if (field.readonly) {
         control.disable({ emitEvent: false });
@@ -382,11 +387,20 @@ export class MasterDataCategoryComponent<T extends { id: string }> implements On
   }
 
   private emitSelection(): void {
-    this.selectionChange.emit(this.selectedItem());
+    const selection = this.selectedItem();
+    const clonedSelection = selection ? (this.cloneItem(selection) as T) : null;
+    this.selectionChange.emit(selection);
+    if (this.config.onSelectionChange) {
+      this.config.onSelectionChange(clonedSelection);
+    }
   }
 
   private emitItems(): void {
-    this.itemsChange.emit(this.items());
+    const snapshot = this.cloneItems(this.items());
+    this.itemsChange.emit(snapshot);
+    if (this.config.onItemsChange) {
+      this.config.onItemsChange(snapshot);
+    }
   }
 
   private resetTemporalFields(): void {
@@ -591,6 +605,91 @@ export class MasterDataCategoryComponent<T extends { id: string }> implements On
     return normalized;
   }
 
+  private resolveFieldValue(
+    field: MasterDataFieldConfig,
+    formValue: Record<string, unknown>,
+    item: T | null,
+  ): unknown {
+    if (field.custom) {
+      if (Object.prototype.hasOwnProperty.call(formValue, field.key)) {
+        return formValue[field.key];
+      }
+      const attributes = this.extractAttributes(item);
+      if (attributes && Object.prototype.hasOwnProperty.call(attributes, field.key)) {
+        return attributes[field.key];
+      }
+    }
+    return formValue[field.key];
+  }
+
+  private extractAttributes(source: unknown): Record<string, unknown> | undefined {
+    if (!source || typeof source !== 'object') {
+      return undefined;
+    }
+    const attributes = (source as Record<string, unknown>)['attributes'];
+    if (!attributes || typeof attributes !== 'object') {
+      return undefined;
+    }
+    return attributes as Record<string, unknown>;
+  }
+
+  private applyCustomAttributes(item: T, normalizedFormValue: Record<string, unknown>): T {
+    const customKeys = this.customFieldKeys();
+    if (customKeys.length === 0) {
+      return item;
+    }
+    const base = item as Record<string, unknown>;
+    const currentAttributes: Record<string, unknown> = {
+      ...(this.extractAttributes(base) ?? {}),
+    };
+    let changed = false;
+
+    for (const key of customKeys) {
+      if (!Object.prototype.hasOwnProperty.call(normalizedFormValue, key)) {
+        continue;
+      }
+      const value = normalizedFormValue[key];
+      if (this.isEmptyCustomValue(value)) {
+        if (key in currentAttributes) {
+          delete currentAttributes[key];
+          changed = true;
+        }
+      } else {
+        currentAttributes[key] = value;
+        changed = true;
+      }
+      if (key in base) {
+        delete base[key];
+      }
+    }
+
+    if (changed) {
+      if (Object.keys(currentAttributes).length > 0) {
+        base['attributes'] = currentAttributes;
+      } else {
+        delete base['attributes'];
+      }
+    }
+    return base as T;
+  }
+
+  private customFieldKeys(): string[] {
+    return this.config.fields.filter((field) => field.custom).map((field) => field.key);
+  }
+
+  private isEmptyCustomValue(value: unknown): boolean {
+    if (value === null || value === undefined) {
+      return true;
+    }
+    if (Array.isArray(value)) {
+      return value.length === 0;
+    }
+    if (typeof value === 'string') {
+      return value.trim().length === 0;
+    }
+    return false;
+  }
+
   private normalizeTemporalFormEntry(
     field: MasterDataFieldConfig,
     entry: Record<string, unknown>,
@@ -728,5 +827,12 @@ export class MasterDataCategoryComponent<T extends { id: string }> implements On
       default:
         return '';
     }
+  }
+
+  private generateItemId(): string {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+      return crypto.randomUUID();
+    }
+    return `md-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
   }
 }

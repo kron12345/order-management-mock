@@ -1,4 +1,4 @@
-import { Injectable, Signal, computed, inject, signal } from '@angular/core';
+import { DestroyRef, Injectable, Signal, computed, inject, signal } from '@angular/core';
 import { EMPTY, Observable } from 'rxjs';
 import { catchError, take, tap } from 'rxjs/operators';
 import { Activity } from '../../models/activity';
@@ -15,6 +15,9 @@ import {
   ResourceBatchMutationResponse,
 } from '../../core/api/activity-api.types';
 import { PlanningStageId } from './planning-stage.model';
+import { PlanningRealtimeEvent, PlanningRealtimeService } from './planning-realtime.service';
+import { ClientIdentityService } from '../../core/services/client-identity.service';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 
 export interface PlanningTimelineRange {
   start: Date;
@@ -74,6 +77,8 @@ function cloneActivities(activities: Activity[]): Activity[] {
       ? [...activity.assignedQualifications]
       : undefined,
     workRuleTags: activity.workRuleTags ? [...activity.workRuleTags] : undefined,
+    attributes: activity.attributes ? { ...activity.attributes } : undefined,
+    meta: activity.meta ? { ...activity.meta } : undefined,
   }));
 }
 
@@ -106,6 +111,11 @@ function normalizeTimelineRange(range: PlanningTimelineRange): PlanningTimelineR
 @Injectable({ providedIn: 'root' })
 export class PlanningDataService {
   private readonly api = inject(ActivityApiService);
+  private readonly realtime = inject(PlanningRealtimeService);
+  private readonly identity = inject(ClientIdentityService);
+  private readonly destroyRef = inject(DestroyRef);
+  private readonly userId = this.identity.userId();
+  private readonly connectionId = this.identity.connectionId();
 
   private readonly stageDataSignal = signal<Record<PlanningStageId, PlanningStageData>>(
     STAGE_IDS.reduce((record, stage) => {
@@ -116,6 +126,12 @@ export class PlanningDataService {
 
   constructor() {
     STAGE_IDS.forEach((stage) => this.refreshStage(stage));
+    STAGE_IDS.forEach((stage) =>
+      this.realtime
+        .events(stage)
+        .pipe(takeUntilDestroyed(this.destroyRef))
+        .subscribe((event) => this.handleRealtimeEvent(event)),
+    );
   }
 
   stageResources(stage: PlanningStageId): Signal<Resource[]> {
@@ -165,6 +181,8 @@ export class PlanningDataService {
     });
     const activityDiff = diffActivities(previousStage.activities, nextStage.activities);
     const resourceDiff = diffResources(previousStage.resources, nextStage.resources);
+    activityDiff.clientRequestId = this.decorateClientRequestId(activityDiff.clientRequestId);
+    resourceDiff.clientRequestId = this.decorateClientRequestId(resourceDiff.clientRequestId);
     this.syncResources(stage, resourceDiff);
     this.syncActivities(stage, activityDiff);
   }
@@ -183,6 +201,118 @@ export class PlanningDataService {
       ...record,
       [stage]: data,
     }));
+  }
+
+  private handleRealtimeEvent(event: PlanningRealtimeEvent): void {
+    if (!event) {
+      return;
+    }
+    if (event.sourceConnectionId && event.sourceConnectionId === this.connectionId) {
+      return;
+    }
+    if (!event.sourceConnectionId && event.sourceClientId === this.userId) {
+      return;
+    }
+    const { stageId } = event;
+    if (!STAGE_IDS.includes(stageId)) {
+      return;
+    }
+    if (event.scope === 'resources') {
+      this.applyIncomingResources(stageId, (event.upserts as Resource[]) ?? [], event.deleteIds ?? [], event.version);
+      return;
+    }
+    if (event.scope === 'activities') {
+      this.applyIncomingActivities(stageId, (event.upserts as Activity[]) ?? [], event.deleteIds ?? [], event.version);
+      return;
+    }
+    if (event.scope === 'timeline' && event.timelineRange) {
+      this.applyIncomingTimeline(stageId, event.timelineRange, event.version);
+    }
+  }
+
+  private applyIncomingResources(
+    stageId: PlanningStageId,
+    upserts: Resource[],
+    deleteIds: string[],
+    version?: string | null,
+  ): void {
+    if (upserts.length === 0 && deleteIds.length === 0) {
+      return;
+    }
+    this.stageDataSignal.update((record) => {
+      const stage = record[stageId];
+      if (!stage) {
+        return record;
+      }
+      const merged = mergeResourceList(stage.resources, upserts, deleteIds);
+      if (merged === stage.resources) {
+        return record;
+      }
+      return {
+        ...record,
+        [stageId]: {
+          ...stage,
+          resources: merged,
+          version: version ?? stage.version,
+        },
+      };
+    });
+  }
+
+  private applyIncomingActivities(
+    stageId: PlanningStageId,
+    upserts: Activity[],
+    deleteIds: string[],
+    version?: string | null,
+  ): void {
+    if (upserts.length === 0 && deleteIds.length === 0) {
+      return;
+    }
+    this.stageDataSignal.update((record) => {
+      const stage = record[stageId];
+      if (!stage) {
+        return record;
+      }
+      const merged = mergeActivityList(stage.activities, upserts, deleteIds);
+      if (merged === stage.activities) {
+        return record;
+      }
+      return {
+        ...record,
+        [stageId]: {
+          ...stage,
+          activities: merged,
+          version: version ?? stage.version,
+        },
+      };
+    });
+  }
+
+  private applyIncomingTimeline(
+    stageId: PlanningStageId,
+    range: PlanningTimelineRange | { start: string | Date; end: string | Date },
+    version?: string | null,
+  ): void {
+    const normalizedRange = convertIncomingTimelineRange(range);
+    this.stageDataSignal.update((record) => {
+      const stage = record[stageId];
+      if (!stage) {
+        return record;
+      }
+      return {
+        ...record,
+        [stageId]: {
+          ...stage,
+          timelineRange: normalizeTimelineRange(normalizedRange),
+          version: version ?? stage.version,
+        },
+      };
+    });
+  }
+
+  private decorateClientRequestId(value?: string): string {
+    const base = value && value.length > 0 ? value : `client-sync-${Date.now().toString(36)}`;
+    return `${this.userId}|${this.connectionId}|${base}`;
   }
 
   private createTimelineFromSnapshot(range?: PlanningStageSnapshotDto['timelineRange']): PlanningTimelineRange {
@@ -366,5 +496,65 @@ function normalizeActivityForComparison(activity: Activity): Record<string, unkn
       ? [...activity.assignedQualifications].sort()
       : undefined,
     workRuleTags: activity.workRuleTags ? [...activity.workRuleTags].sort() : undefined,
+    attributes: sortObject(activity.attributes ?? null),
+    meta: sortObject(activity.meta ?? null),
   };
+}
+
+function mergeResourceList(existing: Resource[], upserts: Resource[], deleteIds: string[]): Resource[] {
+  if (upserts.length === 0 && deleteIds.length === 0) {
+    return existing;
+  }
+  const map = new Map(existing.map((resource) => [resource.id, resource]));
+  let mutated = false;
+
+  deleteIds.forEach((id) => {
+    if (map.delete(id)) {
+      mutated = true;
+    }
+  });
+
+  const clonedUpserts = cloneResources(upserts);
+  clonedUpserts.forEach((resource) => {
+    const before = map.get(resource.id);
+    if (!before || !resourcesEqual(before, resource)) {
+      map.set(resource.id, resource);
+      mutated = true;
+    }
+  });
+
+  return mutated ? Array.from(map.values()) : existing;
+}
+
+function mergeActivityList(existing: Activity[], upserts: Activity[], deleteIds: string[]): Activity[] {
+  if (upserts.length === 0 && deleteIds.length === 0) {
+    return existing;
+  }
+  const map = new Map(existing.map((activity) => [activity.id, activity]));
+  let mutated = false;
+
+  deleteIds.forEach((id) => {
+    if (map.delete(id)) {
+      mutated = true;
+    }
+  });
+
+  const clonedUpserts = cloneActivities(upserts);
+  clonedUpserts.forEach((activity) => {
+    const before = map.get(activity.id);
+    if (!before || !activitiesEqual(before, activity)) {
+      map.set(activity.id, activity);
+      mutated = true;
+    }
+  });
+
+  return mutated ? Array.from(map.values()) : existing;
+}
+
+function convertIncomingTimelineRange(
+  range: PlanningTimelineRange | { start: string | Date; end: string | Date },
+): PlanningTimelineRange {
+  const start = range.start instanceof Date ? range.start : new Date(range.start);
+  const end = range.end instanceof Date ? range.end : new Date(range.end);
+  return { start, end };
 }

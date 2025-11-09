@@ -47,12 +47,26 @@ export const routes: Routes = [
   },
   {
     path: 'planning',
-    loadComponent: () =>
-      import('./features/planning/planning-dashboard.component').then(
-        (m) => m.PlanningDashboardComponent,
-      ),
-    title: 'Planung',
-    data: { section: 'planning' },
+    children: [
+      {
+        path: '',
+        loadComponent: () =>
+          import('./features/planning/planning-dashboard.component').then(
+            (m) => m.PlanningDashboardComponent,
+          ),
+        title: 'Planung',
+        data: { section: 'planning' },
+      },
+      {
+        path: 'external',
+        loadComponent: () =>
+          import('./features/planning/planning-external-board.component').then(
+            (m) => m.PlanningExternalBoardComponent,
+          ),
+        title: 'Planung',
+        data: { section: 'planning' },
+      },
+    ],
   },
   {
     path: 'master-data',

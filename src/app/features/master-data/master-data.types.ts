@@ -47,6 +47,8 @@ export interface MasterDataCategoryConfig<T extends { id: string }> {
   toFormValue?: (item: T) => Record<string, unknown>;
   fromFormValue?: (value: Record<string, unknown>, previous?: T | null) => T;
   defaultValues?: () => Partial<T>;
+  onItemsChange?: (items: T[]) => void;
+  onSelectionChange?: (selection: T | null) => void;
 }
 
 export interface MasterDataHierarchyConfig<P extends { id: string }, C extends { id: string }> {
@@ -57,6 +59,8 @@ export interface MasterDataHierarchyConfig<P extends { id: string }, C extends {
   parentRelationKey?: keyof P & string;
   parent: MasterDataCategoryConfig<P>;
   child: MasterDataCategoryConfig<C>;
+  onParentItemsChange?: (items: P[]) => void;
+  onChildItemsChange?: (items: C[]) => void;
 }
 
 export interface MasterDataSectionBase {

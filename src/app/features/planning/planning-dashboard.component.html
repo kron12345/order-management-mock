@@ -178,6 +178,11 @@
                   >
                     Ersetzen
                   </button>
+                  <app-gantt-window-launcher
+                    [stageId]="activeStageId()"
+                    [boardId]="board.id"
+                    [resourceIds]="board.resourceIds"
+                  />
                 </div>
               </header>
 

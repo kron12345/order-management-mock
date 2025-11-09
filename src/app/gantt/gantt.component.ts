@@ -1423,9 +1423,9 @@ export class GanttComponent implements AfterViewInit {
     const classes: string[] = [];
     if (activity.serviceId) {
       classes.push('gantt-activity--within-service');
-      if (activity.serviceRole === 'start') {
+      if (activity.serviceRole === 'start' || activity.type === 'service-start') {
         classes.push('gantt-activity--service-boundary', 'gantt-activity--service-boundary-start');
-      } else if (activity.serviceRole === 'end') {
+      } else if (activity.serviceRole === 'end' || activity.type === 'service-end') {
         classes.push('gantt-activity--service-boundary', 'gantt-activity--service-boundary-end');
       }
     } else {
@@ -1503,6 +1503,7 @@ export class GanttComponent implements AfterViewInit {
     const showRoute = info?.showRoute ?? false;
     return { label, showRoute };
   }
+
 
   private blockActivityEdit(activityId: string) {
     this.dragEditBlockActivityId = activityId;

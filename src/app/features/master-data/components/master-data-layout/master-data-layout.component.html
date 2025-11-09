@@ -12,7 +12,7 @@
     (selectedIndexChange)="handleTabChange($event)"
     class="md-layout__tabs"
   >
-    <mat-tab *ngFor="let tab of tabs">
+    <mat-tab *ngFor="let tab of tabs; trackBy: trackTab">
       <ng-template mat-tab-label>
         <mat-icon *ngIf="tab.icon" [fontIcon]="tab.icon"></mat-icon>
         <span>{{ tab.title }}</span>
@@ -22,7 +22,7 @@
         <p class="md-layout__tab-description">{{ tab.description }}</p>
 
         <div class="md-layout__sections">
-          <ng-container *ngFor="let section of tab.sections">
+          <ng-container *ngFor="let section of tab.sections; trackBy: trackSection">
             <ng-container *ngIf="isComponentSection(section); else regularSection">
               <div class="md-layout__section" [attr.data-section-id]="section.id">
                 <header

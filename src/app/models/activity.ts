@@ -45,5 +45,11 @@ export interface Activity {
   assignedQualifications?: string[];
   /** Rule tags for working-time validations (e.g. night shift, rest). */
   workRuleTags?: string[];
+  /**
+   * Arbitrary extension attributes stored without schema changes.
+   * Preferred over the legacy `meta` bag.
+   */
+  attributes?: Record<string, unknown>;
+  /** @deprecated Use `attributes` instead. */
   meta?: Record<string, unknown>;
 }

@@ -10,7 +10,8 @@ import {
   MasterDataFieldType,
   MasterDataTabConfig,
 } from './master-data.types';
-import { DEMO_MASTER_DATA } from '../../data/demo-master-data';
+import { MasterDataResourceStoreService } from './master-data-resource.store';
+import { MasterDataCollectionsStoreService } from './master-data-collections.store';
 import {
   PersonnelService,
   PersonnelServicePool,
@@ -40,49 +41,61 @@ import { PlanningMasterComponent } from '../../planning/planning-master.componen
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class MasterDataLandingComponent {
-  private readonly data = DEMO_MASTER_DATA;
+  private readonly resources = inject(MasterDataResourceStoreService);
+  private readonly collections = inject(MasterDataCollectionsStoreService);
 
   protected readonly title = 'Stammdatenpflege';
   protected readonly subtitle =
     'Verwalten Sie Personal- und Fahrzeugstammdaten zentral. Alle Kategorien folgen demselben Bedienkonzept.';
 
-  private readonly vehicleTypeMap = new Map(
-    this.data.vehicleTypes.map((type) => [type.id, type.label] as const),
+  private readonly vehicleTypeMap = computed(() =>
+    new Map(this.collections.vehicleTypes().map((type) => [type.id, type.label] as const)),
   );
 
-  private readonly qualificationOptions: MasterDataOption[] = Array.from(
-    new Set(
-      this.data.personnel
-        .flatMap((person) => person.qualifications ?? [])
-        .concat(
-          this.data.personnelServices.flatMap((service) => service.requiredQualifications ?? []),
-        ),
-    ),
-  )
-    .filter((qualification) => qualification)
-    .map((qualification) => ({
+  private readonly qualificationOptions = computed<MasterDataOption[]>(() => {
+    const values = new Set<string>();
+    this.resources.personnel().forEach((person) =>
+      (person.qualifications ?? []).forEach((qualification) => {
+        if (qualification) {
+          values.add(qualification);
+        }
+      }),
+    );
+    this.resources.personnelServices().forEach((service) =>
+      (service.requiredQualifications ?? []).forEach((qualification) => {
+        if (qualification) {
+          values.add(qualification);
+        }
+      }),
+    );
+    return Array.from(values).map((qualification) => ({
       label: qualification,
       value: qualification,
     }));
+  });
 
-  private readonly personnelServiceOptions: MasterDataOption[] = this.data.personnelServices.map(
-    (service) => ({
-      label: service.name,
+  private readonly personnelServiceOptions = computed<MasterDataOption[]>(() =>
+    this.resources.personnelServices().map((service) => ({
+      label: service.name || service.id,
       value: service.id,
-    }),
+    })),
   );
 
-  private readonly vehicleServiceOptions: MasterDataOption[] = this.data.vehicleServices.map(
-    (service) => ({
-      label: service.name,
+  private readonly vehicleServiceOptions = computed<MasterDataOption[]>(() =>
+    this.resources.vehicleServices().map((service) => ({
+      label: service.name || service.id,
       value: service.id,
-    }),
+    })),
   );
 
-  private readonly vehicleTypeOptions: MasterDataOption[] = this.data.vehicleTypes.map((type) => ({
-    label: type.label,
-    value: type.id,
-  }));
+  private readonly vehicleTypeOptions = computed<MasterDataOption[]>(() =>
+    this.collections
+      .vehicleTypes()
+      .map((type) => ({
+        label: type.label,
+        value: type.id,
+      })),
+  );
 
   private readonly tiltingOptions: MasterDataOption[] = [
     { label: 'Keine', value: 'none' },
@@ -235,7 +248,7 @@ export class MasterDataLandingComponent {
         'personnel-service-pools',
         definitions,
       ),
-      items: this.data.personnelServicePools,
+      items: this.collections.personnelServicePools(),
       defaultValues: () => ({ serviceIds: [] }),
     },
     child: {
@@ -256,7 +269,7 @@ export class MasterDataLandingComponent {
               label: 'Qualifikationen',
               type: 'multiselect',
               hint: 'Sammeln Sie alle benötigten Berechtigungen für den Dienst.',
-              options: this.qualificationOptions,
+              options: this.qualificationOptions(),
             },
             {
               key: 'poolId',
@@ -269,8 +282,13 @@ export class MasterDataLandingComponent {
           'personnel-services',
           definitions,
         ),
-        items: this.data.personnelServices,
+      items: this.resources.personnelServices(),
       },
+      onParentItemsChange: (items) => {
+        this.collections.syncPersonnelServicePools(items);
+        this.resources.syncPersonnelServices(this.resources.personnelServices());
+      },
+      onChildItemsChange: (items) => this.resources.syncPersonnelServices(items),
     };
   }
 
@@ -300,7 +318,7 @@ export class MasterDataLandingComponent {
           'personnel-pools',
           definitions,
         ),
-        items: this.data.personnelPools,
+        items: this.collections.personnelPools(),
         defaultValues: () => ({ personnelIds: [] }),
       },
       child: {
@@ -331,13 +349,13 @@ export class MasterDataLandingComponent {
               key: 'qualifications',
               label: 'Qualifikationen',
               type: 'multiselect',
-              options: this.qualificationOptions,
+              options: this.qualificationOptions(),
             },
             {
               key: 'serviceIds',
               label: 'Zugewiesene Dienste',
               type: 'multiselect',
-              options: this.personnelServiceOptions,
+              options: this.personnelServiceOptions(),
             },
             {
               key: 'poolId',
@@ -350,8 +368,13 @@ export class MasterDataLandingComponent {
           'personnel',
           definitions,
         ),
-        items: this.data.personnel,
+        items: this.resources.personnel(),
       },
+      onParentItemsChange: (items) => {
+        this.collections.syncPersonnelPools(items);
+        this.resources.syncPersonnel(this.resources.personnel());
+      },
+      onChildItemsChange: (items) => this.resources.syncPersonnel(items),
     };
   }
 
@@ -384,7 +407,7 @@ export class MasterDataLandingComponent {
           'vehicle-service-pools',
           definitions,
         ),
-        items: this.data.vehicleServicePools,
+        items: this.collections.vehicleServicePools(),
         defaultValues: () => ({ serviceIds: [] }),
       },
       child: {
@@ -404,7 +427,7 @@ export class MasterDataLandingComponent {
               key: 'requiredVehicleTypeIds',
               label: 'Zulässige Fahrzeugtypen',
               type: 'multiselect',
-              options: this.vehicleTypeOptions,
+              options: this.vehicleTypeOptions(),
             },
             {
               key: 'poolId',
@@ -417,8 +440,13 @@ export class MasterDataLandingComponent {
           'vehicle-services',
           definitions,
         ),
-        items: this.data.vehicleServices,
+        items: this.resources.vehicleServices(),
       },
+      onParentItemsChange: (items) => {
+        this.collections.syncVehicleServicePools(items);
+        this.resources.syncVehicleServices(this.resources.vehicleServices());
+      },
+      onChildItemsChange: (items) => this.resources.syncVehicleServices(items),
     };
   }
 
@@ -448,7 +476,7 @@ export class MasterDataLandingComponent {
           'vehicle-pools',
           definitions,
         ),
-        items: this.data.vehiclePools,
+        items: this.collections.vehiclePools(),
         defaultValues: () => ({ vehicleIds: [] }),
       },
       child: {
@@ -467,14 +495,14 @@ export class MasterDataLandingComponent {
               key: 'typeId',
               label: 'Fahrzeugtyp',
               type: 'select',
-              options: this.vehicleTypeOptions,
+              options: this.vehicleTypeOptions(),
             },
             { key: 'depot', label: 'Heimatdepot', type: 'text' },
             {
               key: 'serviceIds',
               label: 'Einsatzdienste',
               type: 'multiselect',
-              options: this.vehicleServiceOptions,
+              options: this.vehicleServiceOptions(),
             },
             { key: 'description', label: 'Notiz', type: 'textarea', placeholder: 'Optional' },
             {
@@ -488,8 +516,13 @@ export class MasterDataLandingComponent {
           'vehicles',
           definitions,
         ),
-        items: this.data.vehicles,
+        items: this.resources.vehicles(),
       },
+      onParentItemsChange: (items) => {
+        this.collections.syncVehiclePools(items);
+        this.resources.syncVehicles(this.resources.vehicles());
+      },
+      onChildItemsChange: (items) => this.resources.syncVehicles(items),
     };
   }
 
@@ -571,7 +604,8 @@ export class MasterDataLandingComponent {
         'vehicle-types',
         definitions,
       ),
-      items: this.data.vehicleTypes,
+      items: this.collections.vehicleTypes(),
+      onItemsChange: (items) => this.collections.syncVehicleTypes(items),
     };
   }
 
@@ -580,13 +614,12 @@ export class MasterDataLandingComponent {
   ): MasterDataCategoryConfig<
     VehicleComposition & { entriesSerialized: string }
   > {
-    const items = this.data.vehicleCompositions.map((composition) => ({
+    const items = this.collections.vehicleCompositions().map((composition) => ({
       ...composition,
       entriesSerialized: this.serializeCompositionEntries(composition.entries),
     }));
 
     const customFields = this.mapCustomFields('vehicle-compositions', definitions);
-    const customKeys = customFields.map((field) => field.key);
 
     return {
       id: 'vehicle-compositions',
@@ -617,7 +650,6 @@ export class MasterDataLandingComponent {
       toFormValue: (item) => ({
         ...item,
         entriesSerialized: item.entriesSerialized,
-        ...this.extractCustomValues(item as unknown as Record<string, unknown>, customKeys),
       }),
       fromFormValue: (value, previous) => {
         const entriesSerialized = String(value['entriesSerialized'] ?? '');
@@ -627,8 +659,20 @@ export class MasterDataLandingComponent {
           name: String(value['name'] ?? ''),
           entries,
           entriesSerialized,
-          ...this.pickCustomValues(value, customKeys),
         };
+      },
+      onItemsChange: (entries) => {
+        const normalized = entries.map((entry) => {
+          const { entriesSerialized, ...rest } = entry;
+          const hasEntries = entry.entries && entry.entries.length > 0;
+          return {
+            ...(rest as VehicleComposition),
+            entries: hasEntries
+              ? entry.entries
+              : this.parseCompositionEntries(String(entriesSerialized ?? '')),
+          };
+        }) as VehicleComposition[];
+        this.collections.syncVehicleCompositions(normalized);
       },
     };
   }
@@ -682,16 +726,6 @@ export class MasterDataLandingComponent {
     return afterStart && beforeEnd;
   }
 
-  private formatCount(count: number, singular: string, plural: string): string {
-    if (count <= 0) {
-      return `Keine ${plural}`;
-    }
-    if (count === 1) {
-      return `1 ${singular}`;
-    }
-    return `${count} ${plural}`;
-  }
-
   private serializeCompositionEntries(entries: VehicleCompositionEntry[]): string {
     return entries.map((entry) => `${entry.typeId}:${entry.quantity}`).join('\n');
   }
@@ -701,9 +735,10 @@ export class MasterDataLandingComponent {
       return '';
     }
 
+    const vehicleTypeMap = this.vehicleTypeMap();
     return entries
       .map((entry) => {
-        const label = this.vehicleTypeMap.get(entry.typeId) ?? entry.typeId;
+        const label = vehicleTypeMap.get(entry.typeId) ?? entry.typeId;
         return `${entry.quantity}× ${label}`;
       })
       .join(', ');
@@ -781,27 +816,4 @@ export class MasterDataLandingComponent {
     }
   }
 
-  private extractCustomValues(
-    source: Record<string, unknown>,
-    keys: string[],
-  ): Record<string, unknown> {
-    return keys.reduce<Record<string, unknown>>((accumulator, key) => {
-      if (Object.prototype.hasOwnProperty.call(source, key)) {
-        accumulator[key] = source[key];
-      }
-      return accumulator;
-    }, {});
-  }
-
-  private pickCustomValues(
-    source: Record<string, unknown>,
-    keys: string[],
-  ): Record<string, unknown> {
-    return keys.reduce<Record<string, unknown>>((accumulator, key) => {
-      if (Object.prototype.hasOwnProperty.call(source, key)) {
-        accumulator[key] = source[key];
-      }
-      return accumulator;
-    }, {});
-  }
 }

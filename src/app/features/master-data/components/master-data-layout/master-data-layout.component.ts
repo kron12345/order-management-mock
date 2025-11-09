@@ -37,6 +37,14 @@ export class MasterDataLayoutComponent {
     this.selectedIndex.set(index);
   }
 
+  protected trackTab(_index: number, tab: MasterDataTabConfig): string {
+    return tab.id;
+  }
+
+  protected trackSection(_index: number, section: MasterDataSection): string {
+    return section.id;
+  }
+
   protected isCategorySection(section: MasterDataSection): section is MasterDataCategorySection {
     return section.type === 'category';
   }

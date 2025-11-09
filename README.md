@@ -38,12 +38,20 @@ Ein Angular-18-Mock, der einen vollständigen Ressourcen- und Aktivitäts-Gantt 
    npm install
    ```
 3. Backend-Endpunkt konfigurieren (optional):
-   - Standardmäßig ruft das Frontend `/api/v1` auf.
-   - Anpassbar, indem `API_CONFIG` überschrieben wird, z. B. in `main.ts`:
+   - Der Dev-Server (`ng serve` auf Port 4200) verbindet sich automatisch mit `http://localhost:3000/api/v1`.
+   - Abweichende Umgebungen können per Meta-Tag in `src/index.html` übersteuert werden:
+     ```html
+     <meta name="order-mgmt-api-base" content="https://staging.example.com/api/v1">
+     ```
+   - Alternativ lässt sich vor dem Bootstrap ein globales Flag setzen:
+     ```html
+     <script>window.__ORDER_MGMT_API_BASE__ = 'http://localhost:3333/api/v1';</script>
+     ```
+   - Als letzte Option kann `API_CONFIG` klassisch überschrieben werden, z. B. in `main.ts`:
      ```ts
      bootstrapApplication(AppComponent, {
        providers: [
-         { provide: API_CONFIG, useValue: { baseUrl: 'http://localhost:3333/api/v1' } },
+         { provide: API_CONFIG, useValue: { baseUrl: 'https://prod.example.com/api/v1' } },
        ],
      });
      ```
@@ -73,6 +81,7 @@ Der aktuelle Stand sieht eine REST-Brücke vor, die alle Activities/Resources ve
    - `GET /planning/stages/:stageId/activities` für Filterabfragen.
    - `PUT /planning/stages/:stageId/activities` akzeptiert Batch-Upserts/Deletes (Optimistic Locking optional über `version`).
    - `POST /planning/stages/:stageId/activities:validate` führt Prüfregeln aus (Orts-, Kapazitäts-, Arbeitszeit-, Qualifikationskonflikte; erweiterbar über `rule = custom`).
+   - `GET /planning/stages/:stageId/events` stellt einen SSE-Stream bereit. Jede Nachricht ist ein `PlanningStageRealtimeEvent` mit `scope = resources | activities | timeline`. Clients hängen ihren `clientId`-Queryparameter an und senden denselben Wert (präfixiert) in `clientRequestId`, sodass das Backend Echo-Events unterdrücken kann.
 4. Datenhaltung: beliebig (Postgres, Mongo, In-Memory). Wichtig ist, dass IDs stabil bleiben, damit mehrere Clients identische Activities sehen.
 5. Optional: Authentifizierung (z. B. per JWT) lässt sich über einen HTTP-Interceptor ergänzen.
 
@@ -107,6 +116,31 @@ Bereiche:
 - Transfer Edges (OP ↔ Site ↔ SEV)
 
 Die Komponenten unter `src/app/planning/components/**` sind modular aufgebaut und lassen sich leicht auf weitere Domänen übertragen. Mockdaten stehen in `src/app/shared/planning-mocks.ts` bereit und können per Store geladen oder ersetzt werden.
+
+**Neu:** Personal, Personaldienste, Fahrzeuge und Fahrzeugdienste werden jetzt direkt über das Planning-Backend (`/planning/stages/base/resources`) verwaltet. Zusätzlich lassen sich alle Dienst-/Fahrzeugpools, Fahrzeugtypen und Fahrzeugkompositionen via `/planning/master-data/*` CRUD-Endpunkten pflegen. Sobald Sie im Stammdaten-UI speichern, landen die Änderungen per REST auf `http://localhost:3000/api/v1` (oder der konfigurierten Basis-URL) und stehen unmittelbar in der Planungsansicht zur Verfügung. Ein laufendes Backend ist daher Voraussetzung für persistente Stammdaten. Alle dynamischen Zusatzfelder werden dabei in generischen `attributes`-Objekten gespeichert – das gilt ebenso für Activities – sodass das Backend keine Schema-Updates mehr benötigt.
+
+### Echtzeit-Synchronisation
+
+- Server sendet Änderungen über `GET /planning/stages/:stageId/events` als `text/event-stream`. Nachrichten entsprechen `PlanningStageRealtimeEvent` (siehe OpenAPI).
+- Client übergibt fortan zwei Kennungen: `userId` (stabil über alle Tabs hinweg) und `connectionId` (pro Browser-Tab). Jede Mutationsanforderung erhält ein Präfix `clientRequestId = <userId>|<connectionId>|...`. Das Backend kann Events der auslösenden Verbindung (`sourceConnectionId`) filtern, während andere Tabs desselben Users die Änderung weiterhin empfangen.
+- Empfohlener Payload je Event:
+  ```json
+  {
+    "stageId": "base",
+    "scope": "activities",
+    "sourceClientId": "user-123",
+    "sourceConnectionId": "tab-abc",
+    "version": "2025-11-10T10:05:00.000Z",
+    "upserts": [{ "...": "..." }],
+    "deleteIds": ["..."]
+  }
+  ```
+- Bei Verbindungsabbrüchen sollte der Stream offen gehalten bzw. automatisch neu aufgebaut werden; bei Versionssprüngen (z. B. nach einem verpassten Event) lädt das Frontend einen kompletten Snapshot.
+
+### Plantafel in neuem Fenster
+
+- Jede Plantafel-Registerkarte besitzt rechts oben ein „Open in new window“-Icon. Daraufhin öffnet Angular `/#/planning/external?stage=<stageId>&resources=<comma-separated-ids>`.
+- Der externe View lauscht auf dieselben Echtzeit-Streams und zeigt ausschließlich die übergebenen Ressourcen an – ideal für Mehrschirm-Arbeit. Da jede Instanz ihre eigene `connectionId` besitzt, werden Änderungen zwischen den Fenstern synchronisiert, ohne lokale Aktionen doppelt anzuwenden.
 
 ## OpenAPI & Datenmodell
 

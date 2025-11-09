@@ -31,6 +31,7 @@ export interface PersonnelServicePool {
   serviceIds: string[];
   shiftCoordinator?: string;
   contactEmail?: string;
+  attributes?: Record<string, unknown>;
 }
 
 export interface Personnel {
@@ -53,6 +54,7 @@ export interface PersonnelPool {
   description?: string;
   personnelIds: string[];
   locationCode?: string;
+  attributes?: Record<string, unknown>;
 }
 
 export interface VehicleService {
@@ -75,6 +77,7 @@ export interface VehicleServicePool {
   description?: string;
   serviceIds: string[];
   dispatcher?: string;
+  attributes?: Record<string, unknown>;
 }
 
 export interface VehicleType {
@@ -99,6 +102,7 @@ export interface VehicleType {
   maxAxleLoad?: number;
   noiseCategory?: string;
   remarks?: string;
+  attributes?: Record<string, unknown>;
 }
 
 export interface Vehicle {
@@ -122,6 +126,7 @@ export interface VehiclePool {
   description?: string;
   vehicleIds: string[];
   depotManager?: string;
+  attributes?: Record<string, unknown>;
 }
 
 export interface VehicleCompositionEntry {
@@ -135,4 +140,5 @@ export interface VehicleComposition {
   entries: VehicleCompositionEntry[];
   turnaroundBuffer?: string;
   remark?: string;
+  attributes?: Record<string, unknown>;
 }

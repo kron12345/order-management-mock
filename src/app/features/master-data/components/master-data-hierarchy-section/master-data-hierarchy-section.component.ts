@@ -113,7 +113,11 @@ export class MasterDataHierarchySectionComponent implements OnChanges {
   }
 
   protected handleParentItemsChange(updated: any[]): void {
-    this.parentItems.set(this.cloneItems(updated));
+    const cloned = this.cloneItems(updated);
+    this.parentItems.set(cloned);
+    if (this.config.onParentItemsChange) {
+      this.config.onParentItemsChange(cloned);
+    }
     const currentId = this.selectedParentId();
     if (currentId && updated.some((item) => item.id === currentId)) {
       return;
@@ -166,6 +170,9 @@ export class MasterDataHierarchySectionComponent implements OnChanges {
         const fallbackId = this.parentItems()[0]?.id ?? null;
         this.selectedParentId.set(fallbackId);
       }
+    }
+    if (this.config.onChildItemsChange) {
+      this.config.onChildItemsChange(this.cloneItems(this.childItems()));
     }
   }
 

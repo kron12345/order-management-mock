@@ -14,10 +14,11 @@ import { MatInputModule } from '@angular/material/input';
 import { MatSelectModule } from '@angular/material/select';
 import { FormsModule, ReactiveFormsModule, FormBuilder } from '@angular/forms';
 import { GanttComponent } from '../../gantt/gantt.component';
+import { GanttWindowLauncherComponent } from './components/gantt-window-launcher.component';
 import { DragDropModule } from '@angular/cdk/drag-drop';
 import { PlanningDataService } from './planning-data.service';
 import { Resource, ResourceKind } from '../../models/resource';
-import { Activity } from '../../models/activity';
+import { Activity, ServiceRole } from '../../models/activity';
 import {
   ActivityFieldKey,
   ActivityTypeDefinition,
@@ -149,6 +150,7 @@ type ActivityTypePickerGroup = {
     MatSelectModule,
     DragDropModule,
     GanttComponent,
+    GanttWindowLauncherComponent,
   ],
   templateUrl: './planning-dashboard.component.html',
   styleUrl: './planning-dashboard.component.scss',
@@ -452,11 +454,12 @@ export class PlanningDashboardComponent {
   });
 
   protected readonly activityTypeInfoMap = computed(() => {
-    const info: Record<string, { label: string; showRoute: boolean }> = {};
+    const info: Record<string, { label: string; showRoute: boolean; serviceRole: ServiceRole | null }> = {};
     this.activityTypeDefinitions().forEach((definition) => {
       info[definition.id] = {
         label: definition.label,
         showRoute: definition.fields.includes('from') || definition.fields.includes('to'),
+        serviceRole: null,
       };
     });
     return info;
