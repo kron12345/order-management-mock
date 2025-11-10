@@ -13,6 +13,7 @@ import { CustomerService } from '../../../core/services/customer.service';
 import { Customer } from '../../../core/models/customer.model';
 import { TimetableService } from '../../../core/services/timetable.service';
 import { TimetablePhase } from '../../../core/models/timetable.model';
+import { MatSnackBar } from '@angular/material/snack-bar';
 
 @Component({
   selector: 'app-order-card',
@@ -57,8 +58,14 @@ export class OrderCardComponent {
   readonly variantSummaries = computed(() =>
     this.computeVariantSummaries(this.effectiveItems()),
   );
+  readonly timetableYearSummaries = computed(() =>
+    this.computeTimetableYearSummaries(this.effectiveItems()),
+  );
   private readonly filters = computed(() => this.orderService.filters());
   readonly effectiveItems = computed(() => this.resolveItems());
+  readonly selectionMode = signal(false);
+  readonly selectedIds = signal<Set<string>>(new Set());
+  readonly selectedCount = computed(() => this.selectedIds().size);
 
   private readonly businessStatusLabels: Record<BusinessStatus, string> = {
     neu: 'Neu',
@@ -81,6 +88,7 @@ export class OrderCardComponent {
     private readonly orderService: OrderService,
     private readonly customerService: CustomerService,
     private readonly timetableService: TimetableService,
+    private readonly snackBar: MatSnackBar,
   ) {}
 
   openPositionDialog(event: MouseEvent) {
@@ -108,6 +116,54 @@ export class OrderCardComponent {
     return base.filter((item) =>
       this.itemMatchesBusinessStatus(item, filters.businessStatus as BusinessStatus),
     );
+  }
+
+  toggleSelectionMode(event: MouseEvent) {
+    event.stopPropagation();
+    if (this.selectionMode()) {
+      this.clearSelection();
+      return;
+    }
+    this.selectionMode.set(true);
+  }
+
+  clearSelection(event?: MouseEvent) {
+    event?.stopPropagation();
+    this.selectedIds.set(new Set());
+    this.selectionMode.set(false);
+  }
+
+  onBulkSelectionChange(change: { id: string; selected: boolean }) {
+    this.selectedIds.update((current) => {
+      const next = new Set(current);
+      if (change.selected) {
+        next.add(change.id);
+      } else {
+        next.delete(change.id);
+      }
+      return next;
+    });
+  }
+
+  submitSelected(event?: MouseEvent) {
+    event?.stopPropagation();
+    const ids = Array.from(this.selectedIds());
+    if (!ids.length) {
+      this.snackBar.open('Keine Auftragsposition ausgewählt.', 'OK', {
+        duration: 2500,
+      });
+      return;
+    }
+    this.orderService.submitOrderItems(this.order.id, ids);
+    this.snackBar.open(`${ids.length} Auftragsposition(en) bestellt.`, 'OK', {
+      duration: 3000,
+    });
+    this.clearSelection();
+  }
+
+  submitSingle(itemId: string) {
+    this.orderService.submitOrderItems(this.order.id, [itemId]);
+    this.snackBar.open('Auftragsposition bestellt.', 'OK', { duration: 2000 });
   }
 
   private computeBusinessStatusSummaries(items: OrderItem[]): StatusSummary[] {
@@ -275,6 +331,20 @@ export class OrderCardComponent {
     const current = this.filters().businessStatus;
     const next = current === status ? 'all' : (status as BusinessStatus);
     this.orderService.setFilter({ businessStatus: next });
+  }
+
+  private computeTimetableYearSummaries(items: OrderItem[]): { label: string; count: number }[] {
+    const counts = new Map<string, number>();
+    items.forEach((item) => {
+      const label = this.orderService.getItemTimetableYear(item);
+      if (!label) {
+        return;
+      }
+      counts.set(label, (counts.get(label) ?? 0) + 1);
+    });
+    return Array.from(counts.entries())
+      .sort(([a], [b]) => a.localeCompare(b, 'de', { sensitivity: 'base' }))
+      .map(([label, count]) => ({ label, count }));
   }
 
   clearBusinessStatus(event: MouseEvent) {

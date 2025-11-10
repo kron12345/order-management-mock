@@ -1,5 +1,5 @@
-import { Component, Input } from '@angular/core';
-import { CommonModule } from '@angular/common';
+import { Component, EventEmitter, Input, Output } from '@angular/core';
+import { CommonModule, DatePipe } from '@angular/common';
 import { MATERIAL_IMPORTS } from '../../../core/material.imports.imports';
 import {
   OrderItem,
@@ -24,12 +24,17 @@ import { TimetableService } from '../../../core/services/timetable.service';
   selector: 'app-order-item-list',
   standalone: true,
   imports: [CommonModule, ...MATERIAL_IMPORTS],
+  providers: [DatePipe],
   templateUrl: './order-item-list.component.html',
   styleUrl: './order-item-list.component.scss',
 })
 export class OrderItemListComponent {
   @Input({ required: true }) items!: OrderItem[];
   @Input({ required: true }) orderId!: string;
+  @Input() bulkSelectionEnabled = false;
+  @Input() selectedIds: ReadonlySet<string> | null = null;
+  @Output() bulkSelectionChange = new EventEmitter<{ id: string; selected: boolean }>();
+  @Output() submitRequested = new EventEmitter<string>();
 
   get orderedItems(): OrderItem[] {
     if (!this.items) {
@@ -89,6 +94,7 @@ export class OrderItemListComponent {
     private readonly router: Router,
     private readonly dialog: MatDialog,
     private readonly timetableService: TimetableService,
+    private readonly datePipe: DatePipe,
   ) {}
 
   businessesForItem(item: OrderItem): Business[] {
@@ -122,6 +128,31 @@ export class OrderItemListComponent {
     return `phase-${phase}`;
   }
 
+  formatScheduleTime(value: string | undefined): string {
+    if (!value) {
+      return '—';
+    }
+    const parsed = new Date(value);
+    if (!Number.isNaN(parsed.getTime())) {
+      const formatted = this.datePipe.transform(parsed, 'shortTime');
+      if (formatted) {
+        return formatted;
+      }
+    }
+    return /^\d{1,2}:\d{2}$/.test(value) ? value : value;
+  }
+
+  isItemSelected(item: OrderItem): boolean {
+    if (!this.selectedIds) {
+      return false;
+    }
+    return this.selectedIds.has(item.id);
+  }
+
+  toggleSelection(item: OrderItem, selected: boolean) {
+    this.bulkSelectionChange.emit({ id: item.id, selected });
+  }
+
   statusLabel(status: BusinessStatus): string {
     return this.statusLabels[status];
   }
@@ -145,9 +176,9 @@ export class OrderItemListComponent {
 
   navigateToTrafficPeriod(event: MouseEvent, periodId: string) {
     event.stopPropagation();
-    this.router.navigate(['/templates'], {
+    this.router.navigate(['/plans'], {
       queryParams: {
-        tab: 'traffic-periods',
+        view: 'calendars',
         highlightPeriod: periodId,
       },
     });
@@ -171,7 +202,6 @@ export class OrderItemListComponent {
     event.stopPropagation();
     this.router.navigate(['/templates'], {
       queryParams: {
-        tab: 'templates',
         highlightTemplate: templateId,
       },
     });

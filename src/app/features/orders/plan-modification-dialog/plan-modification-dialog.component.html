@@ -35,6 +35,13 @@
 
     <section class="section">
       <h3>Gültigkeit</h3>
+      @if (calendarLocked) {
+        <div class="calendar-lock-hint">
+          <mat-icon inline>lock</mat-icon>
+          Referenzkalender der Hauptposition ist gesperrt. Wähle unten die Tage, für die eine
+          Modifikation/Sub-Auftragsposition erzeugt werden soll.
+        </div>
+      }
       <mat-button-toggle-group
         formControlName="validityMode"
         class="mode-toggle"

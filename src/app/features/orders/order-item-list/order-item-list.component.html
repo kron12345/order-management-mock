@@ -8,6 +8,13 @@
     @for (it of orderedItems; track it.id) {
       <div class="item" [ngClass]="versionDepthClass(it)">
         <div class="left">
+          @if (bulkSelectionEnabled) {
+            <mat-checkbox
+              class="inline-checkbox"
+              [checked]="isItemSelected(it)"
+              (change)="toggleSelection(it, $event.checked)"
+            ></mat-checkbox>
+          }
           <div class="headline">
             <div class="name">{{ it.name }}</div>
             @if (versionLabel(it)) {
@@ -27,9 +34,7 @@
             @if (hasSchedule(it)) {
               <span class="sep">•</span>
               <span class="time"
-                >{{ it.start | date: "shortTime" }}–{{
-                  it.end | date: "shortTime"
-                }}</span
+                >{{ formatScheduleTime(it.start) }}–{{ formatScheduleTime(it.end) }}</span
               >
             }
             @if (it.responsible) {
@@ -232,6 +237,14 @@
             aria-label="Auftragsposition bearbeiten"
           >
             <mat-icon>edit</mat-icon>
+          </button>
+          <button
+            mat-icon-button
+            matTooltip="Position bestellen"
+            aria-label="Auftragsposition bestellen"
+            (click)="submitRequested.emit(it.id); $event.stopPropagation()"
+          >
+            <mat-icon>send</mat-icon>
           </button>
           @if (it.deviation) {
             <span class="deviation" matTooltip="Abweichung">{{

@@ -13,7 +13,7 @@ import {
   MatDialogRef,
 } from '@angular/material/dialog';
 import { MATERIAL_IMPORTS } from '../../../core/material.imports.imports';
-import { OrderItem } from '../../../core/models/order-item.model';
+import { OrderItem, OrderItemValiditySegment } from '../../../core/models/order-item.model';
 import { TrainPlan, TrainPlanStop } from '../../../core/models/train-plan.model';
 import {
   PlanModificationStopInput,
@@ -76,11 +76,16 @@ export class PlanModificationDialogComponent {
   readonly plan = this.data.plan;
   readonly item = this.data.item;
   readonly orderId = this.data.orderId;
+  readonly calendarLocked =
+    this.item.type === 'Fahrplan' && (this.item.timetablePhase ?? 'bedarf') !== 'bedarf';
+  private readonly initialValidityMode: ValidityMode = this.plan.trafficPeriodId
+    ? 'trafficPeriod'
+    : 'custom';
 
   readonly periods = computed(() => this.trafficPeriodService.periods());
   readonly templates = computed(() => this.templateService.templates());
   readonly validityMode = signal<ValidityMode>(
-    this.plan.trafficPeriodId ? 'trafficPeriod' : 'custom',
+    this.calendarLocked ? 'custom' : this.initialValidityMode,
   );
   readonly form: FormGroup<PlanModificationFormModel>;
   readonly errorMessage = signal<string | null>(null);
@@ -114,9 +119,11 @@ export class PlanModificationDialogComponent {
         validators: [Validators.pattern(/^([01]?\d|2[0-3]):[0-5]\d$/)],
       }),
       validityMode: this.fb.nonNullable.control<ValidityMode>(
-        this.plan.trafficPeriodId ? 'trafficPeriod' : 'custom',
+        this.calendarLocked ? 'custom' : this.initialValidityMode,
       ),
-      trafficPeriodId: this.fb.nonNullable.control(initialTrafficPeriod),
+      trafficPeriodId: this.fb.nonNullable.control(
+        this.calendarLocked ? '' : initialTrafficPeriod,
+      ),
       validFrom: this.fb.nonNullable.control(initialValidFrom, {
         validators: [Validators.required],
       }),
@@ -158,6 +165,10 @@ export class PlanModificationDialogComponent {
 
     this.initializeCustomCalendarState(initialYear);
     this.onValidityModeChange(this.validityMode());
+    if (this.calendarLocked) {
+      this.form.controls.validityMode.disable({ emitEvent: false });
+      this.form.controls.trafficPeriodId.disable({ emitEvent: false });
+    }
   }
 
   trackByPeriodId(_: number, period: { id: string }): string {
@@ -224,7 +235,7 @@ export class PlanModificationDialogComponent {
     }
 
     const value = this.form.getRawValue();
-    const mode = value.validityMode;
+    const mode: ValidityMode = this.calendarLocked ? 'custom' : value.validityMode;
     if (mode === 'trafficPeriod') {
       if (!value.trafficPeriodId) {
         this.errorMessage.set('Bitte einen Referenzkalender auswählen.');
@@ -255,11 +266,15 @@ export class PlanModificationDialogComponent {
         stops: this.assembledStops() ?? undefined,
       });
 
-      this.orderService.applyPlanModification({
-        orderId: this.orderId,
-        itemId: this.item.id,
-        plan: newPlan,
-      });
+      if (this.calendarLocked) {
+        this.handleLockedPlanModification(newPlan, this.customSelectedDates());
+      } else {
+        this.orderService.applyPlanModification({
+          orderId: this.orderId,
+          itemId: this.item.id,
+          plan: newPlan,
+        });
+      }
 
       this.dialogRef.close({
         updatedPlanId: newPlan.id,
@@ -274,8 +289,10 @@ export class PlanModificationDialogComponent {
   }
 
   private onValidityModeChange(mode: ValidityMode) {
-    this.validityMode.set(mode);
-    if (mode === 'trafficPeriod') {
+    const effectiveMode = this.calendarLocked ? 'custom' : mode;
+    this.validityMode.set(effectiveMode);
+
+    if (effectiveMode === 'trafficPeriod') {
       this.form.controls.trafficPeriodId.addValidators(Validators.required);
       this.form.controls.customYear.disable({ emitEvent: false });
       this.form.controls.validFrom.disable({ emitEvent: false });
@@ -676,5 +693,65 @@ export class PlanModificationDialogComponent {
       platform: stop.platform,
       notes: stop.notes,
     };
+  }
+
+  private handleLockedPlanModification(plan: TrainPlan, dates: string[]) {
+    const normalizedDates = Array.from(new Set(dates)).sort();
+    const segments = this.buildSegmentsFromDates(normalizedDates);
+    if (!segments.length) {
+      throw new Error('Bitte mindestens einen Verkehrstag auswählen.');
+    }
+    const result = this.orderService.splitOrderItem({
+      orderId: this.orderId,
+      itemId: this.item.id,
+      rangeStart: segments[0].startDate,
+      rangeEnd: segments[segments.length - 1].endDate,
+      segments,
+    });
+    if (this.item.trafficPeriodId) {
+      this.trafficPeriodService.addVariantRule(this.item.trafficPeriodId, {
+        name: plan.title,
+        dates: normalizedDates,
+        variantType: 'special_day',
+        appliesTo: 'both',
+      });
+    }
+    this.orderService.applyPlanModification({
+      orderId: this.orderId,
+      itemId: result.created.id,
+      plan,
+    });
+  }
+
+  private buildSegmentsFromDates(dates: string[]): OrderItemValiditySegment[] {
+    if (!dates.length) {
+      return [];
+    }
+    const normalized = Array.from(new Set(dates.filter((date) => !!date))).sort();
+    const segments: OrderItemValiditySegment[] = [];
+    let start = normalized[0];
+    let prev = start;
+    for (let i = 1; i < normalized.length; i += 1) {
+      const current = normalized[i];
+      if (this.areConsecutiveDates(prev, current)) {
+        prev = current;
+        continue;
+      }
+      segments.push({ startDate: start, endDate: prev });
+      start = current;
+      prev = current;
+    }
+    segments.push({ startDate: start, endDate: prev });
+    return segments;
+  }
+
+  private areConsecutiveDates(a: string, b: string): boolean {
+    const first = new Date(`${a}T00:00:00Z`);
+    const second = new Date(`${b}T00:00:00Z`);
+    if (Number.isNaN(first.getTime()) || Number.isNaN(second.getTime())) {
+      return false;
+    }
+    const diff = second.getTime() - first.getTime();
+    return diff === 24 * 60 * 60 * 1000;
   }
 }

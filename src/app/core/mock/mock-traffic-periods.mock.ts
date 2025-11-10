@@ -10,6 +10,7 @@ export const MOCK_TRAFFIC_PERIODS: TrafficPeriod[] = [
     createdAt: '2029-11-18T09:00:00',
     updatedAt: '2030-01-05T10:15:00',
     tags: ['Fernverkehr', 'TTT'],
+    timetableYearLabel: '2029/30',
     rules: [
       {
         id: 'TPER-2030-ICE-R1',
@@ -47,6 +48,7 @@ export const MOCK_TRAFFIC_PERIODS: TrafficPeriod[] = [
     createdAt: '2029-10-12T08:45:00',
     updatedAt: '2030-01-08T15:20:00',
     tags: ['Regionalverkehr'],
+    timetableYearLabel: '2029/30',
     rules: [
       {
         id: 'TPER-2030-REGIO-R1',
@@ -83,6 +85,7 @@ export const MOCK_TRAFFIC_PERIODS: TrafficPeriod[] = [
     createdAt: '2029-09-22T14:00:00',
     updatedAt: '2030-02-03T09:30:00',
     tags: ['Güterverkehr', 'Sperrungen'],
+    timetableYearLabel: '2029/30',
     rules: [
       {
         id: 'TPER-2030-CARGO-R1',
@@ -107,6 +110,57 @@ export const MOCK_TRAFFIC_PERIODS: TrafficPeriod[] = [
         appliesTo: 'both',
         variantNumber: 'R1',
         reason: 'Sperrpausen im Korridor',
+      },
+    ],
+  },
+  {
+    id: 'TPER-2030-SERVICE-KOELN',
+    name: 'Servicefenster Betriebsbegleitung Köln',
+    type: 'special',
+    description: 'Referenzkalender für die Betriebsbegleitung im Raum Köln während der Umstellung 2030.',
+    responsible: 'InfraGO Leitstelle',
+    createdAt: '2030-03-01T07:30:00',
+    updatedAt: '2030-03-15T11:20:00',
+    tags: ['Service', 'Köln'],
+    timetableYearLabel: '2029/30',
+    rules: [
+      {
+        id: 'TPER-2030-SERVICE-KOELN-R1',
+        name: 'Leistungstage April/Mai',
+        daysBitmap: '1111111',
+        validityStart: '2030-04-01',
+        validityEnd: '2030-05-31',
+        variantType: 'special_day',
+        appliesTo: 'both',
+        variantNumber: 'S1',
+        reason: 'Begleitung während der Angebotsumstellung',
+        primary: true,
+      },
+    ],
+  },
+  {
+    id: 'TPER-2030-BAULOG-BSL',
+    name: 'Baulogistik Basel Ersatzfenster',
+    type: 'special',
+    description: 'Kalender für die nächtlichen Baulogistikfenster zwischen Basel RB und Basel Bad Rbf.',
+    responsible: 'InfraGO Nord',
+    createdAt: '2030-02-12T10:10:00',
+    updatedAt: '2030-03-20T09:55:00',
+    tags: ['Baulogistik', 'Basel'],
+    timetableYearLabel: '2029/30',
+    rules: [
+      {
+        id: 'TPER-2030-BAULOG-BSL-R1',
+        name: 'Sperrfenster Wochenende',
+        daysBitmap: '0000011',
+        validityStart: '2030-04-01',
+        validityEnd: '2030-05-31',
+        includesDates: ['2030-04-06', '2030-04-13', '2030-05-04', '2030-05-18'],
+        variantType: 'replacement',
+        appliesTo: 'operational',
+        variantNumber: 'BL1',
+        reason: 'Baulogistik Basel Gleis 3/4',
+        primary: true,
       },
     ],
   },

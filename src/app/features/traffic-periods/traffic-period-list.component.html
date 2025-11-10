@@ -9,6 +9,12 @@
     </div>
     <div class="header-actions">
       <mat-chip color="primary" selected>{{ periods().length }} Kalender</mat-chip>
+      <mat-slide-toggle
+        [checked]="groupedViewEnabled()"
+        (change)="onGroupViewChange($event.checked)"
+      >
+        Gruppierte Ansicht
+      </mat-slide-toggle>
       <button mat-flat-button color="primary" (click)="openCreateDialog()">
         <mat-icon>add</mat-icon>
         Neuer Referenzkalender
@@ -64,6 +70,130 @@
     </section>
   }
 
+  <ng-template #periodCard let-period>
+    <mat-card
+      class="period-card"
+      appearance="outlined"
+      [attr.id]="periodElementId(period.id)"
+    >
+      <mat-card-header>
+        <div mat-card-avatar class="type-icon" [ngClass]="period.type">
+          <mat-icon>event</mat-icon>
+        </div>
+        <mat-card-title>{{ period.name }}</mat-card-title>
+        <mat-card-subtitle>
+          <mat-chip>{{ periodTypeLabel(period.type) }}</mat-chip>
+          @if (period.timetableYearLabel) {
+            <mat-chip class="year-chip">Fahrplanjahr {{ period.timetableYearLabel }}</mat-chip>
+          }
+          @if (period.responsible) {
+            <span class="responsible">{{ period.responsible }}</span>
+          }
+        </mat-card-subtitle>
+        <span class="header-spacer"></span>
+        <div class="card-actions">
+          <button
+            mat-icon-button
+            matTooltip="Bearbeiten"
+            (click)="editPeriod(period)"
+          >
+            <mat-icon>edit</mat-icon>
+          </button>
+          <button
+            mat-icon-button
+            color="warn"
+            matTooltip="Löschen"
+            (click)="deletePeriod(period)"
+          >
+            <mat-icon>delete</mat-icon>
+          </button>
+        </div>
+      </mat-card-header>
+
+      <mat-card-content>
+        @if (period.description) {
+          <p class="description">{{ period.description }}</p>
+        }
+
+        @if (period.tags?.length) {
+          <mat-chip-set>
+            @for (tag of period.tags; track tag) {
+              <mat-chip>{{ tag }}</mat-chip>
+            }
+          </mat-chip-set>
+        }
+
+        <mat-divider></mat-divider>
+
+        <div class="rules">
+          @for (rule of period.rules; track trackByRuleId($index, rule)) {
+            @let timeline = ruleTimeline(rule);
+            <div class="rule">
+              <div class="rule__header">
+                <span class="rule__name">{{ rule.name }}</span>
+                <span class="rule__dates">
+                  {{ rule.validityStart | date: 'mediumDate' }}
+                  @if (rule.validityEnd) {
+                    – {{ rule.validityEnd | date: 'mediumDate' }}
+                  } @else {
+                    – offen
+                  }
+                </span>
+              </div>
+              @if (timeline.length) {
+                <div class="rule__timeline">
+                  @for (month of timeline; track month.monthIndex) {
+                    <div
+                      class="timeline-month"
+                      matTooltip="{{ month.tooltip }}"
+                      matTooltipPosition="above"
+                    >
+                      <span class="timeline-label">{{ month.label }}</span>
+                      <div class="timeline-bar" [style.background]="month.gradient"></div>
+                    </div>
+                  }
+                </div>
+              }
+              <div class="rule__chips">
+                @if (rule.variantNumber) {
+                  <span class="badge">Variante {{ rule.variantNumber }}</span>
+                }
+                @if (variantTypeLabel(rule)) {
+                  <span class="badge">Typ: {{ variantTypeLabel(rule) }}</span>
+                }
+                @if (appliesLabel(rule)) {
+                  <span class="badge">Bereich: {{ appliesLabel(rule) }}</span>
+                }
+                @if (patternLabel(rule)) {
+                  <span class="badge">Muster: {{ patternLabel(rule) }}</span>
+                }
+                @if (rule.includesHolidays) {
+                  <span class="badge">Feiertage inkl.</span>
+                }
+                @if (includesLabel(rule)) {
+                  <span class="badge">Inkl.: {{ includesLabel(rule) }}</span>
+                }
+                @if (excludesLabel(rule)) {
+                  <span class="badge">Exkl.: {{ excludesLabel(rule) }}</span>
+                }
+              </div>
+              @if (rule.reason) {
+                <div class="rule__note">{{ rule.reason }}</div>
+              } @else if (rule.description) {
+                <div class="rule__note">{{ rule.description }}</div>
+              }
+            </div>
+          }
+        </div>
+
+        <div class="timestamps">
+          <span>Erstellt {{ period.createdAt | date: 'short' }}</span>
+          <span>Aktualisiert {{ period.updatedAt | date: 'short' }}</span>
+        </div>
+      </mat-card-content>
+    </mat-card>
+  </ng-template>
+
   @if (!periods().length) {
     <mat-card appearance="outlined" class="empty">
       <mat-card-content>
@@ -75,127 +205,56 @@
       </mat-card-content>
     </mat-card>
   } @else {
-    <section class="period-grid">
-      @for (period of periods(); track trackByPeriodId($index, period)) {
-        <mat-card
-          class="period-card"
-          appearance="outlined"
-          [attr.id]="periodElementId(period.id)"
-        >
-          <mat-card-header>
-            <div mat-card-avatar class="type-icon" [ngClass]="period.type">
-              <mat-icon>event</mat-icon>
-            </div>
-            <mat-card-title>{{ period.name }}</mat-card-title>
-            <mat-card-subtitle>
-              <mat-chip>{{ typeLabels[period.type] }}</mat-chip>
-              @if (period.responsible) {
-                <span class="responsible">{{ period.responsible }}</span>
-              }
-            </mat-card-subtitle>
-            <span class="header-spacer"></span>
-            <div class="card-actions">
-              <button
-                mat-icon-button
-                matTooltip="Bearbeiten"
-                (click)="editPeriod(period)"
+    @let grouped = groupedPeriodsView();
+    @if (groupedViewEnabled()) {
+      @if (grouped.groups.length) {
+        <section class="period-groups">
+          <mat-accordion class="period-accordion" multi>
+            @for (group of grouped.groups; track group.key) {
+              <mat-expansion-panel
+                [expanded]="groupExpanded(group.key)"
+                (opened)="onGroupExpanded(group.key)"
+                (closed)="onGroupCollapsed(group.key)"
               >
-                <mat-icon>edit</mat-icon>
-              </button>
-              <button
-                mat-icon-button
-                color="warn"
-                matTooltip="Löschen"
-                (click)="deletePeriod(period)"
-              >
-                <mat-icon>delete</mat-icon>
-              </button>
-            </div>
-          </mat-card-header>
-
-          <mat-card-content>
-            @if (period.description) {
-              <p class="description">{{ period.description }}</p>
-            }
-
-            @if (period.tags?.length) {
-              <mat-chip-set>
-                @for (tag of period.tags; track tag) {
-                  <mat-chip>{{ tag }}</mat-chip>
-                }
-              </mat-chip-set>
-            }
-
-            <mat-divider></mat-divider>
-
-            <div class="rules">
-              @for (rule of period.rules; track trackByRuleId($index, rule)) {
-                @let timeline = ruleTimeline(rule);
-                <div class="rule">
-                  <div class="rule__header">
-                    <span class="rule__name">{{ rule.name }}</span>
-                    <span class="rule__dates">
-                      {{ rule.validityStart | date: 'mediumDate' }}
-                      @if (rule.validityEnd) {
-                        – {{ rule.validityEnd | date: 'mediumDate' }}
-                      } @else {
-                        – offen
-                      }
-                    </span>
-                  </div>
-                  @if (timeline.length) {
-                    <div class="rule__timeline">
-                      @for (month of timeline; track month.monthIndex) {
-                        <div
-                          class="timeline-month"
-                          matTooltip="{{ month.tooltip }}"
-                          matTooltipPosition="above"
-                        >
-                          <span class="timeline-label">{{ month.label }}</span>
-                          <div class="timeline-bar" [style.background]="month.gradient"></div>
-                        </div>
-                      }
-                    </div>
+                <mat-expansion-panel-header>
+                  <mat-panel-title>{{ group.label }}</mat-panel-title>
+                  <mat-panel-description>
+                    {{ group.items.length }} Kalender
+                  </mat-panel-description>
+                </mat-expansion-panel-header>
+                <section class="period-grid period-grid--nested">
+                  @for (period of group.items; track trackByPeriodId($index, period)) {
+                    <ng-container
+                      [ngTemplateOutlet]="periodCard"
+                      [ngTemplateOutletContext]="{ $implicit: period }"
+                    ></ng-container>
                   }
-                  <div class="rule__chips">
-                    @if (rule.variantNumber) {
-                      <span class="badge">Variante {{ rule.variantNumber }}</span>
-                    }
-                    @if (variantTypeLabel(rule)) {
-                      <span class="badge">Typ: {{ variantTypeLabel(rule) }}</span>
-                    }
-                    @if (appliesLabel(rule)) {
-                      <span class="badge">Bereich: {{ appliesLabel(rule) }}</span>
-                    }
-                    @if (patternLabel(rule)) {
-                      <span class="badge">Muster: {{ patternLabel(rule) }}</span>
-                    }
-                    @if (rule.includesHolidays) {
-                      <span class="badge">Feiertage inkl.</span>
-                    }
-                    @if (includesLabel(rule)) {
-                      <span class="badge">Inkl.: {{ includesLabel(rule) }}</span>
-                    }
-                    @if (excludesLabel(rule)) {
-                      <span class="badge">Exkl.: {{ excludesLabel(rule) }}</span>
-                    }
-                  </div>
-                  @if (rule.reason) {
-                    <div class="rule__note">{{ rule.reason }}</div>
-                  } @else if (rule.description) {
-                    <div class="rule__note">{{ rule.description }}</div>
-                  }
-                </div>
-              }
-            </div>
-
-            <div class="timestamps">
-              <span>Erstellt {{ period.createdAt | date: 'short' }}</span>
-              <span>Aktualisiert {{ period.updatedAt | date: 'short' }}</span>
-            </div>
-          </mat-card-content>
-        </mat-card>
+                </section>
+              </mat-expansion-panel>
+            }
+          </mat-accordion>
+        </section>
       }
-    </section>
+      @if (grouped.ungrouped.length) {
+        <h3 class="group-heading">Ohne Gruppe</h3>
+        <section class="period-grid">
+          @for (period of grouped.ungrouped; track trackByPeriodId($index, period)) {
+            <ng-container
+              [ngTemplateOutlet]="periodCard"
+              [ngTemplateOutletContext]="{ $implicit: period }"
+            ></ng-container>
+          }
+        </section>
+      }
+    } @else {
+      <section class="period-grid">
+        @for (period of periods(); track trackByPeriodId($index, period)) {
+          <ng-container
+            [ngTemplateOutlet]="periodCard"
+            [ngTemplateOutletContext]="{ $implicit: period }"
+          ></ng-container>
+        }
+      </section>
+    }
   }
 </div>

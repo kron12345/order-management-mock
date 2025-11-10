@@ -37,6 +37,27 @@
       }
     </mat-form-field>
 
+    <mat-form-field appearance="outline">
+      <mat-label>Fahrplanjahr</mat-label>
+      <mat-select formControlName="timetableYearLabel">
+        @for (option of timetableYearOptions; track option.label) {
+          <mat-option [value]="option.label">
+            {{ option.label }} · {{ option.startIso }} – {{ option.endIso }}
+          </mat-option>
+        }
+      </mat-select>
+      <button
+        mat-icon-button
+        matSuffix
+        type="button"
+        class="help-icon"
+        [matTooltip]="fieldDescriptions.timetableYearLabel"
+        aria-label="Beschreibung Fahrplanjahr"
+      >
+        <mat-icon>help_outline</mat-icon>
+      </button>
+    </mat-form-field>
+
     <section class="customer-section">
       <div class="section-heading">
         <mat-icon>business</mat-icon>

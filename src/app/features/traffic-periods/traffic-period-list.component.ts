@@ -23,6 +23,13 @@ interface SortOption {
   label: string;
 }
 
+interface TrafficPeriodGroup {
+  key: string;
+  label: string;
+  tags: string[];
+  items: TrafficPeriod[];
+}
+
 @Component({
   selector: 'app-traffic-period-list',
   standalone: true,
@@ -35,6 +42,8 @@ export class TrafficPeriodListComponent {
   private readonly dialog = inject(MatDialog);
   private readonly document = inject(DOCUMENT);
   private readonly highlightPeriodId = signal<string | null>(null);
+  private readonly groupedView = signal(true);
+  private readonly expandedGroupKeys = signal<Set<string>>(new Set());
 
   readonly searchControl = new FormControl('', { nonNullable: true });
 
@@ -42,6 +51,44 @@ export class TrafficPeriodListComponent {
   readonly periods = computed(() => this.service.filteredPeriods());
   readonly sort = computed(() => this.service.sort());
   readonly tags = computed(() => this.service.tags());
+  readonly groupedPeriodsView = computed(() => {
+    const groups = new Map<string, TrafficPeriodGroup>();
+    const ungrouped: TrafficPeriod[] = [];
+    const periods = this.periods();
+
+    periods.forEach((period) => {
+      const groupInfo = this.resolveGroupInfo(period);
+      if (!groupInfo) {
+        ungrouped.push(period);
+        return;
+      }
+      const existing = groups.get(groupInfo.key);
+      if (existing) {
+        existing.items.push(period);
+      } else {
+        groups.set(groupInfo.key, {
+          key: groupInfo.key,
+          label: groupInfo.label,
+          tags: groupInfo.tags,
+          items: [period],
+        });
+      }
+    });
+
+    const sortedGroups = Array.from(groups.values()).sort((a, b) =>
+      a.label.localeCompare(b.label, 'de', { sensitivity: 'base' }),
+    );
+    const lookup = new Map<string, string>();
+    sortedGroups.forEach((group) =>
+      group.items.forEach((period) => lookup.set(period.id, group.key)),
+    );
+
+    return {
+      groups: sortedGroups,
+      ungrouped,
+      lookup,
+    };
+  });
 
   readonly typeOptions: { value: TrafficPeriodType | 'all'; label: string }[] = [
     { value: 'all', label: 'Alle Arten' },
@@ -55,20 +102,20 @@ export class TrafficPeriodListComponent {
     { value: 'name:asc', label: 'Name A–Z' },
   ];
 
-  readonly typeLabels: Record<TrafficPeriodType, string> = {
+  private readonly typeLabelMap: Record<TrafficPeriodType, string> = {
     standard: 'Standard',
     special: 'Sonderverkehr',
     construction: 'Bauphase',
   };
 
-  readonly variantTypeLabels: Record<TrafficPeriodVariantType, string> = {
+  private readonly variantTypeLabels: Record<TrafficPeriodVariantType, string> = {
     series: 'Serie',
     special_day: 'Sondertag',
     block: 'Block/Sperre',
     replacement: 'Ersatztag',
   };
 
-  readonly appliesLabels: Record<TrafficPeriodVariantScope, string> = {
+  private readonly appliesLabels: Record<TrafficPeriodVariantScope, string> = {
     commercial: 'Kommerziell',
     operational: 'Betrieb',
     both: 'Beide',
@@ -98,6 +145,12 @@ export class TrafficPeriodListComponent {
     effect(() => {
       this.periods();
       window.setTimeout(() => this.scrollToHighlightedPeriod(), 0);
+    });
+
+    effect(() => {
+      if (!this.groupedView()) {
+        this.expandedGroupKeys.set(new Set());
+      }
     });
   }
 
@@ -131,6 +184,75 @@ export class TrafficPeriodListComponent {
 
   periodElementId(id: string): string {
     return `traffic-period-${id}`;
+  }
+
+  private resolveGroupInfo(period: TrafficPeriod):
+    | { key: string; label: string; tags: string[] }
+    | null {
+    const tags = period.tags ?? [];
+    const archiveTag = tags.find((tag) => tag.startsWith('archive-group:'));
+    const labelTag = tags.find((tag) => tag.startsWith('archive-label:'));
+    const fallback = period.name;
+
+    if (archiveTag) {
+      const label = labelTag ? labelTag.slice('archive-label:'.length).trim() : fallback;
+      return {
+        key: archiveTag,
+        label: label || fallback,
+        tags,
+      };
+    }
+
+    const railMlTag = tags.find((tag) => tag.startsWith('railml:'));
+    if (railMlTag) {
+      return {
+        key: railMlTag,
+        label: fallback,
+        tags,
+      };
+    }
+
+    if (period.timetableYearLabel) {
+      return {
+        key: `year:${period.timetableYearLabel}`,
+        label: `Fahrplanjahr ${period.timetableYearLabel}`,
+        tags,
+      };
+    }
+
+    return null;
+  }
+
+  groupedViewEnabled(): boolean {
+    return this.groupedView();
+  }
+
+  onGroupViewChange(checked: boolean) {
+    this.groupedView.set(checked);
+  }
+
+  groupExpanded(key: string): boolean {
+    return this.expandedGroupKeys().has(key);
+  }
+
+  onGroupExpanded(key: string) {
+    this.expandedGroupKeys.update((current) => {
+      const next = new Set(current);
+      next.add(key);
+      return next;
+    });
+  }
+
+  onGroupCollapsed(key: string) {
+    this.expandedGroupKeys.update((current) => {
+      const next = new Set(current);
+      next.delete(key);
+      return next;
+    });
+  }
+
+  periodTypeLabel(type: TrafficPeriodType): string {
+    return this.typeLabelMap[type] ?? type;
   }
 
   openCreateDialog() {
@@ -328,16 +450,29 @@ export class TrafficPeriodListComponent {
     if (!highlight) {
       return;
     }
-    const element = this.document.getElementById(this.periodElementId(highlight));
-    if (!element) {
-      return;
+    if (this.groupedView()) {
+      this.ensureGroupExpandedForPeriod(highlight);
     }
-    this.highlightPeriodId.set(null);
-    element.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    element.classList.add('period-card--highlight');
     window.setTimeout(() => {
-      element.classList.remove('period-card--highlight');
-    }, 2000);
+      const element = this.document.getElementById(this.periodElementId(highlight));
+      if (!element) {
+        return;
+      }
+      this.highlightPeriodId.set(null);
+      element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      element.classList.add('period-card--highlight');
+      window.setTimeout(() => {
+        element.classList.remove('period-card--highlight');
+      }, 2000);
+    }, 50);
+  }
+
+  private ensureGroupExpandedForPeriod(periodId: string) {
+    const lookup = this.groupedPeriodsView().lookup;
+    const key = lookup.get(periodId);
+    if (key) {
+      this.onGroupExpanded(key);
+    }
   }
 
   private parseDate(iso: string): Date {

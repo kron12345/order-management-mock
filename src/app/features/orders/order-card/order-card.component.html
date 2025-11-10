@@ -8,12 +8,18 @@
         </span>
         <span class="name">{{ order.name }}</span>
       </div>
-      @if (order.customer || order.tags?.length) {
+      @if (order.customer || order.tags?.length || order.timetableYearLabel) {
         <div class="meta">
           @if (order.customer) {
             <span class="meta-pill">
               <mat-icon inline>business</mat-icon>
               {{ order.customer }}
+            </span>
+          }
+          @if (order.timetableYearLabel) {
+            <span class="meta-pill meta-pill--year">
+              <mat-icon inline>event</mat-icon>
+              Fahrplanjahr {{ order.timetableYearLabel }}
             </span>
           }
           @if (order.tags?.length) {
@@ -22,6 +28,16 @@
                 <mat-chip class="tag-chip" appearance="outlined">
                   <mat-icon>label</mat-icon>
                   {{ t }}
+                </mat-chip>
+              }
+            </mat-chip-set>
+          }
+          @if (timetableYearSummaries().length) {
+            <mat-chip-set aria-label="Fahrplanjahre" class="year-chip-set">
+              @for (year of timetableYearSummaries(); track year.label) {
+                <mat-chip class="year-chip" appearance="outlined">
+                  <mat-icon inline>event</mat-icon>
+                  {{ year.label }} · {{ year.count }}
                 </mat-chip>
               }
             </mat-chip-set>
@@ -157,6 +173,14 @@
 
     <div class="right">
       <button
+        mat-icon-button
+        [class.active]="selectionMode()"
+        (click)="toggleSelectionMode($event)"
+        matTooltip="Mehrfachauswahl"
+      >
+        <mat-icon>checklist</mat-icon>
+      </button>
+      <button
         mat-stroked-button
         color="primary"
         (click)="openPositionDialog($event)"
@@ -172,8 +196,38 @@
   </div>
 
   @if (expanded()) {
+    @if (selectionMode()) {
+      <div class="selection-bar">
+        <div class="selection-bar__info">
+          <mat-icon>check_circle</mat-icon>
+          {{ selectedCount() }} Position(en) ausgewählt
+        </div>
+        <div class="selection-bar__actions">
+          <button
+            mat-flat-button
+            color="primary"
+            type="button"
+            (click)="submitSelected($event)"
+            [disabled]="selectedCount() === 0"
+          >
+            <mat-icon>send</mat-icon>
+            Bestellen
+          </button>
+          <button mat-stroked-button type="button" (click)="clearSelection($event)">
+            Abbrechen
+          </button>
+        </div>
+      </div>
+    }
     <mat-divider></mat-divider>
-    <app-order-item-list [items]="effectiveItems()" [orderId]="order.id" />
+    <app-order-item-list
+      [items]="effectiveItems()"
+      [orderId]="order.id"
+      [bulkSelectionEnabled]="selectionMode()"
+      [selectedIds]="selectedIds()"
+      (bulkSelectionChange)="onBulkSelectionChange($event)"
+      (submitRequested)="submitSingle($event)"
+    />
     @if (order.comment) {
       <mat-divider></mat-divider>
       <div class="comment">

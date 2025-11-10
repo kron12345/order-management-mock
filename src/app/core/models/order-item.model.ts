@@ -58,6 +58,7 @@ export interface OrderItem {
   linkedTemplateId?: string;
   linkedTrainPlanId?: string;
   trafficPeriodId?: string;
+  timetableYearLabel?: string;
   serviceType?: string;
   fromLocation?: string;
   toLocation?: string;

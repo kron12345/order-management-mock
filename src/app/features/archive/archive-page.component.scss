@@ -1,10 +1,10 @@
-.templates-page {
+.archive-page {
   display: flex;
   flex-direction: column;
   gap: 16px;
 }
 
-.templates-header {
+.archive-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -22,4 +22,12 @@
     color: rgba(0, 0, 0, 0.6);
     max-width: 640px;
   }
+}
+
+.archive-tabs {
+  background: transparent;
+}
+
+.archive-tabs ::ng-deep .mat-mdc-tab-body-content {
+  padding: 24px 0;
 }

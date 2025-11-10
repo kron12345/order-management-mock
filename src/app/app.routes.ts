@@ -1,12 +1,12 @@
 import { Routes } from '@angular/router';
 import { OrderListComponent } from './features/orders/order-list/order-list.component';
 import { BusinessListComponent } from './features/business/business-list.component';
-import { TrainPlanListComponent } from './features/train-plans/train-plan-list.component';
 import { TemplatesPageComponent } from './features/templates/templates-page.component';
 import { MasterDataLandingComponent } from './features/master-data/master-data-landing.component';
 import { CustomAttributeSettingsComponent } from './features/settings/custom-attribute-settings.component';
 import { TimetableManagerComponent } from './features/timetable-manager/timetable-manager.component';
 import { CustomerListComponent } from './features/customers/customer-list.component';
+import { ArchivePageComponent } from './features/archive/archive-page.component';
 
 export const routes: Routes = [
   {
@@ -41,8 +41,8 @@ export const routes: Routes = [
   },
   {
     path: 'plans',
-    component: TrainPlanListComponent,
-    title: 'Fahrpläne',
+    component: ArchivePageComponent,
+    title: 'Fahrplanarchiv',
     data: { section: 'manager' },
   },
   {

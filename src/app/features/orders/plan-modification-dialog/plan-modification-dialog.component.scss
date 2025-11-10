@@ -53,6 +53,23 @@
   }
 }
 
+.calendar-lock-hint {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: rgba(255, 193, 7, 0.15);
+  color: #6a4f00;
+  font-size: 0.9rem;
+
+  mat-icon {
+    font-size: 18px;
+    height: 18px;
+    width: 18px;
+  }
+}
+
 .error {
   margin-top: 16px;
   color: #b00020;

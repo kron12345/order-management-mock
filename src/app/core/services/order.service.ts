@@ -26,7 +26,8 @@ import {
   TimetableStopInput,
 } from './timetable.service';
 import { TrafficPeriodService } from './traffic-period.service';
-import { TrafficPeriod } from '../models/traffic-period.model';
+import { TrafficPeriod, TrafficPeriodVariantType } from '../models/traffic-period.model';
+import { TimetableYearService } from './timetable-year.service';
 
 export interface OrderFilters {
   search: string;
@@ -35,6 +36,7 @@ export interface OrderFilters {
   trainStatus: TimetablePhase | 'all';
   businessStatus: BusinessStatus | 'all';
   trainNumber: string;
+  timetableYearLabel: string | 'all';
 }
 
 export interface OrderItemOption {
@@ -51,6 +53,7 @@ export interface CreateOrderPayload {
   customer?: string;
   tags?: string[];
   comment?: string;
+  timetableYearLabel?: string;
 }
 
 export interface CreateServiceOrderItemPayload {
@@ -64,6 +67,7 @@ export interface CreateServiceOrderItemPayload {
   responsible?: string;
   deviation?: string;
   name?: string;
+  timetableYearLabel?: string;
 }
 
 export interface CreatePlanOrderItemsPayload
@@ -71,6 +75,7 @@ export interface CreatePlanOrderItemsPayload
   orderId: string;
   namePrefix?: string;
   responsible?: string;
+  timetableYearLabel?: string;
 }
 
 export interface ImportedRailMlStop extends CreateScheduleTemplateStopPayload {}
@@ -134,6 +139,10 @@ export interface ImportedRailMlTrain {
   timetablePeriodRef?: string;
   trainPartId?: string;
   templateMatch?: ImportedRailMlTemplateMatch;
+  calendarDates?: string[];
+  calendarLabel?: string;
+  calendarVariantType?: TrafficPeriodVariantType;
+  timetableYearLabel?: string;
 }
 
 export interface CreateManualPlanOrderItemPayload {
@@ -144,6 +153,10 @@ export interface CreateManualPlanOrderItemPayload {
   name?: string;
   responsible?: string;
   trafficPeriodId?: string;
+  validFrom?: string;
+  validTo?: string;
+  daysBitmap?: string;
+  timetableYearLabel?: string;
 }
 
 export interface CreateImportedPlanOrderItemPayload {
@@ -153,6 +166,7 @@ export interface CreateImportedPlanOrderItemPayload {
   namePrefix?: string;
   responsible?: string;
   parentItemId?: string;
+  timetableYearLabel?: string;
 }
 
 type EditableOrderItemKeys =
@@ -177,6 +191,7 @@ export interface SplitOrderItemPayload {
   rangeStart: string; // ISO date (YYYY-MM-DD)
   rangeEnd: string; // ISO date (YYYY-MM-DD)
   updates?: Partial<OrderItemUpdateData>;
+  segments?: OrderItemValiditySegment[];
 }
 
 @Injectable({ providedIn: 'root' })
@@ -189,6 +204,7 @@ export class OrderService {
     trainStatus: 'all',
     businessStatus: 'all',
     trainNumber: '',
+    timetableYearLabel: 'all',
   });
 
   constructor(
@@ -196,6 +212,7 @@ export class OrderService {
     private readonly customerService: CustomerService,
     private readonly timetableService: TimetableService,
     private readonly trafficPeriodService: TrafficPeriodService,
+    private readonly timetableYearService: TimetableYearService,
   ) {
     this._orders.set(
       this._orders().map((order) => this.initializeOrder(order)),
@@ -233,7 +250,8 @@ export class OrderService {
       filters.timeRange !== 'all' ||
       filters.trainStatus !== 'all' ||
       filters.businessStatus !== 'all' ||
-      filters.trainNumber.trim() !== '';
+      filters.trainNumber.trim() !== '' ||
+      filters.timetableYearLabel !== 'all';
 
     return this._orders().filter((order) => {
       if (!this.matchesOrder(order, filters)) {
@@ -264,6 +282,7 @@ export class OrderService {
     const id = payload.id?.trim().length ? payload.id.trim() : this.generateOrderId();
     const customerId = payload.customerId;
     const customerName = this.resolveCustomerName(customerId, payload.customer);
+    const timetableYearLabel = this.normalizeTimetableYearLabel(payload.timetableYearLabel);
     const order: Order = {
       id,
       name: payload.name,
@@ -272,6 +291,7 @@ export class OrderService {
       tags: this.normalizeTags(payload.tags),
       comment: payload.comment,
       items: [],
+      timetableYearLabel,
     };
 
     this._orders.update((orders) => [order, ...orders]);
@@ -303,6 +323,10 @@ export class OrderService {
       payload.name?.trim() && payload.name.trim().length > 0
         ? payload.name.trim()
         : serviceType;
+    const timetableYearLabel =
+      this.normalizeTimetableYearLabel(payload.timetableYearLabel) ??
+      this.timetableYearService.getYearBounds(payload.start).label;
+    this.ensureOrderTimetableYear(payload.orderId, timetableYearLabel);
 
     const item: OrderItem = {
       id: this.generateItemId(payload.orderId),
@@ -316,6 +340,7 @@ export class OrderService {
       trafficPeriodId: payload.trafficPeriodId,
       responsible: payload.responsible,
       deviation: payload.deviation,
+      timetableYearLabel,
     };
 
     this.appendItems(payload.orderId, [item]);
@@ -323,14 +348,24 @@ export class OrderService {
   }
 
   addPlanOrderItems(payload: CreatePlanOrderItemsPayload) {
-    const { orderId, namePrefix, responsible, ...planConfig } = payload;
+    const { orderId, namePrefix, responsible, timetableYearLabel, ...planConfig } = payload;
     const plans = this.trainPlanService.createPlansFromTemplate(planConfig);
+    if (!plans.length) {
+      return [];
+    }
     const enrichedPlans =
       planConfig.trafficPeriodId && planConfig.trafficPeriodId.length
         ? plans
         : plans.map((plan) =>
             this.ensurePlanHasTrafficPeriod(plan, namePrefix ?? plan.title),
           );
+    const normalizedYearLabel =
+      this.normalizeTimetableYearLabel(timetableYearLabel) ??
+      this.timetableYearFromPlan(enrichedPlans[0] ?? plans[0]);
+    if (!normalizedYearLabel) {
+      throw new Error('Fahrplanjahr konnte nicht ermittelt werden.');
+    }
+    this.ensureOrderTimetableYear(orderId, normalizedYearLabel);
 
     const items: OrderItem[] = enrichedPlans.map((plan, index) => {
       const basePrefix = namePrefix?.trim() ?? plan.title;
@@ -343,6 +378,7 @@ export class OrderService {
         responsible: plan.responsibleRu,
         linkedTemplateId: planConfig.templateId,
         linkedTrainPlanId: plan.id,
+        timetableYearLabel: normalizedYearLabel,
       } satisfies OrderItem;
 
       const enriched = this.applyPlanDetailsToItem(base, plan);
@@ -385,7 +421,17 @@ export class OrderService {
       stops: stopPayloads,
       sourceName: title,
       trafficPeriodId: payload.trafficPeriodId,
+      validFrom: payload.validFrom,
+      validTo: payload.validTo,
+      daysBitmap: payload.daysBitmap,
     });
+    const timetableYearLabel =
+      this.normalizeTimetableYearLabel(payload.timetableYearLabel) ??
+      this.timetableYearFromPlan(plan);
+    if (!timetableYearLabel) {
+      throw new Error('Fahrplanjahr konnte nicht bestimmt werden.');
+    }
+    this.ensureOrderTimetableYear(payload.orderId, timetableYearLabel);
 
     const base: OrderItem = {
       id: this.generateItemId(payload.orderId),
@@ -393,6 +439,7 @@ export class OrderService {
       type: 'Fahrplan',
       responsible,
       linkedTrainPlanId: plan.id,
+      timetableYearLabel,
     } satisfies OrderItem;
     const item = this.applyPlanDetailsToItem(base, plan);
     const timetable = this.ensureTimetableForPlan(plan, item);
@@ -422,6 +469,15 @@ export class OrderService {
       templateId: undefined,
       trafficPeriodId: payload.trafficPeriodId,
     });
+    const timetableYearLabel =
+      this.normalizeTimetableYearLabel(payload.timetableYearLabel) ??
+      payload.train.timetableYearLabel ??
+      this.getTrafficPeriodTimetableYear(payload.trafficPeriodId) ??
+      this.timetableYearFromPlan(plan);
+    if (!timetableYearLabel) {
+      throw new Error('Fahrplanjahr konnte nicht bestimmt werden.');
+    }
+    this.ensureOrderTimetableYear(payload.orderId, timetableYearLabel);
 
     const firstStop = plan.stops[0];
     const lastStop = plan.stops[plan.stops.length - 1];
@@ -435,6 +491,7 @@ export class OrderService {
       responsible,
       linkedTrainPlanId: plan.id,
       parentItemId: payload.parentItemId,
+      timetableYearLabel,
     } satisfies OrderItem;
 
     const item = this.applyPlanDetailsToItem(
@@ -519,11 +576,20 @@ export class OrderService {
         const target = this.ensureItemDefaults(order.items[targetIndex]);
         const validity = target.validity ?? [];
 
-        const { retained, extracted } = this.splitSegments(
-          validity,
-          rangeStart,
-          rangeEnd,
-        );
+    const customSegments = payload.segments?.length
+      ? this.prepareCustomSegments(payload.segments)
+      : null;
+
+    if (customSegments) {
+      this.ensureSegmentsWithinValidity(validity, customSegments);
+    }
+
+    const { retained, extracted } = customSegments
+      ? {
+          retained: this.subtractSegments(validity, customSegments),
+          extracted: customSegments,
+        }
+      : this.splitSegments(validity, rangeStart, rangeEnd);
 
         if (!extracted.length) {
           throw new Error(
@@ -531,10 +597,12 @@ export class OrderService {
           );
         }
 
+        this.ensureNoSiblingConflict(order.items, target, extracted);
+
         const childId = this.generateItemId(order.id);
         const preparedUpdates = this.prepareUpdatePayload(payload.updates);
 
-        const child: OrderItem = this.applyUpdatesToItem(
+        let child: OrderItem = this.applyUpdatesToItem(
           {
             ...target,
             id: childId,
@@ -544,6 +612,8 @@ export class OrderService {
           },
           preparedUpdates,
         );
+
+        child = this.cleanupChildAfterSplit(child, preparedUpdates);
 
         if (preparedUpdates.linkedTrainPlanId) {
           const linkedPlan = this.trainPlanService.getById(
@@ -580,6 +650,10 @@ export class OrderService {
 
         result = { created: normalizedChild, original: normalizedOriginal };
 
+        if (target.trafficPeriodId) {
+          this.applyCalendarExclusions(target.trafficPeriodId, extracted);
+        }
+
         return { ...order, items: normalizedItems };
       }),
     );
@@ -599,6 +673,97 @@ export class OrderService {
     return resultNonNull;
   }
 
+  updateOrderItemInPlace(params: {
+    orderId: string;
+    itemId: string;
+    updates?: Partial<OrderItemUpdateData>;
+  }): OrderItem {
+    const { orderId, itemId, updates } = params;
+    const order = this.getOrderById(orderId);
+    const current = order?.items.find((entry) => entry.id === itemId);
+    if (!current) {
+      throw new Error(`Auftragsposition ${itemId} wurde im Auftrag ${orderId} nicht gefunden.`);
+    }
+    if (!updates || Object.keys(updates).length === 0) {
+      return current;
+    }
+
+    const { linkedTrainPlanId, ...rest } = updates;
+    if (Object.keys(rest).length) {
+      this.updateItem(itemId, (item) => this.applyUpdatesToItem(item, rest));
+    }
+
+    let updatedItem =
+      this.getOrderById(orderId)?.items.find((entry) => entry.id === itemId) ?? current;
+
+    if (
+      linkedTrainPlanId &&
+      linkedTrainPlanId.trim().length &&
+      linkedTrainPlanId !== updatedItem.linkedTrainPlanId
+    ) {
+      this.linkTrainPlanToItem(linkedTrainPlanId, itemId);
+      updatedItem =
+        this.getOrderById(orderId)?.items.find((entry) => entry.id === itemId) ?? updatedItem;
+    }
+
+    return this.ensureItemDefaults(updatedItem);
+  }
+
+  createPlanVersionFromSplit(parent: OrderItem, child: OrderItem): void {
+    const basePlanId = parent.linkedTrainPlanId ?? child.linkedTrainPlanId;
+    if (!basePlanId) {
+      return;
+    }
+    const basePlan = this.trainPlanService.getById(basePlanId);
+    if (!basePlan) {
+      return;
+    }
+    const calendar = this.deriveCalendarForChild(child, basePlan);
+    const stops: PlanModificationStopInput[] = basePlan.stops.map((stop, index) => ({
+      sequence: stop.sequence ?? index + 1,
+      type: stop.type,
+      locationCode: stop.locationCode ?? `LOC-${index + 1}`,
+      locationName: stop.locationName ?? stop.locationCode ?? `LOC-${index + 1}`,
+      countryCode: stop.countryCode,
+      arrivalTime: stop.arrivalTime,
+      departureTime: stop.departureTime,
+      arrivalOffsetDays: stop.arrivalOffsetDays,
+      departureOffsetDays: stop.departureOffsetDays,
+      dwellMinutes: stop.dwellMinutes,
+      activities: stop.activities?.length ? [...stop.activities] : ['0001'],
+      platform: stop.platform,
+      notes: stop.notes,
+    }));
+
+    const plan = this.trainPlanService.createPlanModification({
+      originalPlanId: basePlan.id,
+      title: child.name ?? basePlan.title,
+      trainNumber: basePlan.trainNumber,
+      responsibleRu: child.responsible ?? basePlan.responsibleRu,
+      notes: basePlan.notes,
+      trafficPeriodId: basePlan.trafficPeriodId ?? undefined,
+      calendar,
+      stops,
+    });
+
+    this.linkTrainPlanToItem(plan.id, child.id);
+  }
+
+  private cleanupChildAfterSplit(
+    child: OrderItem,
+    updates: Partial<OrderItemUpdateData>,
+  ): OrderItem {
+    const next: OrderItem = { ...child };
+    if (!updates.linkedTemplateId) {
+      delete next.linkedTemplateId;
+    }
+    delete next.linkedBusinessIds;
+    if (next.type === 'Fahrplan' && !updates.trafficPeriodId) {
+      delete next.trafficPeriodId;
+    }
+    return next;
+  }
+
   private matchesOrder(order: Order, filters: OrderFilters): boolean {
     const term = filters.search.trim().toLowerCase();
     if (
@@ -614,7 +779,155 @@ export class OrderService {
     if (filters.tag !== 'all' && !(order.tags?.includes(filters.tag) ?? false)) {
       return false;
     }
+    if (filters.timetableYearLabel !== 'all') {
+      if (order.timetableYearLabel) {
+        if (order.timetableYearLabel !== filters.timetableYearLabel) {
+          return false;
+        }
+      } else {
+        const matchesYear = order.items.some(
+          (item) => this.getItemTimetableYear(item) === filters.timetableYearLabel,
+        );
+        if (!matchesYear) {
+          return false;
+        }
+      }
+    }
     return true;
+  }
+
+  private deriveCalendarForChild(
+    child: OrderItem,
+    plan: TrainPlan,
+  ): TrainPlan['calendar'] {
+    const segments = this.resolveValiditySegments(child);
+    const firstSegment = segments[0];
+    const lastSegment = segments[segments.length - 1] ?? firstSegment;
+    const fallbackStart =
+      child.start?.slice(0, 10) ??
+      plan.calendar.validFrom ??
+      child.end?.slice(0, 10) ??
+      new Date().toISOString().slice(0, 10);
+    const fallbackEnd =
+      child.end?.slice(0, 10) ??
+      plan.calendar.validTo ??
+      fallbackStart;
+
+    const validFrom = firstSegment?.startDate ?? fallbackStart;
+    const validTo = lastSegment?.endDate ?? fallbackEnd;
+    const daysBitmap =
+      plan.calendar.daysBitmap ?? this.buildDaysBitmapFromValidity(segments, validFrom, validTo);
+
+    return {
+      validFrom,
+      validTo,
+      daysBitmap,
+    };
+  }
+
+  private ensureNoSiblingConflict(
+    items: OrderItem[],
+    parent: OrderItem,
+    extracted: OrderItemValiditySegment[],
+  ): void {
+    const siblings = items.filter((item) => item.parentItemId === parent.id);
+    if (!siblings.length) {
+      return;
+    }
+    siblings.forEach((sibling) => {
+      const segments = this.resolveValiditySegments(sibling);
+      extracted.forEach((candidate) => {
+        segments.forEach((segment) => {
+          if (this.segmentsOverlap(candidate, segment)) {
+            throw new Error(
+              `Für den Zeitraum ${segment.startDate} – ${segment.endDate} existiert bereits eine Modifikation. Bitte einen anderen Tag wählen.`,
+            );
+          }
+        });
+      });
+    });
+  }
+
+  private segmentsOverlap(
+    a: OrderItemValiditySegment,
+    b: OrderItemValiditySegment,
+  ): boolean {
+    return !(a.endDate < b.startDate || a.startDate > b.endDate);
+  }
+
+  private applyCalendarExclusions(
+    trafficPeriodId: string,
+    segments: OrderItemValiditySegment[],
+  ) {
+    const dates = this.expandSegmentsToDates(segments);
+    if (!dates.length) {
+      return;
+    }
+    this.trafficPeriodService.addExclusionDates(trafficPeriodId, dates);
+  }
+
+  private expandSegmentsToDates(segments: OrderItemValiditySegment[]): string[] {
+    const result: string[] = [];
+    segments.forEach((segment) => {
+      const start = this.toUtcDate(segment.startDate);
+      const end = this.toUtcDate(segment.endDate);
+      if (!start || !end) {
+        return;
+      }
+      const cursor = new Date(start.getTime());
+      while (cursor <= end) {
+        result.push(this.fromUtcDate(cursor));
+        cursor.setUTCDate(cursor.getUTCDate() + 1);
+      }
+    });
+    return Array.from(new Set(result)).sort();
+  }
+
+  private buildDaysBitmapFromValidity(
+    segments: OrderItemValiditySegment[],
+    fallbackStart: string,
+    fallbackEnd: string,
+  ): string {
+    if (!segments.length) {
+      return this.deriveBitmapFromRange(fallbackStart, fallbackEnd);
+    }
+    const activeWeekdays = new Set<number>();
+    segments.forEach((segment) => {
+      const cursor = this.toUtcDate(segment.startDate);
+      const end = this.toUtcDate(segment.endDate);
+      if (!cursor || !end) {
+        return;
+      }
+      while (cursor <= end) {
+        const weekday = cursor.getUTCDay();
+        activeWeekdays.add(weekday === 0 ? 6 : weekday - 1);
+        cursor.setUTCDate(cursor.getUTCDate() + 1);
+      }
+    });
+    if (!activeWeekdays.size) {
+      return this.deriveBitmapFromRange(fallbackStart, fallbackEnd);
+    }
+    return Array.from({ length: 7 })
+      .map((_, index) => (activeWeekdays.has(index) ? '1' : '0'))
+      .join('');
+  }
+
+  private deriveBitmapFromRange(startIso: string, endIso: string): string {
+    const start = this.toUtcDate(startIso);
+    const end = this.toUtcDate(endIso);
+    if (!start || !end) {
+      return '1111111';
+    }
+    const activeWeekdays = new Set<number>();
+    const cursor = new Date(start.getTime());
+    while (cursor <= end && activeWeekdays.size < 7) {
+      const weekday = cursor.getUTCDay();
+      activeWeekdays.add(weekday === 0 ? 6 : weekday - 1);
+      cursor.setUTCDate(cursor.getUTCDate() + 1);
+    }
+    return Array.from({ length: 7 })
+      .map((_, index) => (activeWeekdays.has(index) ? '1' : '0'))
+      .join('');
   }
 
   private matchesItem(item: OrderItem, filters: OrderFilters): boolean {
@@ -645,6 +958,13 @@ export class OrderService {
             return false;
           }
         }
+      }
+    }
+
+    if (filters.timetableYearLabel !== 'all') {
+      const itemYear = this.getItemTimetableYear(item);
+      if (itemYear !== filters.timetableYearLabel) {
+        return false;
       }
     }
 
@@ -819,6 +1139,30 @@ export class OrderService {
     this.trainPlanService.unlinkOrderItem(planId);
   }
 
+  submitOrderItems(orderId: string, itemIds: string[]): void {
+    if (!itemIds.length) {
+      return;
+    }
+    const targetIds = new Set(itemIds);
+    this._orders.update((orders) =>
+      orders.map((order) => {
+        if (order.id !== orderId) {
+          return order;
+        }
+        const items = order.items.map((item) => {
+          if (!targetIds.has(item.id)) {
+            return item;
+          }
+          return {
+            ...item,
+            timetablePhase: 'path_request' as TimetablePhase,
+          };
+        });
+        return { ...order, items };
+      }),
+    );
+  }
+
   private appendItems(orderId: string, items: OrderItem[]) {
     if (!items.length) {
       return;
@@ -850,9 +1194,12 @@ export class OrderService {
   private initializeOrder(order: Order): Order {
     const prepared = order.items.map((item) => this.ensureItemDefaults(item));
     const customer = this.resolveCustomerName(order.customerId, order.customer);
+    const timetableYearLabel =
+      order.timetableYearLabel ?? this.deriveOrderTimetableYear(prepared) ?? undefined;
     return {
       ...order,
       customer,
+      timetableYearLabel,
       items: this.normalizeItemsAfterChange(prepared),
     };
   }
@@ -1170,6 +1517,14 @@ export class OrderService {
       return null;
     }
     return trimmed;
+  }
+
+  private requireDateInput(value: string): string {
+    const normalized = this.normalizeDateInput(value);
+    if (!normalized) {
+      throw new Error('Ungültiges Datum.');
+    }
+    return normalized;
   }
 
   private prepareUpdatePayload(
@@ -1632,4 +1987,207 @@ export class OrderService {
       }),
     );
   }
+
+  private readonly timetableYearOptionsSignal = computed(() => {
+    const labels = new Map<string, number>();
+    this.timetableYearService.managedYearBounds().forEach((year) => {
+      labels.set(year.label, year.startYear);
+    });
+    this._orders().forEach((order) =>
+      order.items.forEach((item) => {
+        const label = this.getItemTimetableYear(item);
+        if (label && !labels.has(label)) {
+          const bounds = this.timetableYearService.getYearByLabel(label);
+          labels.set(label, bounds.startYear);
+        }
+      }),
+    );
+    return Array.from(labels.entries())
+      .sort((a, b) => a[1] - b[1])
+      .map(([label]) => label);
+  });
+
+  timetableYearOptions(): string[] {
+    return this.timetableYearOptionsSignal();
+  }
+
+  getItemTimetableYear(item: OrderItem): string | null {
+    if (item.timetableYearLabel) {
+      return item.timetableYearLabel;
+    }
+    if (item.trafficPeriodId) {
+      const period = this.trafficPeriodService.getById(item.trafficPeriodId);
+      if (period?.timetableYearLabel) {
+        return period.timetableYearLabel;
+      }
+      const sampleDate =
+        period?.rules?.find((rule) => rule.includesDates?.length)?.includesDates?.[0] ??
+        period?.rules?.[0]?.validityStart;
+      if (sampleDate) {
+        try {
+          return this.timetableYearService.getYearBounds(sampleDate).label;
+        } catch {
+          return null;
+        }
+      }
+    }
+    const sampleDate =
+      item.validity?.[0]?.startDate ??
+      item.start ??
+      item.end ??
+      null;
+    if (!sampleDate) {
+      return null;
+    }
+    try {
+      return this.timetableYearService.getYearBounds(sampleDate).label;
+    } catch {
+      return null;
+    }
+  }
+
+  private normalizeTimetableYearLabel(label?: string | null): string | undefined {
+    if (!label) {
+      return undefined;
+    }
+    try {
+      return this.timetableYearService.getYearByLabel(label).label;
+    } catch {
+      return undefined;
+    }
+  }
+
+  private ensureOrderTimetableYear(orderId: string, label?: string | null) {
+    if (!label) {
+      return;
+    }
+    let mismatch: string | null = null;
+    let found = false;
+    this._orders.update((orders) =>
+      orders.map((order) => {
+        if (order.id !== orderId) {
+          return order;
+        }
+        found = true;
+        if (order.timetableYearLabel && order.timetableYearLabel !== label) {
+          mismatch = order.timetableYearLabel;
+          return order;
+        }
+        if (order.timetableYearLabel === label) {
+          return order;
+        }
+        return { ...order, timetableYearLabel: label };
+      }),
+    );
+    if (mismatch) {
+      throw new Error(
+        `Auftrag ${orderId} gehört zum Fahrplanjahr ${mismatch}. Bitte einen Auftrag für ${label} anlegen oder das vorhandene Fahrplanjahr wählen.`,
+      );
+    }
+    if (!found) {
+      throw new Error(`Auftrag ${orderId} wurde nicht gefunden.`);
+    }
+  }
+
+  private deriveOrderTimetableYear(items: OrderItem[]): string | undefined {
+    let label: string | undefined;
+    for (const item of items) {
+      const current = this.getItemTimetableYear(item) ?? undefined;
+      if (!current) {
+        continue;
+      }
+      if (!label) {
+        label = current;
+        continue;
+      }
+      if (label !== current) {
+        return undefined;
+      }
+    }
+    return label;
+  }
+
+  private getTrafficPeriodTimetableYear(periodId: string): string | null {
+    if (!periodId) {
+      return null;
+    }
+    const period = this.trafficPeriodService.getById(periodId);
+    if (!period) {
+      return null;
+    }
+    if (period.timetableYearLabel) {
+      return period.timetableYearLabel;
+    }
+    const sample =
+      period.rules?.find((rule) => rule.includesDates?.length)?.includesDates?.[0] ??
+      period.rules?.[0]?.validityStart;
+    if (!sample) {
+      return null;
+    }
+    try {
+      return this.timetableYearService.getYearBounds(sample).label;
+    } catch {
+      return null;
+    }
+  }
+
+  private timetableYearFromPlan(plan: TrainPlan): string | null {
+    const sample =
+      plan.calendar?.validFrom ??
+      plan.calendar?.validTo ??
+      this.extractPlanStart(plan) ??
+      this.extractPlanEnd(plan);
+    if (!sample) {
+      return null;
+    }
+    try {
+      return this.timetableYearService.getYearBounds(sample).label;
+    } catch {
+      return null;
+    }
+  }
+
+  private prepareCustomSegments(
+    segments: OrderItemValiditySegment[],
+  ): OrderItemValiditySegment[] {
+    const normalized = segments
+      .map((segment) => {
+        const startDate = this.requireDateInput(segment.startDate);
+        const endDate = this.requireDateInput(segment.endDate);
+        const [start, end] =
+          startDate <= endDate ? [startDate, endDate] : [endDate, startDate];
+        return { startDate: start, endDate: end };
+      })
+      .filter((segment) => segment.startDate && segment.endDate);
+    return this.normalizeSegments(normalized);
+  }
+
+  private ensureSegmentsWithinValidity(
+    validity: OrderItemValiditySegment[],
+    segments: OrderItemValiditySegment[],
+  ): void {
+    segments.forEach((segment) => {
+      const fits = validity.some(
+        (range) => segment.startDate >= range.startDate && segment.endDate <= range.endDate,
+      );
+      if (!fits) {
+        throw new Error(
+          `Der Zeitraum ${segment.startDate} – ${segment.endDate} liegt nicht innerhalb der Gültigkeit der Auftragsposition.`,
+        );
+      }
+    });
+  }
+
+  private subtractSegments(
+    validity: OrderItemValiditySegment[],
+    removals: OrderItemValiditySegment[],
+  ): OrderItemValiditySegment[] {
+    let retained = validity;
+    removals.forEach((segment) => {
+      const result = this.splitSegments(retained, segment.startDate, segment.endDate);
+      retained = result.retained;
+    });
+    return retained;
+  }
+
 }

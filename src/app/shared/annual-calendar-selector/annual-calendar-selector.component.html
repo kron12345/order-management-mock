@@ -1,6 +1,6 @@
 <section class="calendar-section">
   <header class="calendar-header">
-    <h3>{{ title }} {{ currentYear() }}</h3>
+    <h3>{{ title }} {{ rangeHeaderLabel() }}</h3>
     <div class="selection-actions">
       <span>{{ selectedCount() }} Tage markiert</span>
       <button mat-button type="button" (click)="clearSelection()">Zurücksetzen</button>
@@ -30,9 +30,9 @@
         </tr>
       </thead>
       <tbody>
-        @for (month of weekGroups(); track monthIndex; let monthIndex = $index) {
+        @for (month of weekGroups(); track month.label) {
           <tr>
-            <td class="month-col">{{ monthNames[monthIndex] }}</td>
+            <td class="month-col">{{ month.label }}</td>
             @for (cell of month.cells; track colIndex; let colIndex = $index) {
               <td
                 [class.leading]="cell.kind === 'leading'"

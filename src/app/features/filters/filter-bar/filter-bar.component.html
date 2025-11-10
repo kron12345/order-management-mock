@@ -10,6 +10,19 @@
   </mat-form-field>
 
   <mat-form-field appearance="outline">
+    <mat-label>Fahrplanjahr</mat-label>
+    <mat-select
+      [value]="store.filters().timetableYearLabel"
+      (valueChange)="onTimetableYearChange($event)"
+    >
+      <mat-option value="all">Alle Fahrplanjahre</mat-option>
+      @for (year of store.timetableYearOptions(); track year) {
+        <mat-option [value]="year">{{ year }}</mat-option>
+      }
+    </mat-select>
+  </mat-form-field>
+
+  <mat-form-field appearance="outline">
     <mat-label>Tag</mat-label>
     <input
       matInput

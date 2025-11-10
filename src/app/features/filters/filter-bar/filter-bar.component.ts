@@ -16,6 +16,7 @@ export class FilterBarComponent {
   search = signal('');
   tag = signal<'all' | string>('all');
   trainNumber = signal('');
+  timetableYear = signal<'all' | string>('all');
 
   readonly timeOptions: { value: OrderFilters['timeRange']; label: string }[] = [
     { value: 'all', label: 'Alle Zeiten' },
@@ -48,6 +49,7 @@ export class FilterBarComponent {
     this.search.set(filters.search);
     this.tag.set(filters.tag);
     this.trainNumber.set(filters.trainNumber);
+    this.timetableYear.set(filters.timetableYearLabel);
   }
 
   onApply() {
@@ -71,6 +73,7 @@ export class FilterBarComponent {
     this.search.set('');
     this.tag.set('all');
     this.trainNumber.set('');
+    this.timetableYear.set('all');
     this.store.setFilter({
       search: '',
       tag: 'all',
@@ -78,6 +81,7 @@ export class FilterBarComponent {
       trainStatus: 'all',
       businessStatus: 'all',
       trainNumber: '',
+      timetableYearLabel: 'all',
     });
   }
 
@@ -96,5 +100,10 @@ export class FilterBarComponent {
   onTrainNumberChange(value: string) {
     this.trainNumber.set(value ?? '');
     this.store.setFilter({ trainNumber: value ?? '' });
+  }
+
+  onTimetableYearChange(value: string) {
+    this.timetableYear.set(value as string);
+    this.store.setFilter({ timetableYearLabel: value as string });
   }
 }

@@ -8,4 +8,5 @@ export interface Order {
   tags?: string[];
   items: OrderItem[];
   comment?: string;
+  timetableYearLabel?: string;
 }

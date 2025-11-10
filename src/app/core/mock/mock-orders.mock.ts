@@ -8,6 +8,7 @@ export const MOCK_ORDERS: Order[] = [
     customer: 'DB Fernverkehr',
     tags: ['ICE', 'Flügelzug', 'TTT'],
     comment: 'Flügelzugkonzept inkl. Splitting in Hannover. Varianten und Aufgaben laufen direkt gegen den Fahrplanmanager.',
+    timetableYearLabel: '2029/30',
     items: [
       {
         id: 'ORD-2030-001-OP-001',
@@ -27,6 +28,7 @@ export const MOCK_ORDERS: Order[] = [
         childItemIds: ['ORD-2030-001-OP-002'],
         generatedTimetableRefId: 'TT-2030-ICE-001A',
         timetablePhase: 'path_request',
+        timetableYearLabel: '2029/30',
         originalTimetable: {
           refTrainId: 'TT-2030-ICE-001A',
           title: 'ICE 1501 Berlin Hbf → Köln Hbf',
@@ -64,6 +66,7 @@ export const MOCK_ORDERS: Order[] = [
         versionPath: [1, 1],
         generatedTimetableRefId: 'TT-2030-ICE-001B',
         timetablePhase: 'offer',
+        timetableYearLabel: '2029/30',
         originalTimetable: {
           refTrainId: 'TT-2030-ICE-001A',
           title: 'ICE 1501 Ursprung',
@@ -92,6 +95,8 @@ export const MOCK_ORDERS: Order[] = [
         responsible: 'InfraGO Leitstelle',
         validity: [{ startDate: '2030-04-01', endDate: '2030-05-31' }],
         versionPath: [2],
+        trafficPeriodId: 'TPER-2030-SERVICE-KOELN',
+        timetableYearLabel: '2029/30',
       },
     ],
   },
@@ -101,6 +106,7 @@ export const MOCK_ORDERS: Order[] = [
     customerId: 'cust-sbb-001',
     customer: 'SBB Personenverkehr',
     tags: ['RegionalExpress', 'RVK'],
+    timetableYearLabel: '2029/30',
     items: [
       {
         id: 'ORD-2030-002-OP-001',
@@ -119,6 +125,7 @@ export const MOCK_ORDERS: Order[] = [
         versionPath: [1],
         generatedTimetableRefId: 'TT-2030-RE-0101',
         timetablePhase: 'operational',
+        timetableYearLabel: '2029/30',
         originalTimetable: {
           refTrainId: 'TT-2030-RE-0101',
           title: 'RE Zürich HB → Bern',
@@ -153,6 +160,7 @@ export const MOCK_ORDERS: Order[] = [
         versionPath: [1, 1],
         generatedTimetableRefId: 'TT-2030-RE-0102',
         timetablePhase: 'contract',
+        timetableYearLabel: '2029/30',
         originalTimetable: {
           refTrainId: 'TT-2030-RE-0101',
           title: 'RE Zürich HB → Bern (Original)',
@@ -176,6 +184,7 @@ export const MOCK_ORDERS: Order[] = [
     customerId: 'cust-cargon-001',
     customer: 'CargoNet Europe',
     tags: ['Güterverkehr', 'Nacht'],
+    timetableYearLabel: '2029/30',
     items: [
       {
         id: 'ORD-2030-003-OP-001',
@@ -194,6 +203,7 @@ export const MOCK_ORDERS: Order[] = [
         versionPath: [1],
         generatedTimetableRefId: 'TT-2030-CARGO-7001',
         timetablePhase: 'bedarf',
+        timetableYearLabel: '2029/30',
         originalTimetable: {
           refTrainId: 'TT-2030-CARGO-7001',
           title: 'DGS Rotterdam → Basel',
@@ -222,6 +232,8 @@ export const MOCK_ORDERS: Order[] = [
         responsible: 'InfraGO Nord',
         validity: [{ startDate: '2030-04-01', endDate: '2030-05-31' }],
         versionPath: [2],
+        trafficPeriodId: 'TPER-2030-BAULOG-BSL',
+        timetableYearLabel: '2029/30',
       },
     ],
   },

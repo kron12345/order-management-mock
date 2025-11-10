@@ -18,6 +18,7 @@ import { PlanningStageId } from './planning-stage.model';
 import { PlanningRealtimeEvent, PlanningRealtimeService } from './planning-realtime.service';
 import { ClientIdentityService } from '../../core/services/client-identity.service';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { TimetableYearService } from '../../core/services/timetable-year.service';
 
 export interface PlanningTimelineRange {
   start: Date;
@@ -113,6 +114,7 @@ export class PlanningDataService {
   private readonly api = inject(ActivityApiService);
   private readonly realtime = inject(PlanningRealtimeService);
   private readonly identity = inject(ClientIdentityService);
+  private readonly timetableYear = inject(TimetableYearService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly userId = this.identity.userId();
   private readonly connectionId = this.identity.connectionId();
@@ -317,11 +319,15 @@ export class PlanningDataService {
 
   private createTimelineFromSnapshot(range?: PlanningStageSnapshotDto['timelineRange']): PlanningTimelineRange {
     if (!range) {
-      return defaultTimeline();
+      const yearInfo = this.timetableYear.getYearBounds(new Date());
+      return { start: new Date(yearInfo.start), end: new Date(yearInfo.end) };
     }
     const start = range.start ? new Date(range.start) : new Date();
-    const end = range.end ? new Date(range.end) : addDays(start, 7);
-    return { start, end };
+    const yearInfo = this.timetableYear.getYearBounds(start);
+    return {
+      start: new Date(yearInfo.start),
+      end: new Date(yearInfo.end),
+    };
   }
 
   private syncActivities(stage: PlanningStageId, diff: ActivityDiff): void {

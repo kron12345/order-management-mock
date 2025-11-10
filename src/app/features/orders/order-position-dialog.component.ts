@@ -26,7 +26,12 @@ import {
 } from '../../core/services/order.service';
 import { Order } from '../../core/models/order.model';
 import { ScheduleTemplateService } from '../../core/services/schedule-template.service';
-import { TrafficPeriodService } from '../../core/services/traffic-period.service';
+import {
+  TrafficPeriodService,
+  TrafficPeriodRulePayload,
+} from '../../core/services/traffic-period.service';
+import { TrafficPeriodVariantType } from '../../core/models/traffic-period.model';
+import { TimetableYearService } from '../../core/services/timetable-year.service';
 import { ScheduleTemplate, ScheduleTemplateStop } from '../../core/models/schedule-template.model';
 import { ScheduleTemplateCreateDialogComponent } from '../schedule-templates/schedule-template-create-dialog.component';
 import {
@@ -84,13 +89,15 @@ export class OrderPositionDialogComponent {
   private readonly orderService = inject(OrderService);
   private readonly templateService = inject(ScheduleTemplateService);
   private readonly trafficPeriodService = inject(TrafficPeriodService);
+  private readonly timetableYearService = inject(TimetableYearService);
   private readonly dialog = inject(MatDialog);
 
   readonly modeControl = new FormControl<'service' | 'plan' | 'manualPlan' | 'import'>(
     'service',
     { nonNullable: true },
   );
-  readonly defaultCalendarYear = new Date().getFullYear();
+  private readonly defaultTimetableYear = this.timetableYearService.defaultYearBounds();
+  readonly defaultTimetableYearLabel = this.defaultTimetableYear.label;
 
   readonly serviceForm = this.fb.group({
     serviceType: ['', Validators.required],
@@ -98,8 +105,8 @@ export class OrderPositionDialogComponent {
     toLocation: ['', Validators.required],
     start: ['', Validators.required],
     end: ['', Validators.required],
-    calendarYear: this.fb.nonNullable.control(this.defaultCalendarYear, {
-      validators: [Validators.required, Validators.min(1900), Validators.max(2100)],
+    calendarYear: this.fb.nonNullable.control(this.defaultTimetableYearLabel, {
+      validators: [Validators.required],
     }),
     calendarDates: this.fb.nonNullable.control<string[]>([], {
       validators: [nonEmptyDates],
@@ -118,8 +125,8 @@ export class OrderPositionDialogComponent {
     responsible: [''],
     otn: [''],
     otnInterval: [1, [Validators.min(1)]],
-    calendarYear: this.fb.nonNullable.control(this.defaultCalendarYear, {
-      validators: [Validators.required, Validators.min(1900), Validators.max(2100)],
+    calendarYear: this.fb.nonNullable.control(this.defaultTimetableYearLabel, {
+      validators: [Validators.required],
     }),
     calendarDates: this.fb.nonNullable.control<string[]>([], {
       validators: [nonEmptyDates],
@@ -131,8 +138,8 @@ export class OrderPositionDialogComponent {
     trainNumber: ['', Validators.required],
     name: [''],
     responsible: [''],
-    calendarYear: this.fb.nonNullable.control(this.defaultCalendarYear, {
-      validators: [Validators.required, Validators.min(1900), Validators.max(2100)],
+    calendarYear: this.fb.nonNullable.control(this.defaultTimetableYearLabel, {
+      validators: [Validators.required],
     }),
     calendarDates: this.fb.nonNullable.control<string[]>([], {
       validators: [nonEmptyDates],
@@ -287,8 +294,8 @@ export class OrderPositionDialogComponent {
 
   readonly order = this.data.order;
 
-  get serviceCalendarYearControl(): FormControl<number> {
-    return this.serviceForm.controls['calendarYear'] as FormControl<number>;
+  get serviceCalendarYearControl(): FormControl<string> {
+    return this.serviceForm.controls['calendarYear'] as FormControl<string>;
   }
 
   get serviceCalendarDatesControl(): FormControl<string[]> {
@@ -299,8 +306,8 @@ export class OrderPositionDialogComponent {
     return this.serviceForm.controls['calendarExclusions'] as FormControl<string[]>;
   }
 
-  get planCalendarYearControl(): FormControl<number> {
-    return this.planForm.controls['calendarYear'] as FormControl<number>;
+  get planCalendarYearControl(): FormControl<string> {
+    return this.planForm.controls['calendarYear'] as FormControl<string>;
   }
 
   get planCalendarDatesControl(): FormControl<string[]> {
@@ -311,8 +318,8 @@ export class OrderPositionDialogComponent {
     return this.planForm.controls['calendarExclusions'] as FormControl<string[]>;
   }
 
-  get manualCalendarYearControl(): FormControl<number> {
-    return this.manualPlanForm.controls['calendarYear'] as FormControl<number>;
+  get manualCalendarYearControl(): FormControl<string> {
+    return this.manualPlanForm.controls['calendarYear'] as FormControl<string>;
   }
 
   get manualCalendarDatesControl(): FormControl<string[]> {
@@ -509,6 +516,13 @@ export class OrderPositionDialogComponent {
       this.serviceForm.controls.calendarDates.markAsTouched();
       return;
     }
+    try {
+      this.timetableYearService.ensureDatesWithinSameYear(selectedDates);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Ungültiges Fahrplanjahr.';
+      this.errorMessage.set(message);
+      return;
+    }
 
     const endOffsetDays = endMinutes < startMinutes ? 1 : 0;
 
@@ -530,6 +544,11 @@ export class OrderPositionDialogComponent {
           name: `${serviceType} ${date}`,
           date,
           variantType: 'special_day',
+          tags: this.buildArchiveGroupTags(
+            `${this.order.id}:service:${this.slugify(serviceType)}`,
+            serviceType,
+            'service',
+          ),
         });
         if (!trafficPeriodId) {
           throw new Error('Referenzkalender konnte nicht erstellt werden.');
@@ -544,6 +563,7 @@ export class OrderPositionDialogComponent {
           trafficPeriodId,
           deviation: value.deviation?.trim() || undefined,
           name: value.name?.trim() || undefined,
+          timetableYearLabel: value.calendarYear ?? undefined,
         };
         this.orderService.addServiceOrderItem(payload);
       });
@@ -581,31 +601,44 @@ export class OrderPositionDialogComponent {
     }
 
     try {
-      selectedDates.forEach((date) => {
-        const departure = new Date(`${date}T00:00:00`);
-        if (Number.isNaN(departure.getTime())) {
-          throw new Error('Bitte ein gültiges Datum wählen.');
-        }
-        const trafficPeriodId = this.trafficPeriodService.createSingleDayPeriod({
-          name: `${value.name?.trim() || 'Manueller Fahrplan'} ${date}`,
-          date,
-          variantType: 'special_day',
-          responsible: value.responsible?.trim() || undefined,
-        });
-        if (!trafficPeriodId) {
-          throw new Error('Referenzkalender konnte nicht erstellt werden.');
-        }
-        const payload = {
-          orderId: this.order.id,
-          departure: departure.toISOString(),
-          stops,
-          trainNumber,
-          name: value.name?.trim() || undefined,
-          responsible: value.responsible?.trim() || undefined,
-          trafficPeriodId,
-        };
-        this.orderService.addManualPlanOrderItem(payload);
+      const sortedDates = [...selectedDates].sort();
+      const departure = new Date(`${sortedDates[0]}T00:00:00`);
+      if (Number.isNaN(departure.getTime())) {
+        throw new Error('Bitte ein gültiges Datum wählen.');
+      }
+      const responsible = value.responsible?.trim() || undefined;
+      const planName = value.name?.trim() || undefined;
+      const yearInfo = this.timetableYearService.ensureDatesWithinSameYear(sortedDates);
+      const groupId = `${this.order.id}:manual:${this.slugify(trainNumber)}`;
+      const tags = this.buildArchiveGroupTags(
+        groupId,
+        planName ?? this.order.name ?? 'Manueller Fahrplan',
+        'manual',
+      );
+      const trafficPeriodId = this.createManualTrafficPeriod({
+        baseName: planName ?? 'Manueller Fahrplan',
+        dates: sortedDates,
+        responsible,
+        tags,
+        timetableYearLabel: yearInfo.label,
       });
+      if (!trafficPeriodId) {
+        throw new Error('Referenzkalender konnte nicht erstellt werden.');
+      }
+      const payload = {
+        orderId: this.order.id,
+        departure: departure.toISOString(),
+        stops,
+        trainNumber,
+        name: planName,
+        responsible,
+        trafficPeriodId,
+        validFrom: sortedDates[0],
+        validTo: sortedDates[sortedDates.length - 1],
+        daysBitmap: this.buildDaysBitmapFromDates(sortedDates),
+        timetableYearLabel: yearInfo.label,
+      };
+      this.orderService.addManualPlanOrderItem(payload);
       this.dialogRef.close(true);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unbekannter Fehler';
@@ -631,12 +664,19 @@ export class OrderPositionDialogComponent {
     const responsible = options.responsible?.trim() || undefined;
     const overridePeriodId = options.trafficPeriodId?.trim() || undefined;
 
+    const periodAssignments =
+      overridePeriodId || !items.length ? null : this.ensureCalendarsForImportedTrains(items);
+
     try {
       const missingPeriods: string[] = [];
       const payloads: Array<{ train: ImportedRailMlTrain; trafficPeriodId: string }> = [];
 
       items.forEach((train) => {
-        const effectivePeriodId = overridePeriodId ?? train.trafficPeriodId;
+        const groupKey = train.groupId ?? train.id;
+        const effectivePeriodId =
+          overridePeriodId ??
+          periodAssignments?.get(groupKey) ??
+          train.trafficPeriodId;
         if (!effectivePeriodId) {
           missingPeriods.push(train.name ?? train.id);
           return;
@@ -682,6 +722,7 @@ export class OrderPositionDialogComponent {
           responsible,
           namePrefix,
           parentItemId,
+          timetableYearLabel: train.timetableYearLabel,
         });
         createdItemIds.set(train.id, item.id);
         if (!train.variantOf) {
@@ -769,6 +810,7 @@ export class OrderPositionDialogComponent {
       namePrefix: value.namePrefix?.trim() || undefined,
       responsible: value.responsible?.trim() || undefined,
       responsibleRu: value.responsible?.trim() || undefined,
+      timetableYearLabel: value.calendarYear ?? undefined,
     };
 
     if (trainNumberStart !== undefined) {
@@ -836,6 +878,92 @@ export class OrderPositionDialogComponent {
     return Array.from(includeSet)
       .filter((date) => !exclusionSet.has(date))
       .sort();
+  }
+
+  private createManualTrafficPeriod(options: {
+    baseName: string;
+    dates: string[];
+    responsible?: string;
+    tags: string[];
+    timetableYearLabel?: string;
+  }): string {
+    if (!options.dates.length) {
+      return '';
+    }
+    const baseName = options.baseName?.trim() || 'Manueller Fahrplan';
+    const sortedDates = [...new Set(options.dates)].sort();
+    const yearInfo = options.timetableYearLabel
+      ? this.timetableYearService.getYearByLabel(options.timetableYearLabel)
+      : this.timetableYearService.ensureDatesWithinSameYear(sortedDates);
+    const grouped = this.groupDatesByYear(sortedDates);
+    const groupedEntries = Array.from(grouped.entries()).sort((a, b) => a[0] - b[0]);
+    if (groupedEntries.length > 1) {
+      throw new Error('Die Fahrtage erstrecken sich über mehrere Fahrplanjahre. Bitte separate Auftragspositionen anlegen.');
+    }
+    const firstYear = groupedEntries[0]?.[0] ?? yearInfo.startYear;
+    const rules: TrafficPeriodRulePayload[] = groupedEntries.map(([year, dates], index) => ({
+      name: `${baseName} ${year}`,
+      year,
+      selectedDates: dates,
+      variantType: 'special_day',
+      variantNumber: String(index + 1).padStart(2, '0'),
+      appliesTo: 'both',
+      primary: index === 0,
+    }));
+    const firstDate = sortedDates[0];
+    const lastDate = sortedDates[sortedDates.length - 1];
+    const rangeLabel = firstDate === lastDate ? firstDate : `${firstDate} - ${lastDate}`;
+    const periodName = `${baseName} ${rangeLabel}`;
+    return this.trafficPeriodService.createPeriod({
+      name: periodName,
+      type: 'special',
+      responsible: options.responsible,
+      year: firstYear,
+      rules,
+      timetableYearLabel: yearInfo.label,
+      tags: options.tags.length ? options.tags : undefined,
+    });
+  }
+
+  private groupDatesByYear(dates: string[]): Map<number, string[]> {
+    const groups = new Map<number, string[]>();
+    dates.forEach((date) => {
+      const normalized = date?.trim();
+      if (!normalized) {
+        return;
+      }
+      const year = Number.parseInt(normalized.slice(0, 4), 10);
+      const safeYear = Number.isNaN(year)
+        ? this.defaultTimetableYear.startYear
+        : year;
+      const list = groups.get(safeYear) ?? [];
+      list.push(normalized);
+      groups.set(safeYear, list);
+    });
+    groups.forEach((list, year) => {
+      const deduped = Array.from(new Set(list)).sort();
+      groups.set(year, deduped);
+    });
+    return groups;
+  }
+
+  private buildDaysBitmapFromDates(dates: string[]): string {
+    if (!dates.length) {
+      return '1111111';
+    }
+    const bitmap = Array(7).fill('0');
+    let hasValidDate = false;
+    dates.forEach((date) => {
+      const parsed = new Date(`${date}T00:00:00`);
+      if (Number.isNaN(parsed.getTime())) {
+        return;
+      }
+      hasValidDate = true;
+      const weekday = parsed.getDay();
+      const index = weekday === 0 ? 6 : weekday - 1;
+      bitmap[index] = '1';
+    });
+    return hasValidDate ? bitmap.join('') : '1111111';
   }
 
   trafficPeriodName(periodId: string | null | undefined): string | null {
@@ -1545,6 +1673,71 @@ export class OrderPositionDialogComponent {
     return Number.isNaN(date.getTime()) ? null : date.toISOString();
   }
 
+  private normalizeCalendarDates(dates: string[]): string[] {
+    return Array.from(
+      new Set(
+        dates
+          .map((date) => date?.slice(0, 10))
+          .filter((date): date is string => !!date && /^\d{4}-\d{2}-\d{2}$/.test(date)),
+      ),
+    ).sort();
+  }
+
+  private resolveOperatingDates(
+    operatingPeriod: RailMlOperatingPeriod | undefined,
+    timetablePeriod: RailMlTimetablePeriod | undefined,
+    fallbackDate?: string,
+  ): string[] {
+    const start =
+      operatingPeriod?.startDate ?? timetablePeriod?.startDate ?? fallbackDate;
+    const end =
+      operatingPeriod?.endDate ?? timetablePeriod?.endDate ?? start;
+    if (!start || !end) {
+      return [];
+    }
+    const startDate = new Date(start);
+    const endDate = new Date(end);
+    if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
+      return [];
+    }
+    const yearInfo = this.timetableYearService.getYearBounds(startDate);
+    const clampedStart =
+      startDate < yearInfo.start ? new Date(yearInfo.start) : startDate;
+    const clampedEnd = endDate > yearInfo.end ? new Date(yearInfo.end) : endDate;
+    if (clampedEnd.getTime() < clampedStart.getTime()) {
+      return [];
+    }
+    const bitmap = this.sanitizeDaysBitmap(operatingPeriod?.operatingCode);
+    return this.expandDateRange(
+      clampedStart.toISOString().slice(0, 10),
+      clampedEnd.toISOString().slice(0, 10),
+      bitmap,
+    );
+  }
+
+  private expandDateRange(startIso: string, endIso: string, daysBitmap: string): string[] {
+    const start = new Date(startIso);
+    const end = new Date(endIso);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+      return [];
+    }
+    const normalized = this.sanitizeDaysBitmap(daysBitmap);
+    const result: string[] = [];
+    const guardLimit = 3660;
+    for (
+      let cursor = new Date(start);
+      cursor <= end && result.length <= guardLimit;
+      cursor.setDate(cursor.getDate() + 1)
+    ) {
+      const weekday = cursor.getDay();
+      const index = weekday === 0 ? 6 : weekday - 1;
+      if (normalized[index] === '1') {
+        result.push(cursor.toISOString().slice(0, 10));
+      }
+    }
+    return result;
+  }
+
   private parseRailMl(xml: string): ImportedRailMlTrain[] {
     const parser = new DOMParser();
     const doc = parser.parseFromString(xml, 'application/xml');
@@ -1554,8 +1747,6 @@ export class OrderPositionDialogComponent {
 
     const operatingPeriods = this.extractRailMlOperatingPeriods(doc);
     const timetablePeriods = this.extractRailMlTimetablePeriods(doc);
-    const ensuredPeriods = new Map<string, { id: string; name: string }>();
-
     const trainNodes = Array.from(
       doc.querySelectorAll('train, railml\\:train, ns1\\:train'),
     );
@@ -1568,7 +1759,6 @@ export class OrderPositionDialogComponent {
         index,
         operatingPeriods,
         timetablePeriods,
-        ensuredPeriods,
       );
       mapped.forEach((train) => trains.push(train));
     });
@@ -1582,7 +1772,6 @@ export class OrderPositionDialogComponent {
     index: number,
     operatingPeriods: Map<string, RailMlOperatingPeriod>,
     timetablePeriods: Map<string, RailMlTimetablePeriod>,
-    ensuredPeriods: Map<string, { id: string; name: string }>,
   ): ImportedRailMlTrain[] {
     const trainId =
       node.getAttribute('id') ??
@@ -1654,32 +1843,28 @@ export class OrderPositionDialogComponent {
       const departureIso = this.combineDateTime(startDate, firstDeparture);
       const arrivalIso = this.combineDateTime(startDate, lastArrival);
 
-      const trafficSourceId =
-        operatingPeriodRef ??
-        timetablePeriodRef ??
-        `${trainId}-part-${partIndex + 1}`;
-      let trafficPeriodId: string | undefined;
-      let trafficPeriodName: string | undefined;
-      if (trafficSourceId) {
-        const cached = ensuredPeriods.get(trafficSourceId);
-        const ensured =
-          cached ??
-          this.ensureTrafficPeriodForRailMl(
-            trafficSourceId,
-            operatingPeriod,
-            timetablePeriod,
-          );
-        if (ensured) {
-          ensuredPeriods.set(trafficSourceId, ensured);
-          trafficPeriodId = ensured.id;
-          trafficPeriodName = ensured.name;
-        }
-      }
-
       const variantLabel = partIndex === 0 ? undefined : this.resolveVariantLabel(
         partNode,
         operatingPeriod,
       );
+
+      const calendarDatesRaw = this.resolveOperatingDates(
+        operatingPeriod,
+        timetablePeriod,
+        startDate,
+      );
+      const fallbackDate = departureIso.slice(0, 10);
+      const calendarDates = this.normalizeCalendarDates(
+        calendarDatesRaw.length ? calendarDatesRaw : [fallbackDate],
+      );
+      const calendarVariantType: TrafficPeriodVariantType =
+        partIndex === 0 ? 'series' : 'special_day';
+      const calendarLabel =
+        variantLabel ??
+        operatingPeriod?.description ??
+        timetablePeriod?.id ??
+        (partIndex === 0 ? 'Hauptlage' : `Variante ${partIndex + 1}`);
+
       const displayName =
         partIndex === 0 || !variantLabel
           ? trainName
@@ -1709,9 +1894,9 @@ export class OrderPositionDialogComponent {
         departureTime: firstDeparture,
         arrivalTime: lastArrival,
         stops,
-        trafficPeriodId,
-        trafficPeriodName,
-        trafficPeriodSourceId: trafficSourceId,
+        calendarDates,
+        calendarLabel,
+        calendarVariantType,
       });
     });
 
@@ -1856,32 +2041,6 @@ export class OrderPositionDialogComponent {
     return periods;
   }
 
-  private ensureTrafficPeriodForRailMl(
-    sourceId: string,
-    operatingPeriod: RailMlOperatingPeriod | undefined,
-    timetablePeriod: RailMlTimetablePeriod | undefined,
-  ): { id: string; name: string } | undefined {
-    if (!sourceId) {
-      return undefined;
-    }
-    const defaultDate = new Date().toISOString().slice(0, 10);
-    const validityStart =
-      operatingPeriod?.startDate ?? timetablePeriod?.startDate ?? defaultDate;
-    const validityEnd =
-      operatingPeriod?.endDate ?? timetablePeriod?.endDate ?? validityStart;
-    const name = operatingPeriod?.description?.trim() || `RailML ${sourceId}`;
-    const period = this.trafficPeriodService.ensureRailMlPeriod({
-      sourceId,
-      name,
-      description: operatingPeriod?.description,
-      daysBitmap: this.sanitizeDaysBitmap(operatingPeriod?.operatingCode),
-      validityStart,
-      validityEnd,
-      reason: operatingPeriod?.description,
-    });
-    return { id: period.id, name: period.name };
-  }
-
   private sanitizeDaysBitmap(code: string | null | undefined): string {
     if (!code) {
       return '1111111';
@@ -1940,6 +2099,188 @@ export class OrderPositionDialogComponent {
     }
     const match = value.match(/(\d{1,2}:\d{2})/);
     return match ? match[1] : undefined;
+  }
+
+  private ensureCalendarsForImportedTrains(
+    trains: ImportedRailMlTrain[],
+  ): Map<string, string> {
+    const periodMap = new Map<string, string>();
+    if (!trains.length) {
+      return periodMap;
+    }
+    const groups = new Map<string, ImportedRailMlTrain[]>();
+    trains.forEach((train) => {
+      const key = train.groupId ?? train.id;
+      const list = groups.get(key) ?? [];
+      list.push(train);
+      groups.set(key, list);
+    });
+
+    groups.forEach((groupTrains, groupId) => {
+      const normalizedGroup = this.prepareGroupedCalendars(groupTrains);
+      const rules = this.buildGroupTrafficPeriodRules(normalizedGroup);
+      if (!rules.length) {
+        return;
+      }
+      const baseTrain =
+        normalizedGroup.find((train) => !train.variantOf) ?? normalizedGroup[0];
+      const yearBounds = baseTrain?.timetableYearLabel
+        ? this.timetableYearService.getYearByLabel(baseTrain.timetableYearLabel)
+        : this.timetableYearService.ensureDatesWithinSameYear(
+            rules.flatMap((rule) => rule.selectedDates),
+          );
+      const periodName = `${baseTrain?.name ?? groupId} Referenzkalender`;
+      const tags = this.buildArchiveGroupTags(
+        `import:${groupId}`,
+        baseTrain?.name ?? groupId,
+        'import',
+      );
+      const periodId = this.trafficPeriodService.createPeriod({
+        name: periodName,
+        type: 'standard',
+        year: yearBounds.startYear,
+        timetableYearLabel: yearBounds.label,
+        rules,
+        tags,
+      });
+      periodMap.set(groupId, periodId);
+      normalizedGroup.forEach((train) => {
+        train.trafficPeriodId = periodId;
+        train.trafficPeriodName = periodName;
+        train.trafficPeriodSourceId = groupId;
+      });
+    });
+
+    return periodMap;
+  }
+
+  private buildGroupTrafficPeriodRules(
+    trains: ImportedRailMlTrain[],
+  ): TrafficPeriodRulePayload[] {
+    if (!trains.length) {
+      return [];
+    }
+    const sorted = [...trains].sort((a, b) => {
+      if (!a.variantOf && b.variantOf) {
+        return -1;
+      }
+      if (a.variantOf && !b.variantOf) {
+        return 1;
+      }
+      return (a.name ?? a.id).localeCompare(b.name ?? b.id);
+    });
+
+    let variantCounter = 1;
+    const rules: TrafficPeriodRulePayload[] = [];
+
+    sorted.forEach((train) => {
+      const variantType =
+        train.calendarVariantType ?? (train.variantOf ? 'special_day' : 'series');
+      const dates =
+        (train.calendarDates && train.calendarDates.length
+          ? train.calendarDates
+          : this.fallbackDatesFromTrain(train)) ?? [];
+      if (!dates.length) {
+        return;
+      }
+      const yearInfo = this.timetableYearService.ensureDatesWithinSameYear(dates);
+      train.timetableYearLabel = train.timetableYearLabel ?? yearInfo.label;
+      const label =
+        train.calendarLabel ??
+        train.variantLabel ??
+        train.name ??
+        (train.variantOf ? `Variante ${variantCounter}` : 'Hauptlage');
+      const variantNumber =
+        variantType === 'series' ? '00' : String(variantCounter++).padStart(2, '0');
+      rules.push({
+        name: label,
+        year: yearInfo.startYear,
+        selectedDates: dates,
+        variantType,
+        appliesTo: 'both',
+        variantNumber,
+        primary: !train.variantOf,
+      });
+    });
+
+    return rules;
+  }
+
+  private fallbackDatesFromTrain(train: ImportedRailMlTrain): string[] {
+    if (train.departureIso) {
+      return [train.departureIso.slice(0, 10)];
+    }
+    return [];
+  }
+
+  private prepareGroupedCalendars(trains: ImportedRailMlTrain[]): ImportedRailMlTrain[] {
+    if (!trains.length) {
+      return trains;
+    }
+    let referenceYear: string | null = null;
+    trains.forEach((train) => {
+      if (!train.calendarDates?.length) {
+        return;
+      }
+      const yearInfo = this.timetableYearService.ensureDatesWithinSameYear(train.calendarDates);
+      train.timetableYearLabel = yearInfo.label;
+      if (referenceYear && referenceYear !== yearInfo.label) {
+        throw new Error(
+          `Die Variante "${train.name}" gehört zum Fahrplanjahr ${yearInfo.label}, erwartet wurde ${referenceYear}. Bitte RailML pro Jahr importieren.`,
+        );
+      }
+      referenceYear = referenceYear ?? yearInfo.label;
+    });
+
+    const baseTrain = trains.find((train) => !train.variantOf) ?? trains[0];
+    const baseDates = this.normalizeCalendarDates(baseTrain.calendarDates ?? []);
+    if (baseDates.length) {
+      const baseYear = this.timetableYearService.ensureDatesWithinSameYear(baseDates);
+      referenceYear = referenceYear ?? baseYear.label;
+      if (referenceYear !== baseYear.label) {
+        throw new Error(
+          `Die Hauptlage "${baseTrain.name}" gehört zum Fahrplanjahr ${baseYear.label}, erwartet wurde ${referenceYear}.`,
+        );
+      }
+      baseTrain.timetableYearLabel = baseYear.label;
+    } else if (referenceYear) {
+      baseTrain.timetableYearLabel = referenceYear;
+    }
+
+    const variantDates = new Set(
+      trains
+        .filter((train) => !!train.variantOf)
+        .flatMap((train) => this.normalizeCalendarDates(train.calendarDates ?? [])),
+    );
+    if (variantDates.size && baseDates.length) {
+      baseTrain.calendarDates = baseDates.filter((date) => !variantDates.has(date));
+    } else if (!baseTrain.calendarDates?.length && baseDates.length) {
+      baseTrain.calendarDates = baseDates;
+    }
+    baseTrain.calendarVariantType = 'series';
+    return trains;
+  }
+
+  private buildArchiveGroupTags(groupId: string, label?: string, origin?: string): string[] {
+    const tags = [`archive-group:${groupId}`];
+    if (label?.trim()) {
+      tags.push(`archive-label:${label.trim()}`);
+    }
+    if (origin) {
+      tags.push(`archive-origin:${origin}`);
+    }
+    return tags;
+  }
+
+  private slugify(value: string): string {
+    const normalized = value
+      .normalize('NFKD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 48);
+    return normalized || 'gruppe';
   }
 }
 

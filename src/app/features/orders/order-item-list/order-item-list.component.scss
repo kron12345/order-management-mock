@@ -43,6 +43,9 @@
     }
 
     .left {
+      .inline-checkbox {
+        margin-bottom: 4px;
+      }
       .headline {
         display: flex;
         align-items: center;

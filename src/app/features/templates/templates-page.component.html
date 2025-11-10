@@ -2,19 +2,9 @@
   <header class="templates-header">
     <div>
       <h1>Vorlagen</h1>
-      <p>Verwalte Fahrplanvorlagen und dazugehörige Referenzkalender für Rollouts.</p>
+      <p>Erstelle und verwalte Fahrplanvorlagen als Grundlage für neue Aufträge.</p>
     </div>
   </header>
 
-  <mat-tab-group
-    [selectedIndex]="selectedIndex()"
-    (selectedIndexChange)="onTabChange($event)"
-  >
-    <mat-tab label="Fahrplanvorlagen">
-      <app-schedule-template-list [highlightId]="templateHighlight()" />
-    </mat-tab>
-    <mat-tab label="Referenzkalender">
-      <app-traffic-period-list [highlightId]="periodHighlight()" />
-    </mat-tab>
-  </mat-tab-group>
+  <app-schedule-template-list [highlightId]="templateHighlight()" />
 </div>

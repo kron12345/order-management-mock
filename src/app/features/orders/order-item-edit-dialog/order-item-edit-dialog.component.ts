@@ -10,7 +10,7 @@ import {
 import { MAT_DIALOG_DATA, MatDialog, MatDialogRef } from '@angular/material/dialog';
 import { inject } from '@angular/core';
 import { MATERIAL_IMPORTS } from '../../../core/material.imports.imports';
-import { OrderItem } from '../../../core/models/order-item.model';
+import { OrderItem, OrderItemValiditySegment } from '../../../core/models/order-item.model';
 import {
   OrderItemUpdateData,
   OrderService,
@@ -25,6 +25,7 @@ import { PlanModificationDialogComponent } from '../plan-modification-dialog/pla
 import { OrderItemGeneralFieldsComponent } from '../shared/order-item-general-fields/order-item-general-fields.component';
 import { OrderItemServiceFieldsComponent } from '../shared/order-item-service-fields/order-item-service-fields.component';
 import { OrderItemRangeFieldsComponent } from '../shared/order-item-range-fields/order-item-range-fields.component';
+import { TimetablePhase } from '../../../core/models/timetable.model';
 
 interface OrderItemEditDialogData {
   orderId: string;
@@ -87,6 +88,26 @@ export class OrderItemEditDialogComponent {
   readonly orderId = this.data.orderId;
   readonly isServiceItem = this.item.type === 'Leistung';
   readonly isPlanItem = this.item.type === 'Fahrplan';
+  readonly phaseMap: Record<TimetablePhase, string> = {
+    bedarf: 'Bedarf',
+    path_request: 'Trassenanmeldung',
+    offer: 'Angebot',
+    contract: 'Vertrag',
+    operational: 'Betrieb',
+    archived: 'Archiv',
+  };
+  readonly phaseLabel = computed(() =>
+    this.phaseMap[(this.item.timetablePhase ?? 'bedarf') as TimetablePhase],
+  );
+  readonly timetableYearLabel = computed(
+    () =>
+      this.item.timetableYearLabel ??
+      this.orderService.getItemTimetableYear(this.item) ??
+      '—',
+  );
+  readonly planLocked = computed(
+    () => this.isPlanItem && this.shouldCreateVersion(),
+  );
   readonly serviceFieldsConfig = {
     startControl: 'startDateTime',
     endControl: 'endDateTime',
@@ -243,17 +264,44 @@ export class OrderItemEditDialogComponent {
       }
     }
 
+    const updates = this.buildUpdates(value);
+
+    if (this.isPlanItem && !this.shouldCreateVersion()) {
+      if (!updates || Object.keys(updates).length === 0) {
+        this.errorMessage.set('Es wurden keine Änderungen vorgenommen.');
+        return;
+      }
+      try {
+        const updated = this.orderService.updateOrderItemInPlace({
+          orderId: this.orderId,
+          itemId: this.item.id,
+          updates,
+        });
+        this.dialogRef.close({ updated });
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : 'Auftragsposition konnte nicht aktualisiert werden.';
+        this.errorMessage.set(message);
+      }
+      return;
+    }
+
     const payload: SplitOrderItemPayload = {
       orderId: this.data.orderId,
       itemId: this.item.id,
       rangeStart: value.rangeStart,
       rangeEnd: value.rangeEnd,
-      updates: this.buildUpdates(value),
+      updates,
     };
 
     try {
       const result = this.orderService.splitOrderItem(payload);
-      this.handlePostSplitAdjustments(result.created, value);
+      const linkedManually = this.handlePostSplitAdjustments(result.created, value);
+      if (this.isPlanItem && this.shouldCreateVersion() && !linkedManually) {
+        this.orderService.createPlanVersionFromSplit(result.original, result.created);
+      }
       this.dialogRef.close(result);
     } catch (error) {
       const message =
@@ -310,6 +358,44 @@ export class OrderItemEditDialogComponent {
 
   templateLabel(template: ScheduleTemplate): string {
     return `${template.title} · ${template.id}`;
+  }
+
+  quickActionTitle(): string {
+    if (!this.isPlanItem) {
+      return 'Allgemeine Änderungen';
+    }
+    return this.planLocked()
+      ? 'Modifikation anlegen'
+      : 'Fahrplan direkt bearbeiten';
+  }
+
+  quickActionDescription(): string {
+    if (!this.isPlanItem) {
+      return 'Passe Verantwortliche, Zeiträume oder Leistungen ohne weitere Schritte an.';
+    }
+    return this.planLocked()
+      ? 'Die Hauptposition ist bereits bestellt. Wähle die betroffenen Tage aus und erzeuge automatisch eine Sub-Auftragsposition.'
+      : 'Führe Änderungen am verknüpften Fahrplan sofort durch. Es entsteht keine zusätzliche Version.';
+  }
+
+  quickActionButtonLabel(): string {
+    if (!this.isPlanItem) {
+      return 'Änderungen speichern';
+    }
+    return this.planLocked() ? 'Modifikation starten' : 'Fahrplan bearbeiten';
+  }
+
+  calendarSegments(): OrderItemValiditySegment[] {
+    return this.item.validity?.length ? this.item.validity : [];
+  }
+
+  planRouteLabel(plan: TrainPlan | undefined): string {
+    if (!plan?.stops?.length) {
+      return '—';
+    }
+    const first = plan.stops[0];
+    const last = plan.stops[plan.stops.length - 1];
+    return `${first.locationName ?? first.locationCode} → ${last.locationName ?? last.locationCode}`;
   }
 
   private determineDefaultValidity(): { start: string; end: string } {
@@ -425,14 +511,24 @@ export class OrderItemEditDialogComponent {
   private handlePostSplitAdjustments(
     created: OrderItem,
     formValue: ReturnType<FormGroup<OrderItemEditFormModel>['getRawValue']>,
-  ) {
+  ): boolean {
     if (!this.isPlanItem) {
-      return;
+      return false;
     }
     const newPlanId = this.normalizeOptionalString(formValue.linkedTrainPlanId);
     const prevPlanId = this.item.linkedTrainPlanId;
     if (newPlanId && newPlanId !== prevPlanId) {
       this.orderService.linkTrainPlanToItem(newPlanId, created.id);
+      return true;
     }
+    return false;
+  }
+
+  private shouldCreateVersion(): boolean {
+    if (!this.isPlanItem) {
+      return true;
+    }
+    const phase = this.item.timetablePhase ?? 'bedarf';
+    return phase !== 'bedarf';
   }
 }

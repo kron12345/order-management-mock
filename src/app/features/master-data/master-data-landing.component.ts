@@ -31,6 +31,8 @@ import {
   CustomAttributeState,
 } from '../../core/services/custom-attribute.service';
 import { PlanningMasterComponent } from '../../planning/planning-master.component';
+import { TimetableYearService } from '../../core/services/timetable-year.service';
+import { TimetableYearRecord } from '../../core/models/timetable-year.model';
 
 @Component({
   selector: 'app-master-data-landing',
@@ -43,6 +45,7 @@ import { PlanningMasterComponent } from '../../planning/planning-master.componen
 export class MasterDataLandingComponent {
   private readonly resources = inject(MasterDataResourceStoreService);
   private readonly collections = inject(MasterDataCollectionsStoreService);
+  private readonly timetableYearService = inject(TimetableYearService);
 
   protected readonly title = 'Stammdatenpflege';
   protected readonly subtitle =
@@ -142,10 +145,16 @@ export class MasterDataLandingComponent {
   private readonly customAttributes = inject(CustomAttributeService);
 
   protected readonly tabs = computed<MasterDataTabConfig[]>(() =>
-    this.buildTabs(this.customAttributes.definitions()),
+    this.buildTabs(
+      this.customAttributes.definitions(),
+      this.timetableYearService.listManagedYearRecords(),
+    ),
   );
 
-  private buildTabs(definitions: CustomAttributeState): MasterDataTabConfig[] {
+  private buildTabs(
+    definitions: CustomAttributeState,
+    timetableYears: TimetableYearRecord[],
+  ): MasterDataTabConfig[] {
     return [
       {
         id: 'personnel',
@@ -163,6 +172,23 @@ export class MasterDataLandingComponent {
             type: 'hierarchy',
             id: 'personnel-pools',
             config: this.buildPersonnelHierarchy(definitions),
+          },
+        ],
+      },
+      {
+        id: 'timetable-years',
+        icon: 'event',
+        title: 'Fahrplanjahre',
+        description:
+          'Definiere hier die gültigen Fahrplanjahre. Alle Auftrags- und Kalenderdialoge greifen auf diese Liste zurück.',
+        sections: [
+          {
+            type: 'category',
+            id: 'timetable-year-management',
+            title: 'Fahrplanjahre',
+            description:
+              'Start- und Enddatum sind inklusive. Über die Beschreibung kannst du z. B. Quelle oder Besonderheiten dokumentieren.',
+            config: this.buildTimetableYearCategory(timetableYears),
           },
         ],
       },
@@ -217,6 +243,103 @@ export class MasterDataLandingComponent {
         ],
       },
     ];
+  }
+
+  private buildTimetableYearCategory(
+    items: TimetableYearRecord[],
+  ): MasterDataCategoryConfig<TimetableYearRecord> {
+    return {
+      id: 'managed-timetable-years',
+      icon: 'event',
+      title: 'Fahrplanjahre',
+      description:
+        'Die hier gepflegten Fahrplanjahre stehen in allen Dialogen als Auswahl zur Verfügung.',
+      entityLabel: 'Fahrplanjahr',
+      columns: [
+        { key: 'label', label: 'Label' },
+        {
+          key: 'range',
+          label: 'Zeitraum',
+          valueAccessor: (item) => this.formatTimetableYearRange(item),
+        },
+        {
+          key: 'description',
+          label: 'Beschreibung',
+          valueAccessor: (item) => item.description ?? '—',
+        },
+      ],
+      fields: [
+        {
+          key: 'label',
+          label: 'Label',
+          type: 'text',
+          placeholder: 'z. B. 2024/25',
+          hint: 'Anzeigetext in Filtern und Dialogen.',
+        },
+        {
+          key: 'startIso',
+          label: 'Beginn (inkl.)',
+          type: 'date',
+          hint: 'Erster Verkehrstag des Fahrplanjahres.',
+        },
+        {
+          key: 'endIso',
+          label: 'Ende (inkl.)',
+          type: 'date',
+          hint: 'Letzter Verkehrstag des Fahrplanjahres.',
+        },
+        {
+          key: 'description',
+          label: 'Beschreibung',
+          type: 'textarea',
+          placeholder: 'Optionaler Hinweis (z. B. Quelle, Besonderheiten)',
+        },
+      ],
+      items,
+      defaultValues: () => this.timetableYearService.nextDefaultRecord(),
+      fromFormValue: (value, previous) =>
+        this.normalizeTimetableYearFormValue(value, previous),
+      onItemsChange: (nextItems) => this.timetableYearService.syncManagedYears(nextItems),
+    };
+  }
+
+  private formatTimetableYearRange(item: TimetableYearRecord): string {
+    if (item.startIso && item.endIso) {
+      return `${item.startIso} – ${item.endIso}`;
+    }
+    if (item.startIso) {
+      return `${item.startIso} – ?`;
+    }
+    if (item.endIso) {
+      return `? – ${item.endIso}`;
+    }
+    return '—';
+  }
+
+  private normalizeTimetableYearFormValue(
+    value: Record<string, unknown>,
+    previous?: TimetableYearRecord | null,
+  ): TimetableYearRecord {
+    const rawId = typeof value['id'] === 'string' ? value['id'].trim() : '';
+    const id =
+      rawId || previous?.id || `ty-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 4)}`;
+    const startIso = this.coerceIsoDate(value['startIso']);
+    const endIso = this.coerceIsoDate(value['endIso']);
+    return {
+      id,
+      label: (value['label'] as string | undefined)?.trim() ?? '',
+      startIso,
+      endIso,
+      description: (value['description'] as string | undefined)?.trim() || undefined,
+    };
+  }
+
+  private coerceIsoDate(value: unknown): string {
+    if (typeof value !== 'string') {
+      return '';
+    }
+    const trimmed = value.trim().slice(0, 10);
+    return /^\d{4}-\d{2}-\d{2}$/.test(trimmed) ? trimmed : '';
   }
 
   private buildPersonnelServicesHierarchy(

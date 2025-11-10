@@ -31,6 +31,26 @@
   flex-wrap: wrap;
 }
 
+.period-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.period-accordion {
+  width: 100%;
+}
+
+.period-grid--nested {
+  margin-top: 12px;
+}
+
+.group-heading {
+  margin: 16px 0 8px;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
 .filters {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -151,6 +171,12 @@
 .responsible {
   margin-left: 12px;
   color: rgba(0, 0, 0, 0.6);
+}
+
+.year-chip {
+  margin-left: 8px;
+  background: #e8f0fe;
+  color: #1a73e8;
 }
 
 .description {

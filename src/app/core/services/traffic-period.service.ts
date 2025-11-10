@@ -1,4 +1,4 @@
-import { Injectable, computed, signal } from '@angular/core';
+import { Injectable, computed, inject, signal } from '@angular/core';
 import {
   TrafficPeriod,
   TrafficPeriodRule,
@@ -7,6 +7,8 @@ import {
   TrafficPeriodVariantScope,
 } from '../models/traffic-period.model';
 import { MOCK_TRAFFIC_PERIODS } from '../mock/mock-traffic-periods.mock';
+import { TimetableYearBounds } from '../models/timetable-year.model';
+import { TimetableYearService } from './timetable-year.service';
 
 export interface TrafficPeriodFilters {
   search: string;
@@ -27,6 +29,7 @@ export interface TrafficPeriodCreatePayload {
   tags?: string[];
   year: number;
   rules: TrafficPeriodRulePayload[];
+  timetableYearLabel?: string;
 }
 
 export interface TrafficPeriodRulePayload {
@@ -56,6 +59,7 @@ export interface RailMlTrafficPeriodPayload {
 
 @Injectable({ providedIn: 'root' })
 export class TrafficPeriodService {
+  private readonly timetableYear = inject(TimetableYearService);
   private readonly _periods = signal<TrafficPeriod[]>(MOCK_TRAFFIC_PERIODS);
   private readonly _filters = signal<TrafficPeriodFilters>({
     search: '',
@@ -148,9 +152,11 @@ export class TrafficPeriodService {
       return '';
     }
 
+    const yearInfo = this.resolveTimetableYear(filteredRules, payload.timetableYearLabel);
     const now = new Date().toISOString();
     const id = this.generateId();
-
+    const tags = new Set(this.normalizeTags(payload.tags) ?? []);
+    tags.add(`timetable-year:${yearInfo.label}`);
 
     const period: TrafficPeriod = {
       id,
@@ -158,10 +164,11 @@ export class TrafficPeriodService {
       type: payload.type,
       description: payload.description,
       responsible: payload.responsible,
+      timetableYearLabel: yearInfo.label,
       createdAt: now,
       updatedAt: now,
-      tags: this.normalizeTags(payload.tags),
-      rules: this.buildRulesFromPayload(id, filteredRules),
+      tags: Array.from(tags),
+      rules: this.buildRulesFromPayload(id, filteredRules, undefined, yearInfo),
     };
 
     this._periods.update((periods) => [period, ...periods]);
@@ -179,18 +186,19 @@ export class TrafficPeriodService {
     responsible?: string;
   }): string {
     const isoDate = options.date.slice(0, 10);
-    const year = Number.parseInt(isoDate.slice(0, 4), 10) || new Date().getFullYear();
+    const yearInfo = this.timetableYear.getYearBounds(isoDate);
     return this.createPeriod({
       name: options.name,
       description: options.description,
       responsible: options.responsible,
       type: options.type ?? 'standard',
-      year,
+      year: yearInfo.startYear,
+      timetableYearLabel: yearInfo.label,
       tags: options.tags,
       rules: [
         {
           name: `${options.name} ${isoDate}`,
-          year,
+          year: yearInfo.startYear,
           selectedDates: [isoDate],
           variantType: options.variantType ?? 'special_day',
           appliesTo: options.appliesTo ?? 'both',
@@ -207,6 +215,17 @@ export class TrafficPeriodService {
       return;
     }
 
+    const existing = this.getById(periodId);
+    if (!existing) {
+      return;
+    }
+    const yearInfo = this.resolveTimetableYear(
+      filteredRules,
+      payload.timetableYearLabel ?? existing.timetableYearLabel,
+    );
+    const tags = new Set(this.normalizeTags(payload.tags) ?? []);
+    tags.add(`timetable-year:${yearInfo.label}`);
+
     this._periods.update((periods) =>
       periods.map((period) => {
         if (period.id !== periodId) {
@@ -219,9 +238,10 @@ export class TrafficPeriodService {
           type: payload.type,
           description: payload.description,
           responsible: payload.responsible,
-          tags: this.normalizeTags(payload.tags),
+          timetableYearLabel: yearInfo.label,
+          tags: Array.from(tags),
           updatedAt: new Date().toISOString(),
-          rules: this.buildRulesFromPayload(periodId, filteredRules, period.rules),
+          rules: this.buildRulesFromPayload(periodId, filteredRules, period.rules, yearInfo),
         } satisfies TrafficPeriod;
       }),
     );
@@ -240,17 +260,20 @@ export class TrafficPeriodService {
     const id = this.generateId();
     const ruleId = `${id}-R1`;
     const normalizedBitmap = this.normalizeDaysBitmap(payload.daysBitmap);
+    const dateSamples =
+      this.expandDates(
+        payload.validityStart,
+        payload.validityEnd,
+        normalizedBitmap,
+      ) ?? [payload.validityStart.slice(0, 10)];
+    const yearInfo = this.timetableYear.ensureDatesWithinSameYear(dateSamples);
     const rule: TrafficPeriodRule = {
       id: ruleId,
       name: `RailML ${payload.sourceId}`,
       daysBitmap: normalizedBitmap,
-      validityStart: payload.validityStart,
-      validityEnd: payload.validityEnd,
-      includesDates: this.expandDates(
-        payload.validityStart,
-        payload.validityEnd,
-        normalizedBitmap,
-      ),
+      validityStart: dateSamples[0],
+      validityEnd: dateSamples[dateSamples.length - 1],
+      includesDates: dateSamples,
       variantType: 'series',
       appliesTo: payload.scope ?? 'commercial',
       reason: payload.reason ?? payload.description,
@@ -263,10 +286,11 @@ export class TrafficPeriodService {
       type: payload.type ?? 'standard',
       description: payload.description,
       responsible: 'RailML Import',
+      timetableYearLabel: yearInfo.label,
       createdAt: now,
       updatedAt: now,
       rules: [rule],
-      tags: ['railml', sourceTag],
+      tags: ['railml', sourceTag, `timetable-year:${yearInfo.label}`],
     };
 
     this._periods.update((periods) => [period, ...periods]);
@@ -333,6 +357,7 @@ export class TrafficPeriodService {
     periodId: string,
     rulePayloads: TrafficPeriodRulePayload[],
     existingRules: TrafficPeriodRule[] = [],
+    yearBounds?: TimetableYearBounds,
   ): TrafficPeriodRule[] {
     return rulePayloads.map((payload, index) => {
       const sortedSelectedDates = [...new Set(payload.selectedDates)].sort();
@@ -343,12 +368,26 @@ export class TrafficPeriodService {
         ? existingRules.find((rule) => rule.id === payload.id)
         : undefined;
       const ruleId = payload.id ?? existingRule?.id ?? `${periodId}-R${index + 1}`;
+      const defaultStart = yearBounds?.startIso ?? `${payload.year}-01-01`;
+      const defaultEnd = yearBounds?.endIso ?? defaultStart;
+      const validityStart = sortedSelectedDates[0] ?? defaultStart;
+      const validityEnd =
+        sortedSelectedDates[sortedSelectedDates.length - 1] ?? defaultEnd;
+      if (yearBounds) {
+        sortedSelectedDates.forEach((date) => {
+          if (!this.timetableYear.isDateWithinYear(date, yearBounds)) {
+            throw new Error(
+              `Kalender "${payload.name}" enthält den Fahrtag ${date}, der nicht zum Fahrplanjahr ${yearBounds.label} gehört.`,
+            );
+          }
+        });
+      }
       return {
         id: ruleId,
         name: payload.name?.trim() || `Kalender ${payload.year}`,
-        daysBitmap: '1111111',
-        validityStart: `${payload.year}-01-01`,
-        validityEnd: `${payload.year}-12-31`,
+        daysBitmap: this.buildDaysBitmapFromDates(sortedSelectedDates),
+        validityStart,
+        validityEnd,
         includesDates: sortedSelectedDates,
         excludesDates: sortedExcludedDates,
         variantType: payload.variantType,
@@ -358,5 +397,142 @@ export class TrafficPeriodService {
         primary: payload.primary ?? index === 0,
       } satisfies TrafficPeriodRule;
     });
+  }
+
+  addExclusionDates(periodId: string, dates: string[]): void {
+    const period = this.getById(periodId);
+    if (!period || !dates.length) {
+      return;
+    }
+    const normalized = Array.from(
+      new Set(
+        dates
+          .map((date) => date?.trim())
+          .filter((date): date is string => !!date && /^\d{4}-\d{2}-\d{2}$/.test(date)),
+      ),
+    ).sort();
+    if (!normalized.length) {
+      return;
+    }
+    this._periods.update((periods) =>
+      periods.map((candidate) => {
+        if (candidate.id !== periodId) {
+          return candidate;
+        }
+        const rules = candidate.rules.map((rule, index) => {
+          if (!rule.primary && index !== 0) {
+            return rule;
+          }
+          const excludes = new Set(rule.excludesDates ?? []);
+          normalized.forEach((date) => excludes.add(date));
+          return { ...rule, excludesDates: Array.from(excludes).sort() };
+        });
+        return {
+          ...candidate,
+          rules,
+          updatedAt: new Date().toISOString(),
+        };
+      }),
+    );
+  }
+
+  addVariantRule(
+    periodId: string,
+    options: {
+      name?: string;
+      dates: string[];
+      variantType?: TrafficPeriodVariantType;
+      appliesTo?: TrafficPeriodVariantScope;
+      reason?: string;
+    },
+  ): void {
+    const period = this.getById(periodId);
+    if (!period) {
+      return;
+    }
+    const normalized = Array.from(
+      new Set(
+        options.dates
+          .map((date) => date?.trim())
+          .filter((date): date is string => !!date && /^\d{4}-\d{2}-\d{2}$/.test(date)),
+      ),
+    ).sort();
+    if (!normalized.length) {
+      return;
+    }
+    const yearInfo = period.timetableYearLabel
+      ? this.timetableYear.getYearByLabel(period.timetableYearLabel)
+      : this.timetableYear.ensureDatesWithinSameYear(normalized);
+
+    normalized.forEach((date) => {
+      if (!this.timetableYear.isDateWithinYear(date, yearInfo)) {
+        throw new Error(
+          `Kalender "${options.name ?? 'Variante'}" enthält den Fahrtag ${date}, der nicht zum Fahrplanjahr ${yearInfo.label} gehört.`,
+        );
+      }
+    });
+
+    const rule: TrafficPeriodRule = {
+      id: `${periodId}-VAR-${Date.now().toString(36)}`,
+      name: options.name?.trim() || `Variante ${period.rules.length + 1}`,
+      daysBitmap: this.buildDaysBitmapFromDates(normalized),
+      validityStart: normalized[0],
+      validityEnd: normalized[normalized.length - 1],
+      includesDates: normalized,
+      variantType: options.variantType ?? 'special_day',
+      appliesTo: options.appliesTo ?? 'both',
+      variantNumber: this.nextVariantNumber(period),
+      reason: options.reason,
+      primary: false,
+    };
+
+    this._periods.update((periods) =>
+      periods.map((entry) =>
+        entry.id === periodId
+          ? {
+              ...entry,
+              rules: [...entry.rules, rule],
+              updatedAt: new Date().toISOString(),
+            }
+          : entry,
+      ),
+    );
+  }
+
+  private resolveTimetableYear(
+    rules: TrafficPeriodRulePayload[],
+    explicitLabel?: string,
+  ): TimetableYearBounds {
+    if (explicitLabel) {
+      return this.timetableYear.getYearByLabel(explicitLabel);
+    }
+    const dates = rules.flatMap((rule) => rule.selectedDates ?? []);
+    if (dates.length) {
+      return this.timetableYear.ensureDatesWithinSameYear(dates);
+    }
+    const fallbackYear = rules[0]?.year ?? new Date().getFullYear();
+    return this.timetableYear.getYearBounds(new Date(fallbackYear, 5, 15));
+  }
+
+  private buildDaysBitmapFromDates(dates: string[]): string {
+    if (!dates.length) {
+      return '1111111';
+    }
+    const bits = Array(7).fill('0');
+    dates.forEach((iso) => {
+      const date = new Date(`${iso}T00:00:00`);
+      const weekday = date.getDay();
+      const index = weekday === 0 ? 6 : weekday - 1;
+      bits[index] = '1';
+    });
+    return bits.join('');
+  }
+
+  private nextVariantNumber(period: TrafficPeriod): string {
+    const numericValues = period.rules
+      .map((rule) => Number.parseInt(rule.variantNumber ?? '', 10))
+      .filter((value) => Number.isFinite(value));
+    const next = numericValues.length ? Math.max(...numericValues) + 1 : 1;
+    return next.toString().padStart(2, '0');
   }
 }

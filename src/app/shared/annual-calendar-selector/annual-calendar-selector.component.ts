@@ -18,6 +18,11 @@ interface CalendarCell {
   kind: 'day' | 'leading' | 'trailing';
 }
 
+interface CalendarMonthGroup {
+  label: string;
+  cells: CalendarCell[];
+}
+
 @Component({
   selector: 'app-annual-calendar-selector',
   standalone: true,
@@ -33,6 +38,9 @@ export class AnnualCalendarSelectorComponent implements OnChanges {
   @Input() selectedDates: readonly string[] | null = [];
   @Input() allowedDates: readonly string[] | null = null;
   @Input() accentDates: readonly string[] | null = null;
+  @Input() rangeStartIso: string | null = null;
+  @Input() rangeEndIso: string | null = null;
+  @Input() rangeLabel: string | null = null;
 
   @Output() selectedDatesChange = new EventEmitter<string[]>();
 
@@ -52,15 +60,31 @@ export class AnnualCalendarSelectorComponent implements OnChanges {
   ];
 
   readonly weekdayNames = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
+  private readonly monthLabelFormatter = new Intl.DateTimeFormat('de-DE', {
+    month: 'long',
+    year: 'numeric',
+  });
 
   private readonly yearSignal = signal<number>(new Date().getFullYear());
   private readonly selected = signal<Set<string>>(new Set());
   private readonly allowed = signal<Set<string> | null>(null);
   private readonly accent = signal<Set<string>>(new Set());
+  private readonly customRangeActive = signal(false);
+  private readonly customRangeStart = signal<Date>(new Date(new Date().getFullYear(), 0, 1));
+  private readonly customRangeEnd = signal<Date>(new Date(new Date().getFullYear(), 11, 31));
+  private readonly customRangeLabel = signal<string>('');
   private lastSelectedDate: string | null = null;
 
   readonly selectedCount = computed(() => this.selected().size);
-  readonly weekGroups = computed(() => this.computeWeeks(this.yearSignal()));
+  readonly weekGroups = computed(() => {
+    if (this.customRangeActive()) {
+      return this.computeWeeksForRange(
+        this.customRangeStart(),
+        this.customRangeEnd(),
+      );
+    }
+    return this.computeWeeksForYear(this.yearSignal());
+  });
   readonly maxColumnCount = computed(() =>
     this.weekGroups().reduce((max, month) => Math.max(max, month.cells.length), 0),
   );
@@ -73,13 +97,31 @@ export class AnnualCalendarSelectorComponent implements OnChanges {
   readonly emptyArrayCache = new Map<number, number[]>();
 
   ngOnChanges(changes: SimpleChanges): void {
-    if (changes['year']) {
+    const rangeChanged =
+      'rangeStartIso' in changes || 'rangeEndIso' in changes || 'rangeLabel' in changes;
+    if (rangeChanged && this.rangeStartIso && this.rangeEndIso) {
+      const start = this.parseIsoDate(this.rangeStartIso);
+      const end = this.parseIsoDate(this.rangeEndIso);
+      if (start && end && end >= start) {
+        this.customRangeStart.set(start);
+        this.customRangeEnd.set(end);
+        this.customRangeLabel.set(this.rangeLabel ?? `${this.rangeStartIso} – ${this.rangeEndIso}`);
+        this.customRangeActive.set(true);
+      } else {
+        this.customRangeActive.set(false);
+      }
+    } else if (rangeChanged) {
+      this.customRangeActive.set(false);
+    }
+
+    if (!this.customRangeActive() && changes['year']) {
       const nextYear = this.normalizeYear(this.year);
       if (this.yearSignal() !== nextYear) {
         this.yearSignal.set(nextYear);
         this.lastSelectedDate = null;
       }
     }
+
     if (changes['selectedDates']) {
       const incoming = new Set(
         (this.selectedDates ?? []).map((date) => date.trim()).filter(Boolean),
@@ -151,6 +193,13 @@ export class AnnualCalendarSelectorComponent implements OnChanges {
     this.lastSelectedDate = null;
   }
 
+  rangeHeaderLabel(): string {
+    if (this.customRangeActive()) {
+      return this.customRangeLabel();
+    }
+    return this.yearSignal().toString();
+  }
+
   selectWorkdays() {
     const next = this.collectByPredicate((weekday) => weekday < 5, false);
     this.updateSelection(next);
@@ -162,7 +211,7 @@ export class AnnualCalendarSelectorComponent implements OnChanges {
   }
 
   toggleWeekday(weekday: number) {
-    const dates = this.datesForWeekday(this.yearSignal(), weekday);
+    const dates = this.datesForWeekday(weekday);
     if (!dates.length) {
       return;
     }
@@ -181,7 +230,7 @@ export class AnnualCalendarSelectorComponent implements OnChanges {
   }
 
   weekdaySelected(weekday: number): boolean {
-    const dates = this.datesForWeekday(this.yearSignal(), weekday);
+    const dates = this.datesForWeekday(weekday);
     if (!dates.length) {
       return false;
     }
@@ -246,13 +295,8 @@ export class AnnualCalendarSelectorComponent implements OnChanges {
     this.updateSelection(base);
   }
 
-  private collectByPredicate(
-    predicate: (weekday: number) => boolean,
-    additive: boolean,
-  ): Set<string> {
-    const year = this.yearSignal();
-    const start = new Date(year, 0, 1);
-    const end = new Date(year, 11, 31);
+  private collectByPredicate(predicate: (weekday: number) => boolean, additive: boolean): Set<string> {
+    const { start, end } = this.rangeBounds();
     const cursor = new Date(start);
     const next = additive ? new Set(this.selected()) : new Set<string>();
 
@@ -267,9 +311,8 @@ export class AnnualCalendarSelectorComponent implements OnChanges {
     return next;
   }
 
-  private datesForWeekday(year: number, weekday: number): string[] {
-    const start = new Date(year, 0, 1);
-    const end = new Date(year, 11, 31);
+  private datesForWeekday(weekday: number): string[] {
+    const { start, end } = this.rangeBounds();
     const cursor = new Date(start);
     const result: string[] = [];
     while (cursor <= end) {
@@ -291,44 +334,63 @@ export class AnnualCalendarSelectorComponent implements OnChanges {
     );
   }
 
-  private computeWeeks(year: number) {
-    const weeksPerMonth: { cells: CalendarCell[]; weekCount: number }[] = [];
-
+  private computeWeeksForYear(year: number): CalendarMonthGroup[] {
+    const months: CalendarMonthGroup[] = [];
     for (let month = 0; month < 12; month++) {
-      const cells: CalendarCell[] = [];
-      const firstDay = new Date(year, month, 1);
-      const offset = (firstDay.getDay() + 6) % 7;
-      const daysInMonth = new Date(year, month + 1, 0).getDate();
-      const weekCount = Math.ceil((offset + daysInMonth) / 7);
-      const totalCells = weekCount * 7;
-
-      for (let index = 0; index < totalCells; index++) {
-        const dayNumber = index - offset + 1;
-        if (index < offset) {
-          cells.push({ date: null, label: '', weekday: null, kind: 'leading' });
-        } else if (dayNumber > daysInMonth) {
-          cells.push({ date: null, label: '', weekday: null, kind: 'trailing' });
-        } else {
-          const date = new Date(year, month, dayNumber);
-          const iso = this.formatDateString(date);
-          const weekday = (date.getDay() + 6) % 7;
-          cells.push({
-            date: iso,
-            label: dayNumber.toString().padStart(2, '0'),
-            weekday,
-            kind: 'day',
-          });
-        }
-      }
-
-      let lastIndex = cells.length - 1;
-      while (lastIndex >= 0 && cells[lastIndex].kind !== 'day') {
-        lastIndex--;
-      }
-      const trimmed = lastIndex >= 0 ? cells.slice(0, lastIndex + 1) : cells;
-      weeksPerMonth.push({ cells: trimmed, weekCount });
+      months.push({
+        label: `${this.monthNames[month]} ${year}`,
+        cells: this.buildMonthCells(year, month),
+      });
     }
-    return weeksPerMonth;
+    return months;
+  }
+
+  private computeWeeksForRange(start: Date, end: Date): CalendarMonthGroup[] {
+    const months: CalendarMonthGroup[] = [];
+    const cursor = new Date(start.getFullYear(), start.getMonth(), 1);
+    const limit = new Date(end.getFullYear(), end.getMonth(), 1);
+    while (cursor <= limit) {
+      months.push({
+        label: this.monthLabelFormatter.format(cursor),
+        cells: this.buildMonthCells(cursor.getFullYear(), cursor.getMonth()),
+      });
+      cursor.setMonth(cursor.getMonth() + 1);
+    }
+    return months;
+  }
+
+  private buildMonthCells(year: number, month: number): CalendarCell[] {
+    const cells: CalendarCell[] = [];
+    const firstDay = new Date(year, month, 1);
+    const offset = (firstDay.getDay() + 6) % 7;
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const weekCount = Math.ceil((offset + daysInMonth) / 7);
+    const totalCells = weekCount * 7;
+
+    for (let index = 0; index < totalCells; index++) {
+      const dayNumber = index - offset + 1;
+      if (index < offset) {
+        cells.push({ date: null, label: '', weekday: null, kind: 'leading' });
+      } else if (dayNumber > daysInMonth) {
+        cells.push({ date: null, label: '', weekday: null, kind: 'trailing' });
+      } else {
+        const date = new Date(year, month, dayNumber);
+        const iso = this.formatDateString(date);
+        const weekday = (date.getDay() + 6) % 7;
+        cells.push({
+          date: iso,
+          label: dayNumber.toString().padStart(2, '0'),
+          weekday,
+          kind: 'day',
+        });
+      }
+    }
+
+    let lastIndex = cells.length - 1;
+    while (lastIndex >= 0 && cells[lastIndex].kind !== 'day') {
+      lastIndex--;
+    }
+    return lastIndex >= 0 ? cells.slice(0, lastIndex + 1) : cells;
   }
 
   private formatDateString(date: Date): string {
@@ -343,5 +405,24 @@ export class AnnualCalendarSelectorComponent implements OnChanges {
       return new Date().getFullYear();
     }
     return Math.min(2100, Math.max(1900, Math.trunc(year)));
+  }
+
+  private rangeBounds(): { start: Date; end: Date } {
+    if (this.customRangeActive()) {
+      return {
+        start: new Date(this.customRangeStart()),
+        end: new Date(this.customRangeEnd()),
+      };
+    }
+    const year = this.yearSignal();
+    return {
+      start: new Date(year, 0, 1),
+      end: new Date(year, 11, 31),
+    };
+  }
+
+  private parseIsoDate(value: string): Date | null {
+    const date = new Date(`${value}T00:00:00`);
+    return Number.isNaN(date.getTime()) ? null : date;
   }
 }

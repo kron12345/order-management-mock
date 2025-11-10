@@ -9,6 +9,7 @@ import {
 } from '../../core/services/order.service';
 import { CustomerService } from '../../core/services/customer.service';
 import { Customer } from '../../core/models/customer.model';
+import { TimetableYearService } from '../../core/services/timetable-year.service';
 
 @Component({
   selector: 'app-order-create-dialog',
@@ -22,6 +23,8 @@ export class OrderCreateDialogComponent {
   private readonly dialogRef = inject(MatDialogRef<OrderCreateDialogComponent>);
   private readonly orderService = inject(OrderService);
   private readonly customerService = inject(CustomerService);
+  private readonly timetableYearService = inject(TimetableYearService);
+  private readonly defaultTimetableYear = this.timetableYearService.defaultYearBounds();
 
   readonly fieldDescriptions = {
     id: 'Optionale manuelle Kennung. Leer lassen, wenn das System eine ID vergeben soll.',
@@ -30,6 +33,7 @@ export class OrderCreateDialogComponent {
     customer: 'Nur verwenden, wenn kein Kunde ausgewählt wurde oder ein individueller Anzeigename nötig ist.',
     tags: 'Kommagetrennte Schlagwörter, damit der Auftrag leichter gefiltert werden kann.',
     comment: 'Interne Hinweise oder Zusatzinformationen zum Auftrag.',
+    timetableYearLabel: 'Fahrplanjahr, in dem der Auftrag läuft. Auftragspositionen dürfen dieses Jahr nicht verlassen.',
   } as const;
 
   readonly form = this.fb.group({
@@ -39,9 +43,13 @@ export class OrderCreateDialogComponent {
     customer: [''],
     tags: [''],
     comment: [''],
+    timetableYearLabel: [this.defaultTimetableYear.label, Validators.required],
   });
 
   readonly customers = this.customerService.customers;
+  get timetableYearOptions() {
+    return this.timetableYearService.listYearsAround(new Date(), 3, 3);
+  }
 
   cancel() {
     this.dialogRef.close();
@@ -61,6 +69,7 @@ export class OrderCreateDialogComponent {
       customer: value.customer?.trim() || undefined,
       tags: this.parseTags(value.tags),
       comment: value.comment?.trim() || undefined,
+      timetableYearLabel: value.timetableYearLabel ?? undefined,
     };
 
     const order = this.orderService.createOrder(payload);

@@ -355,12 +355,58 @@
           --mdc-chip-container-color: rgba(67, 160, 71, 0.28);
         }
       }
+      .year-chip-set {
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+
+      .year-chip {
+        --mdc-chip-outline-color: rgba(255, 255, 255, 0.3);
+        --mdc-chip-container-color: rgba(255, 255, 255, 0.12);
+        --mdc-chip-label-text-color: #f5f7fa;
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+      }
+      .meta-pill--year {
+        background: rgba(138, 180, 248, 0.15);
+        border-color: rgba(138, 180, 248, 0.35);
+      }
     }
 
     .right {
       display: flex;
       gap: 8px;
       align-items: center;
+
+      button.mat-icon-button.active {
+        background: rgba(255, 255, 255, 0.18);
+        border-radius: 50%;
+      }
+    }
+  }
+
+  .selection-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 16px;
+    padding: 12px 18px;
+    background: rgba(25, 118, 210, 0.08);
+    border-top: 1px solid rgba(25, 118, 210, 0.2);
+    border-bottom: 1px solid rgba(25, 118, 210, 0.2);
+
+    &__info {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-weight: 600;
+      color: #1a237e;
+    }
+
+    &__actions {
+      display: inline-flex;
+      gap: 8px;
     }
   }
 

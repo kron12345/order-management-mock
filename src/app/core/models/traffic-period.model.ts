@@ -31,6 +31,7 @@ export interface TrafficPeriod {
   type: TrafficPeriodType;
   description?: string;
   responsible?: string;
+  timetableYearLabel?: string;
   createdAt: string;
   updatedAt: string;
   rules: TrafficPeriodRule[];
