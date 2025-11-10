@@ -1,4 +1,5 @@
 export type ZoomLevel =
+  | 'year'
   | 'quarter'
   | '2month'
   | 'month'

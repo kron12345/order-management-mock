@@ -11,6 +11,11 @@
   background: linear-gradient(180deg, #fafafa 0%, #f4f6f8 100%);
 }
 
+:host(.gantt--panning) .gantt__timeline-cell,
+:host(.gantt--panning) .gantt__timeline-header {
+  cursor: grabbing;
+}
+
 .gantt__main {
   flex: 1;
   min-height: 0;

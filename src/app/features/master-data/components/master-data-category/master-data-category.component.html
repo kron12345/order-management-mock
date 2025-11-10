@@ -57,7 +57,20 @@
   <div class="md-category__detail" *ngIf="selectedItem() as selection">
     <header class="md-category__detail-header">
       <h3>{{ config.entityLabel }} bearbeiten</h3>
-      <span class="md-category__detail-meta">ID {{ selection.id }}</span>
+      <div class="md-category__detail-actions">
+        <span class="md-category__detail-meta">ID {{ selection.id }}</span>
+        <button
+          mat-stroked-button
+          color="warn"
+          type="button"
+          *ngIf="config.allowDelete !== false"
+          (click)="handleDelete()"
+          [disabled]="!selectedItem()"
+        >
+          <mat-icon fontIcon="delete"></mat-icon>
+          Löschen
+        </button>
+      </div>
     </header>
 
     <form [formGroup]="form" (ngSubmit)="handleSave()" class="md-category__form">
@@ -85,16 +98,31 @@
                       formControlName="value"
                       [placeholder]="field.placeholder ?? ''"
                     />
+                    <mat-error
+                      *ngIf="temporalEntryControlHasError(field.key, index, 'value', 'required')"
+                    >
+                      Wert ist erforderlich.
+                    </mat-error>
                   </mat-form-field>
 
                   <mat-form-field appearance="outline">
                     <mat-label>Gültig ab</mat-label>
                     <input matInput type="date" formControlName="validFrom" />
+                    <mat-error
+                      *ngIf="temporalEntryControlHasError(field.key, index, 'validFrom', 'required')"
+                    >
+                      Bitte ein Startdatum angeben.
+                    </mat-error>
                   </mat-form-field>
 
                   <mat-form-field appearance="outline">
                     <mat-label>Gültig bis</mat-label>
                     <input matInput type="date" formControlName="validTo" />
+                    <mat-error
+                      *ngIf="temporalEntryHasGroupError(field.key, index, 'invalidRange')"
+                    >
+                      „Gültig bis“ muss nach „Gültig ab“ liegen.
+                    </mat-error>
                   </mat-form-field>
 
                   <button

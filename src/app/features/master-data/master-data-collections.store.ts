@@ -1,6 +1,5 @@
 import { Injectable, computed, inject, signal } from '@angular/core';
 import { catchError, EMPTY, Observable, of, take, tap } from 'rxjs';
-import { DEMO_MASTER_DATA } from '../../data/demo-master-data';
 import {
   PersonnelPool,
   PersonnelServicePool,
@@ -29,12 +28,12 @@ interface MasterDataCollectionsState {
 }
 
 const INITIAL_STATE: MasterDataCollectionsState = {
-  personnelServicePools: DEMO_MASTER_DATA.personnelServicePools,
-  personnelPools: DEMO_MASTER_DATA.personnelPools,
-  vehicleServicePools: DEMO_MASTER_DATA.vehicleServicePools,
-  vehiclePools: DEMO_MASTER_DATA.vehiclePools,
-  vehicleTypes: DEMO_MASTER_DATA.vehicleTypes,
-  vehicleCompositions: DEMO_MASTER_DATA.vehicleCompositions,
+  personnelServicePools: [],
+  personnelPools: [],
+  vehicleServicePools: [],
+  vehiclePools: [],
+  vehicleTypes: [],
+  vehicleCompositions: [],
 };
 
 @Injectable({ providedIn: 'root' })

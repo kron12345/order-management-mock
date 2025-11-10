@@ -156,6 +156,23 @@ export class MasterDataCategoryComponent<T extends { id: string }> implements On
     this.emitItems();
   }
 
+  protected handleDelete(): void {
+    if (!this.config || this.config.allowDelete === false) {
+      return;
+    }
+    const selection = this.selectedItem();
+    if (!selection) {
+      return;
+    }
+    this.items.update((current) => current.filter((item) => item.id !== selection.id));
+    const updatedItems = this.items();
+    const nextSelectionId = updatedItems[0]?.id ?? null;
+    this.selectedId.set(nextSelectionId);
+    this.patchForm(nextSelectionId);
+    this.emitItems();
+    this.emitSelection();
+  }
+
   protected displayCell(row: T, columnKey: string): string {
     const column = this.config.columns.find((col) => col.key === columnKey);
     if (!column) {
@@ -780,6 +797,41 @@ export class MasterDataCategoryComponent<T extends { id: string }> implements On
 
   private today(): string {
     return new Date().toISOString().slice(0, 10);
+  }
+
+  protected temporalEntryControl(
+    fieldKey: string,
+    index: number,
+    control: 'value' | 'validFrom' | 'validTo',
+  ): AbstractControl | null {
+    const array = this.temporalControls(fieldKey);
+    const group = array.at(index);
+    if (group instanceof FormGroup) {
+      return group.get(control);
+    }
+    return null;
+  }
+
+  protected temporalEntryControlHasError(
+    fieldKey: string,
+    index: number,
+    control: 'value' | 'validFrom' | 'validTo',
+    error: string,
+  ): boolean {
+    const ctrl = this.temporalEntryControl(fieldKey, index, control);
+    if (!ctrl) {
+      return false;
+    }
+    return !!(ctrl.hasError(error) && (ctrl.dirty || ctrl.touched));
+  }
+
+  protected temporalEntryHasGroupError(fieldKey: string, index: number, error: string): boolean {
+    const array = this.temporalControls(fieldKey);
+    const group = array.at(index);
+    if (!(group instanceof FormGroup)) {
+      return false;
+    }
+    return !!(group.hasError(error) && (group.dirty || group.touched));
   }
 
   private cloneItem(item: T): T {

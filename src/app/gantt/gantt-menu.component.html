@@ -28,9 +28,7 @@
       <mat-icon fontIcon="add"></mat-icon>
     </button>
 
-    <button mat-icon-button type="button" aria-label="Zoomstufe wechseln" [matMenuTriggerFor]="zoomMenu">
-      <mat-icon fontIcon="tune"></mat-icon>
-    </button>
+    <span class="gantt-menu__zoom-label" aria-live="polite">{{ zoomLabel }}</span>
 
     <button mat-icon-button type="button" aria-label="Heute" (click)="gotoToday.emit()">
       <mat-icon fontIcon="today"></mat-icon>
@@ -40,15 +38,6 @@
       <mat-icon fontIcon="event"></mat-icon>
     </button>
   </div>
-
-  <mat-menu #zoomMenu="matMenu">
-    @for (level of zoomLevels; track level) {
-      <button mat-menu-item (click)="onZoomLevelChange(level)">
-        <mat-icon *ngIf="zoomLevel === level" fontIcon="check"></mat-icon>
-        <span>{{ zoomLabel(level) }}</span>
-      </button>
-    }
-  </mat-menu>
 
   <mat-menu #dateMenu="matMenu">
     <mat-calendar (selectedChange)="onDatePicked($event)" [selected]="today"></mat-calendar>

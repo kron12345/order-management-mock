@@ -1,4 +1,4 @@
-import { Injectable, computed, signal } from '@angular/core';
+import { Injectable, Signal, computed, signal } from '@angular/core';
 import { TimetableYearBounds, TimetableYearRecord } from '../models/timetable-year.model';
 
 const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
@@ -82,6 +82,10 @@ export class TimetableYearService {
    */
   managedYearBounds(): TimetableYearBounds[] {
     return this.managedBoundsSignal().map((bounds) => this.cloneBounds(bounds));
+  }
+
+  managedYearBoundsSignal(): Signal<TimetableYearBounds[]> {
+    return computed(() => this.managedBoundsSignal().map((bounds) => this.cloneBounds(bounds)));
   }
 
   /**

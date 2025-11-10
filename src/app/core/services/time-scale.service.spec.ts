@@ -1,6 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { TimeScaleService } from './time-scale.service';
 import { ZoomLevel } from '../../models/time-scale';
+import { ZOOM_CONFIG_MAP } from '../constants/time-scale.config';
 
 describe('TimeScaleService', () => {
   let service: TimeScaleService;
@@ -18,7 +19,7 @@ describe('TimeScaleService', () => {
     const sampleTime = new Date('2024-01-10T12:34:00Z');
 
     zoomLevels.forEach((zoom) => {
-      service.setZoomLevel(zoom);
+      service.setPixelsPerMs(ZOOM_CONFIG_MAP[zoom].pxPerMs);
       const px = service.timeToPx(sampleTime);
       const result = service.pxToTime(px);
       expect(Math.abs(result.getTime() - sampleTime.getTime())).toBeLessThan(1);
@@ -27,7 +28,7 @@ describe('TimeScaleService', () => {
   });
 
   it('generates day ticks for month zoom', () => {
-    service.setZoomLevel('month');
+    service.setPixelsPerMs(ZOOM_CONFIG_MAP['month'].pxPerMs);
     const viewStart = new Date('2024-01-05T00:00:00Z');
     const viewEnd = new Date('2024-01-09T00:00:00Z');
 
@@ -39,7 +40,7 @@ describe('TimeScaleService', () => {
   });
 
   it('generates quarter-hour ticks for hour zoom', () => {
-    service.setZoomLevel('hour');
+    service.setPixelsPerMs(ZOOM_CONFIG_MAP['hour'].pxPerMs);
     const viewStart = new Date('2024-01-12T08:00:00Z');
     const viewEnd = new Date('2024-01-12T09:00:00Z');
 
@@ -52,4 +53,3 @@ describe('TimeScaleService', () => {
     expect(allWidthsIdentical).toBeTrue();
   });
 });
-

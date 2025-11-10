@@ -1,12 +1,10 @@
 <section class="gantt" role="region" aria-label="Planungsgantt">
   <app-gantt-menu
-    [zoomLevel]="zoomLevel()"
-    [zoomLevels]="zoomLevels"
+    [zoomLabel]="zoomLabel()"
     [viewRangeLabel]="viewRangeLabel()"
     [filterText]="filterText()"
     (zoomIn)="onZoomIn()"
     (zoomOut)="onZoomOut()"
-    (zoomLevelChange)="onZoomLevelChange($event)"
     (gotoToday)="onGotoToday()"
     (gotoDate)="onGotoDate($event)"
     (filterChange)="onFilterChange($event)"
@@ -32,7 +30,6 @@
         <app-gantt-timeline-header
           [ticks]="ticks()"
           [contentWidth]="contentWidth()"
-          [zoomLevel]="zoomLevel()"
         />
       </div>
 
@@ -124,7 +121,7 @@
   <app-gantt-status-bar
     [viewStart]="viewStart()"
     [viewEnd]="viewDisplayEnd()"
-    [zoomLevel]="zoomLevel()"
+    [zoomLabel]="zoomLabel()"
     [cursorTime]="cursorTime()"
     [resourceCount]="resourceCount()"
     [visibleResourceCount]="visibleResourceCount()"

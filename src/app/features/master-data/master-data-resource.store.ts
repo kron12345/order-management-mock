@@ -126,6 +126,7 @@ export class MasterDataResourceStoreService {
       kind: 'personnel',
       attributes: this.toAttributes({
         ...payload,
+        category: 'personnel',
         ...(poolName ? { poolName } : {}),
       }),
     };
@@ -155,6 +156,7 @@ export class MasterDataResourceStoreService {
       kind: 'personnel-service',
       attributes: this.toAttributes({
         ...payload,
+        category: 'personnel-service',
         ...(poolName ? { poolName } : {}),
       }),
     };
@@ -184,6 +186,7 @@ export class MasterDataResourceStoreService {
       kind: 'vehicle-service',
       attributes: this.toAttributes({
         ...payload,
+        category: 'vehicle-service',
         ...(poolName ? { poolName } : {}),
       }),
     };
@@ -218,6 +221,7 @@ export class MasterDataResourceStoreService {
       kind: 'vehicle',
       attributes: this.toAttributes({
         ...payload,
+        category: 'vehicle',
         ...(poolName ? { poolName } : {}),
       }),
     };

@@ -1,6 +1,6 @@
 import { Component, Input } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { Tick, ZoomLevel } from '../models/time-scale';
+import { Tick } from '../models/time-scale';
 
 interface GroupSegment {
   label: string;
@@ -18,7 +18,6 @@ interface GroupSegment {
 export class GanttTimelineHeaderComponent {
   @Input({ required: true }) ticks: Tick[] = [];
   @Input({ required: true }) contentWidth = 0;
-  @Input({ required: true }) zoomLevel!: ZoomLevel;
 
   groupedTicks(): GroupSegment[] {
     if (!this.ticks.length) {

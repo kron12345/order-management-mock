@@ -1,6 +1,5 @@
 import { Component, Input } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { ZoomLevel } from '../models/time-scale';
 
 export type GanttDragStatusState = 'idle' | 'info' | 'valid' | 'invalid';
 
@@ -19,7 +18,7 @@ export interface GanttDragStatus {
 export class GanttStatusBarComponent {
   @Input({ required: true }) viewStart!: Date;
   @Input({ required: true }) viewEnd!: Date;
-  @Input({ required: true }) zoomLevel!: ZoomLevel;
+  @Input({ required: true }) zoomLabel = '';
   @Input({ required: true }) resourceCount = 0;
   @Input({ required: true }) visibleResourceCount = 0;
   @Input({ required: true }) activityCount = 0;

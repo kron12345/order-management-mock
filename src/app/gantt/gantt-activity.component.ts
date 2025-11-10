@@ -31,6 +31,13 @@ export class GanttActivityComponent {
   private isDragging = false;
   private dragSuppressUntil = 0;
   private readonly dragSuppressWindowMs = 1500;
+  private clickTimer: ReturnType<typeof setTimeout> | null = null;
+  private readonly singleClickDelayMs = 220;
+  private touchHoldTimer: ReturnType<typeof setTimeout> | null = null;
+  private readonly touchHoldDelayMs = 450;
+  private touchPointer: { id: number; x: number; y: number } | null = null;
+  private readonly touchMoveTolerancePx = 8;
+  private suppressNextClick = false;
 
   private readonly dateTime = new Intl.DateTimeFormat('de-DE', {
     weekday: 'short',
@@ -175,29 +182,88 @@ export class GanttActivityComponent {
     return this.tooltipText.replace(/\n+/g, ', ');
   }
 
-  protected handleClick(event: Event): void {
+  protected handleClick(event: MouseEvent): void {
     event.stopPropagation();
     event.preventDefault();
-    const hasModifier =
-      event instanceof MouseEvent
-        ? event.metaKey || event.ctrlKey || event.shiftKey
-        : event instanceof KeyboardEvent
-          ? event.ctrlKey || event.metaKey
-          : false;
-    if (hasModifier && this.activity) {
-      this.toggleSelection.emit(this.activity);
+    if (!this.activity) {
+      return;
     }
+    if (this.hasSelectionModifier(event)) {
+      this.cancelPendingClick();
+      this.toggleSelection.emit(this.activity);
+      return;
+    }
+    if (this.suppressNextClick) {
+      this.suppressNextClick = false;
+      this.cancelPendingClick();
+      return;
+    }
+    if (event.detail > 1 || this.shouldSuppressEdit()) {
+      this.cancelPendingClick();
+      return;
+    }
+    this.scheduleSingleClick();
   }
 
-  protected handleDoubleClick(event: Event): void {
+  protected handleDoubleClick(event: MouseEvent): void {
     event.stopPropagation();
     event.preventDefault();
+    if (!this.activity) {
+      return;
+    }
+    this.cancelPendingClick();
+    this.toggleSelection.emit(this.activity);
+  }
+
+  protected handleKeyboardActivate(event: KeyboardEvent | Event): void {
+    event.stopPropagation();
+    event.preventDefault();
+    if (!this.activity) {
+      return;
+    }
+    const keyboardEvent = event as KeyboardEvent;
+    if (this.hasSelectionModifier(keyboardEvent)) {
+      this.toggleSelection.emit(this.activity);
+      return;
+    }
     if (this.shouldSuppressEdit()) {
       return;
     }
-    if (this.activity) {
-      this.activitySelected.emit(this.activity);
+    this.activitySelected.emit(this.activity);
+  }
+
+  protected handlePointerDown(event: PointerEvent): void {
+    if (!this.isTouchPointer(event) || !this.activity) {
+      return;
     }
+    this.touchPointer = { id: event.pointerId, x: event.clientX, y: event.clientY };
+    this.cancelTouchHold();
+    this.touchHoldTimer = window.setTimeout(() => {
+      if (!this.activity) {
+        return;
+      }
+      this.toggleSelection.emit(this.activity);
+      this.suppressNextClick = true;
+      this.cancelTouchHold();
+    }, this.touchHoldDelayMs);
+  }
+
+  protected handlePointerMove(event: PointerEvent): void {
+    if (!this.touchPointer || event.pointerId !== this.touchPointer.id) {
+      return;
+    }
+    const dx = event.clientX - this.touchPointer.x;
+    const dy = event.clientY - this.touchPointer.y;
+    if (Math.hypot(dx, dy) >= this.touchMoveTolerancePx) {
+      this.cancelTouchHold();
+    }
+  }
+
+  protected handlePointerEnd(event: PointerEvent): void {
+    if (this.touchPointer && event.pointerId === this.touchPointer.id) {
+      this.touchPointer = null;
+    }
+    this.cancelTouchHold();
   }
 
   protected onDragStarted(event: CdkDragStart<GanttActivityDragData>): void {
@@ -223,6 +289,41 @@ export class GanttActivityComponent {
       return true;
     }
     return false;
+  }
+
+  private hasSelectionModifier(event: MouseEvent | KeyboardEvent): boolean {
+    if (event instanceof MouseEvent) {
+      return event.metaKey || event.ctrlKey || event.shiftKey;
+    }
+    return event.metaKey || event.ctrlKey || event.shiftKey;
+  }
+
+  private scheduleSingleClick(): void {
+    this.cancelPendingClick();
+    this.clickTimer = window.setTimeout(() => {
+      if (this.activity) {
+        this.activitySelected.emit(this.activity);
+      }
+      this.clickTimer = null;
+    }, this.singleClickDelayMs);
+  }
+
+  private cancelPendingClick(): void {
+    if (this.clickTimer !== null) {
+      clearTimeout(this.clickTimer);
+      this.clickTimer = null;
+    }
+  }
+
+  private isTouchPointer(event: PointerEvent): boolean {
+    return event.pointerType === 'touch' || event.pointerType === 'pen';
+  }
+
+  private cancelTouchHold(): void {
+    if (this.touchHoldTimer !== null) {
+      clearTimeout(this.touchHoldTimer);
+      this.touchHoldTimer = null;
+    }
   }
 }
 

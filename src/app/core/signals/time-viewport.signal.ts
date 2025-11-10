@@ -1,11 +1,23 @@
 import { computed, signal } from '@angular/core';
 import { ZoomLevel } from '../../models/time-scale';
-import { clampDate, differenceInMs, MS_IN_DAY, MS_IN_HOUR } from '../utils/time-math';
+import { clampDate, differenceInMs } from '../utils/time-math';
+import {
+  MAX_RANGE_MS,
+  MIN_RANGE_MS,
+  ZOOM_RANGE_MS,
+  findNearestZoomConfig,
+  interpolatePixelsPerMs,
+} from '../constants/time-scale.config';
+
+const DEFAULT_ZOOM_LEVEL: ZoomLevel = 'week';
+const ZOOM_IN_FACTOR = 0.8;
+const ZOOM_OUT_FACTOR = 1 / ZOOM_IN_FACTOR;
 
 export interface TimeViewportOptions {
   timelineStart: Date;
   timelineEnd: Date;
   initialZoom?: ZoomLevel;
+  initialRangeMs?: number;
   initialCenter?: Date;
 }
 
@@ -16,10 +28,10 @@ export interface TimeViewport {
   readonly scrollX: () => number;
   readonly rangeMs: () => number;
   readonly pixelsPerMs: () => number;
-  setPixelsPerMs(pxPerMs: number): void;
   zoomIn(center?: Date): void;
   zoomOut(center?: Date): void;
-  setZoom(level: ZoomLevel, center?: Date): void;
+  zoomBy(factor: number, center?: Date): void;
+  setRange(rangeMs: number, center?: Date): void;
   scrollBy(px: number): void;
   setScrollPx(px: number): void;
   goto(time: Date): void;
@@ -27,116 +39,84 @@ export interface TimeViewport {
   viewCenter(): Date;
 }
 
-const ZOOM_ORDER: ZoomLevel[] = [
-  'quarter',
-  '2month',
-  'month',
-  '2week',
-  'week',
-  '3day',
-  'day',
-  '12hour',
-  '6hour',
-  '3hour',
-  'hour',
-  '30min',
-  '15min',
-  '10min',
-  '5min',
-];
-
-const ZOOM_RANGE_MS: Record<ZoomLevel, number> = {
-  quarter: 150 * MS_IN_DAY,
-  '2month': 75 * MS_IN_DAY,
-  month: 40 * MS_IN_DAY,
-  '2week': 18 * MS_IN_DAY,
-  week: 10 * MS_IN_DAY,
-  '3day': 4 * MS_IN_DAY,
-  day: 2 * MS_IN_DAY,
-  '12hour': 30 * MS_IN_HOUR,
-  '6hour': 24 * MS_IN_HOUR,
-  '3hour': 12 * MS_IN_HOUR,
-  hour: 8 * MS_IN_HOUR,
-  '30min': 6 * MS_IN_HOUR,
-  '15min': 4 * MS_IN_HOUR,
-  '10min': 3 * MS_IN_HOUR,
-  '5min': 2 * MS_IN_HOUR,
-};
-
 export function createTimeViewport(options: TimeViewportOptions): TimeViewport {
   const timelineStart = new Date(options.timelineStart);
   const timelineEnd = new Date(options.timelineEnd);
   const timelineDuration = Math.max(
     differenceInMs(timelineEnd, timelineStart),
-    MS_IN_DAY,
+    MIN_RANGE_MS,
   );
 
-  const initialZoom = options.initialZoom ?? 'week';
-  const zoomLevel = signal<ZoomLevel>(initialZoom);
-  const rangeMs = computed(() => ZOOM_RANGE_MS[zoomLevel()]);
+  const requestedRange =
+    options.initialRangeMs ??
+    ZOOM_RANGE_MS[options.initialZoom ?? DEFAULT_ZOOM_LEVEL];
+  const minRange = Math.min(MIN_RANGE_MS, timelineDuration);
+  const maxRange = Math.min(Math.max(MAX_RANGE_MS, minRange), timelineDuration);
+  const rangeSignal = signal(clampRange(requestedRange, minRange, maxRange));
 
   const initialCenter = options.initialCenter ?? new Date();
   const initialStart = clampToTimeline(
-    new Date(initialCenter.getTime() - rangeMs() / 2),
+    new Date(initialCenter.getTime() - rangeSignal() / 2),
     timelineStart,
     timelineEnd,
-    rangeMs(),
+    rangeSignal(),
   );
 
   const viewStart = signal<Date>(initialStart);
-  const viewEnd = computed(() => new Date(viewStart().getTime() + rangeMs()));
+  const viewEnd = computed(() => new Date(viewStart().getTime() + rangeSignal()));
+  const pixelsPerMs = computed(() => interpolatePixelsPerMs(rangeSignal()));
   const scrollX = computed(() => {
     const pxPerMs = pixelsPerMs();
     const startTime = viewStart().getTime();
     const baseTime = timelineStart.getTime();
     return Math.max(0, (startTime - baseTime) * pxPerMs);
   });
-  const pixelsPerMs = signal<number>(1 / MS_IN_HOUR);
-
-  function setPixelsPerMs(pxPerMs: number) {
-    pixelsPerMs.set(pxPerMs);
-  }
-
-  function setZoom(level: ZoomLevel, center?: Date) {
-    if (zoomLevel() === level) {
-      maintainCenter(center);
-      return;
-    }
-    zoomLevel.set(level);
-    maintainCenter(center);
-  }
 
   function zoomIn(center?: Date) {
-    const index = ZOOM_ORDER.indexOf(zoomLevel());
-    if (index === -1 || index >= ZOOM_ORDER.length - 1) {
-      return;
-    }
-    setZoom(ZOOM_ORDER[index + 1], center);
+    zoomBy(ZOOM_IN_FACTOR, center);
   }
 
   function zoomOut(center?: Date) {
-    const index = ZOOM_ORDER.indexOf(zoomLevel());
-    if (index <= 0) {
+    zoomBy(ZOOM_OUT_FACTOR, center);
+  }
+
+  function zoomBy(factor: number, center?: Date) {
+    if (!Number.isFinite(factor) || factor <= 0) {
       return;
     }
-    setZoom(ZOOM_ORDER[index - 1], center);
+    const nextRange = rangeSignal() * factor;
+    setRange(nextRange, center);
+  }
+
+  function setRange(rangeMs: number, center?: Date) {
+    const clampedRange = clampRange(rangeMs, minRange, maxRange);
+    if (clampedRange === rangeSignal()) {
+      maintainCenter(center);
+      return;
+    }
+    rangeSignal.set(clampedRange);
+    maintainCenter(center);
+  }
+
+  function rangeMs(): number {
+    return rangeSignal();
   }
 
   function maintainCenter(center?: Date) {
     const target = center ?? viewCenter();
-    const halfRange = rangeMs() / 2;
+    const halfRange = rangeSignal() / 2;
     const nextStart = new Date(target.getTime() - halfRange);
-    const clamped = clampToTimeline(nextStart, timelineStart, timelineEnd, rangeMs());
+    const clamped = clampToTimeline(nextStart, timelineStart, timelineEnd, rangeSignal());
     viewStart.set(clamped);
   }
 
   function viewCenter(): Date {
-    return new Date(viewStart().getTime() + rangeMs() / 2);
+    return new Date(viewStart().getTime() + rangeSignal() / 2);
   }
 
   function scrollBy(px: number) {
     const pxPerMs = pixelsPerMs();
-    if (!pxPerMs) {
+    if (!pxPerMs || !Number.isFinite(px)) {
       return;
     }
     const deltaMs = px / pxPerMs;
@@ -145,12 +125,12 @@ export function createTimeViewport(options: TimeViewportOptions): TimeViewport {
 
   function setScrollPx(px: number) {
     const pxPerMs = pixelsPerMs();
-    if (!pxPerMs) {
+    if (!pxPerMs || !Number.isFinite(px)) {
       return;
     }
     const nextStartTime = timelineStart.getTime() + px / pxPerMs;
     const nextStart = new Date(nextStartTime);
-    const clamped = clampToTimeline(nextStart, timelineStart, timelineEnd, rangeMs());
+    const clamped = clampToTimeline(nextStart, timelineStart, timelineEnd, rangeSignal());
     viewStart.set(clamped);
   }
 
@@ -165,21 +145,21 @@ export function createTimeViewport(options: TimeViewportOptions): TimeViewport {
   function shiftBy(deltaMs: number) {
     const currentStart = viewStart();
     const nextStart = new Date(currentStart.getTime() + deltaMs);
-    const clamped = clampToTimeline(nextStart, timelineStart, timelineEnd, rangeMs());
+    const clamped = clampToTimeline(nextStart, timelineStart, timelineEnd, rangeSignal());
     viewStart.set(clamped);
   }
 
   return {
     viewStart: () => viewStart(),
     viewEnd: () => viewEnd(),
-    zoomLevel: () => zoomLevel(),
+    zoomLevel: () => findNearestZoomConfig(rangeSignal()).level,
     scrollX: () => scrollX(),
-    rangeMs: () => rangeMs(),
+    rangeMs,
     pixelsPerMs: () => pixelsPerMs(),
-    setPixelsPerMs,
     zoomIn,
     zoomOut,
-    setZoom,
+    zoomBy,
+    setRange,
     scrollBy,
     setScrollPx,
     goto,
@@ -187,15 +167,21 @@ export function createTimeViewport(options: TimeViewportOptions): TimeViewport {
     viewCenter,
   };
 
+  function clampRange(value: number, min: number, max: number): number {
+    if (!Number.isFinite(value)) {
+      return min;
+    }
+    return Math.min(Math.max(value, min), max);
+  }
+
   function clampToTimeline(
     start: Date,
     timelineStartDate: Date,
     timelineEndDate: Date,
     currentRange: number,
   ): Date {
-    // Prevent the viewport from scrolling beyond the available data interval.
     const min = timelineStartDate;
-    const max = new Date(timelineEndDate.getTime() - currentRange);
+    const max = new Date(Math.max(min.getTime(), timelineEndDate.getTime() - currentRange));
     if (max.getTime() <= min.getTime()) {
       return new Date(timelineStartDate);
     }

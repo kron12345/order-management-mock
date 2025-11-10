@@ -32,6 +32,34 @@
 
         <div class="planning-filter planning-filter--wide" tabindex="0">
           <button type="button" class="planning-filter__trigger">
+            <mat-icon fontIcon="calendar_month"></mat-icon>
+            <span>{{ timetableYearSummary() }}</span>
+          </button>
+          <div class="planning-filter__panel planning-filter__panel--wide">
+            <div class="planning-filter__panel-title">Fahrplanjahre</div>
+            <div class="planning-filter__panel-actions">
+              <button mat-stroked-button type="button" (click)="selectDefaultTimetableYear()">
+                Aktuelles
+              </button>
+              <button mat-button type="button" (click)="selectAllTimetableYears()">
+                Alle
+              </button>
+            </div>
+            <div class="planning-filter__panel-list planning-filter__panel-list--resources">
+              @for (year of timetableYearOptions(); track year.label) {
+                <mat-checkbox
+                  [checked]="isTimetableYearSelected(year.label)"
+                  (change)="onTimetableYearToggle(year.label, $event.checked)"
+                >
+                  {{ year.label }} · {{ year.startIso }} – {{ year.endIso }}
+                </mat-checkbox>
+              }
+            </div>
+          </div>
+        </div>
+
+        <div class="planning-filter planning-filter--wide" tabindex="0">
+          <button type="button" class="planning-filter__trigger">
             <mat-icon fontIcon="group"></mat-icon>
             <span>Ressourcen</span>
           </button>
@@ -216,6 +244,16 @@
       </mat-card-content>
     </mat-card>
   </section>
+
+  <mat-accordion multi class="planning-accordion">
+    <mat-expansion-panel>
+      <mat-expansion-panel-header>
+        <mat-panel-title>Planwochen / Zeitscheiben (Basisplanung)</mat-panel-title>
+        <mat-panel-description>Vorlagen anlegen, Gültigkeiten pflegen, Rollout starten</mat-panel-description>
+      </mat-expansion-panel-header>
+      <app-plan-week-template></app-plan-week-template>
+    </mat-expansion-panel>
+  </mat-accordion>
 
   <section class="planning-side-panels">
     <mat-card *ngIf="pendingServiceResource() as pending">

@@ -49,6 +49,7 @@ export interface MasterDataCategoryConfig<T extends { id: string }> {
   defaultValues?: () => Partial<T>;
   onItemsChange?: (items: T[]) => void;
   onSelectionChange?: (selection: T | null) => void;
+  allowDelete?: boolean;
 }
 
 export interface MasterDataHierarchyConfig<P extends { id: string }, C extends { id: string }> {

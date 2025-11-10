@@ -12,11 +12,12 @@ import { MatCardModule } from '@angular/material/card';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { MatSelectModule } from '@angular/material/select';
+import { MatExpansionModule } from '@angular/material/expansion';
 import { FormsModule, ReactiveFormsModule, FormBuilder } from '@angular/forms';
 import { GanttComponent } from '../../gantt/gantt.component';
 import { GanttWindowLauncherComponent } from './components/gantt-window-launcher.component';
 import { DragDropModule } from '@angular/cdk/drag-drop';
-import { PlanningDataService } from './planning-data.service';
+import { PlanningDataService, PlanningTimelineRange } from './planning-data.service';
 import { Resource, ResourceKind } from '../../models/resource';
 import { Activity, ServiceRole } from '../../models/activity';
 import {
@@ -33,6 +34,8 @@ import {
 } from './planning-stage.model';
 import { ActivatedRoute, Router } from '@angular/router';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { TimetableYearService } from '../../core/services/timetable-year.service';
+import { TimetableYearBounds } from '../../core/models/timetable-year.model';
 
 interface PlanningBoard {
   id: string;
@@ -151,6 +154,7 @@ type ActivityTypePickerGroup = {
     DragDropModule,
     GanttComponent,
     GanttWindowLauncherComponent,
+    MatExpansionModule,
   ],
   templateUrl: './planning-dashboard.component.html',
   styleUrl: './planning-dashboard.component.scss',
@@ -160,6 +164,8 @@ export class PlanningDashboardComponent {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly fb = inject(FormBuilder);
+  private readonly timetableYearService = inject(TimetableYearService);
+  private readonly managedTimetableYearBounds = this.timetableYearService.managedYearBoundsSignal();
 
   readonly stages = PLANNING_STAGE_METAS;
   private readonly stageMetaMap: Record<PlanningStageId, PlanningStageMeta> = this.stages.reduce(
@@ -228,6 +234,9 @@ export class PlanningDashboardComponent {
   private readonly selectedActivityState = signal<{ activity: Activity; resource: Resource } | null>(null);
   private readonly pendingServiceResourceSignal = signal<Resource | null>(null);
   private readonly serviceAssignmentTargetSignal = signal<string | null>(null);
+  private readonly stageYearSelectionState = signal<Record<PlanningStageId, Set<string>>>(
+    this.createEmptyYearSelection(),
+  );
 
   protected readonly activityForm = this.fb.group({
     start: [''],
@@ -370,6 +379,14 @@ export class PlanningDashboardComponent {
 
     effect(
       () => {
+        const options = this.timetableYearOptions();
+        this.stageOrder.forEach((stage) => this.ensureStageYearSelection(stage, options));
+      },
+      { allowSignalWrites: true },
+    );
+
+    effect(
+      () => {
         const typeId = this.activityFormTypeSignal();
         const definition = this.findActivityType(typeId);
         if (definition?.timeMode === 'point') {
@@ -390,18 +407,35 @@ export class PlanningDashboardComponent {
     () => this.stageMetaMap[this.activeStageSignal()],
   );
 
-  protected readonly resources = computed(() => this.stageResourceSignals[this.activeStageSignal()]());
+  protected readonly resources = computed(() =>
+    this.filterResourcesForStage(
+      this.activeStageSignal(),
+      this.stageResourceSignals[this.activeStageSignal()](),
+    ),
+  );
 
   protected readonly activities = computed(
     () => this.normalizedStageActivitySignals[this.activeStageSignal()](),
   );
 
-  protected readonly timelineRange = computed(
-    () => this.stageTimelineSignals[this.activeStageSignal()](),
+  protected readonly timelineRange = computed(() =>
+    this.computeTimelineRange(this.activeStageSignal()),
   );
 
   protected readonly resourceGroups = computed(() =>
     this.computeResourceGroups(this.activeStageSignal()),
+  );
+
+  protected readonly timetableYearOptions = computed<TimetableYearBounds[]>(() => {
+    const managed = this.managedTimetableYearBounds();
+    if (managed.length) {
+      return managed;
+    }
+    return [this.timetableYearService.defaultYearBounds()];
+  });
+
+  protected readonly timetableYearSummary = computed(() =>
+    this.formatTimetableYearSummary(this.activeStageSignal()),
   );
 
   protected readonly boards = computed(
@@ -1280,8 +1314,8 @@ export class PlanningDashboardComponent {
   protected boardResources(board: PlanningBoard): Resource[] {
     const stage = this.activeStageSignal();
     const resourceSet = new Set(board.resourceIds);
-    return this.stageResourceSignals[stage]().filter((resource) =>
-      resourceSet.has(resource.id),
+    return this.filterResourcesForStage(stage, this.stageResourceSignals[stage]()).filter(
+      (resource) => resourceSet.has(resource.id),
     );
   }
 
@@ -1298,8 +1332,52 @@ export class PlanningDashboardComponent {
     return this.stageStateSignal()[stage].activeBoardId === boardId;
   }
 
+  protected isTimetableYearSelected(label: string): boolean {
+    const stage = this.activeStageSignal();
+    return this.stageYearSelectionState()[stage]?.has(label) ?? false;
+  }
+
+  protected onTimetableYearToggle(label: string, checked: boolean): void {
+    const stage = this.activeStageSignal();
+    this.updateStageYearSelection(stage, (current, options) => {
+      const next = new Set(current);
+      if (checked) {
+        next.add(label);
+      } else {
+        if (next.size <= 1) {
+          return current;
+        }
+        next.delete(label);
+      }
+      if (next.size === 0 && options.length) {
+        next.add(this.preferredYearLabel(options));
+      }
+      return next;
+    });
+  }
+
+  protected selectDefaultTimetableYear(): void {
+    const stage = this.activeStageSignal();
+    this.updateStageYearSelection(stage, (_current, options) => {
+      if (!options.length) {
+        return _current;
+      }
+      return new Set([this.preferredYearLabel(options)]);
+    });
+  }
+
+  protected selectAllTimetableYears(): void {
+    const stage = this.activeStageSignal();
+    this.updateStageYearSelection(stage, (_current, options) => {
+      if (!options.length) {
+        return _current;
+      }
+      return new Set(options.map((year) => year.label));
+    });
+  }
+
   private computeResourceGroups(stage: PlanningStageId): ResourceGroupView[] {
-    const resources = this.stageResourceSignals[stage]();
+    const resources = this.filterResourcesForStage(stage, this.stageResourceSignals[stage]());
     const configs = STAGE_RESOURCE_GROUPS[stage];
     return configs
       .map((config) => {
@@ -1320,15 +1398,24 @@ export class PlanningDashboardComponent {
   private getResourceCategory(resource: Resource): PlanningResourceCategory | null {
     const attributes = resource.attributes as Record<string, unknown> | undefined;
     const category = (attributes?.['category'] ?? null) as string | null;
-    if (
-      category === 'vehicle-service' ||
-      category === 'personnel-service' ||
-      category === 'vehicle' ||
-      category === 'personnel'
-    ) {
+    if (this.isPlanningResourceCategory(category)) {
       return category;
     }
+    if (this.isPlanningResourceCategory(resource.kind)) {
+      return resource.kind;
+    }
     return null;
+  }
+
+  private isPlanningResourceCategory(
+    value: string | null | undefined,
+  ): value is PlanningResourceCategory {
+    return (
+      value === 'vehicle-service' ||
+      value === 'personnel-service' ||
+      value === 'vehicle' ||
+      value === 'personnel'
+    );
   }
 
   private updateStageState(
@@ -1383,22 +1470,23 @@ export class PlanningDashboardComponent {
   }
 
   private ensureStageInitialized(stage: PlanningStageId, resources: Resource[]): void {
-    if (resources.length === 0) {
+    const filteredResources = this.filterResourcesForStage(stage, resources);
+    if (filteredResources.length === 0) {
       return;
     }
 
     const current = this.stageStateSignal();
     const state = this.cloneStageState(current[stage]);
-    const orderMap = this.buildResourceOrderMap(resources);
+    const orderMap = this.buildResourceOrderMap(filteredResources);
     let mutated = false;
 
     if (state.boards.length === 0) {
-      const defaultBoards = this.createDefaultBoardsForStage(stage, resources, orderMap);
+      const defaultBoards = this.createDefaultBoardsForStage(stage, filteredResources, orderMap);
       if (defaultBoards.length === 0) {
         const fallback = this.createBoardState(
           stage,
           this.nextBoardTitle(stage, 'Grundlage'),
-          resources.map((resource) => resource.id),
+          filteredResources.map((resource) => resource.id),
           orderMap,
         );
         state.boards = [fallback];
@@ -1468,7 +1556,11 @@ export class PlanningDashboardComponent {
     stage: PlanningStageId,
     order?: Map<string, number>,
   ): string[] {
-    const orderMap = order ?? this.buildResourceOrderMap(this.stageResourceSignals[stage]());
+    const orderMap =
+      order ??
+      this.buildResourceOrderMap(
+        this.filterResourcesForStage(stage, this.stageResourceSignals[stage]()),
+      );
     const seen = new Set<string>();
     const known: Array<{ id: string; order: number }> = [];
     const unmapped: string[] = [];
@@ -1557,6 +1649,130 @@ export class PlanningDashboardComponent {
     }
 
     return boards;
+  }
+
+  private filterResourcesForStage(stage: PlanningStageId, resources: Resource[]): Resource[] {
+    if (stage === 'base') {
+      return resources.filter((resource) => this.isServiceResource(resource));
+    }
+    if (stage === 'dispatch') {
+      return resources.filter((resource) => this.isPhysicalResource(resource));
+    }
+    return resources;
+  }
+
+  private isServiceResource(resource: Resource): boolean {
+    const category = this.getResourceCategory(resource);
+    return category === 'vehicle-service' || category === 'personnel-service';
+  }
+
+  private isPhysicalResource(resource: Resource): boolean {
+    const category = this.getResourceCategory(resource);
+    return category === 'vehicle' || category === 'personnel';
+  }
+
+  private computeTimelineRange(stage: PlanningStageId): PlanningTimelineRange {
+    const selectedYears = this.selectedYearBounds(stage);
+    if (!selectedYears.length) {
+      return this.stageTimelineSignals[stage]();
+    }
+    const minStart = Math.min(...selectedYears.map((year) => year.start.getTime()));
+    const maxEnd = Math.max(...selectedYears.map((year) => year.end.getTime()));
+    return {
+      start: new Date(minStart),
+      end: new Date(maxEnd),
+    };
+  }
+
+  private selectedYearBounds(stage: PlanningStageId): TimetableYearBounds[] {
+    const selection = Array.from(this.stageYearSelectionState()[stage] ?? []);
+    if (!selection.length) {
+      return [];
+    }
+    const optionMap = new Map(
+      this.timetableYearOptions().map(
+        (year) => [year.label, year] as [string, TimetableYearBounds],
+      ),
+    );
+    return selection
+      .map((label) => optionMap.get(label))
+      .filter((year): year is TimetableYearBounds => !!year);
+  }
+
+  private formatTimetableYearSummary(stage: PlanningStageId): string {
+    const selection = Array.from(this.stageYearSelectionState()[stage] ?? []);
+    if (selection.length === 0) {
+      return 'Fahrplanjahr wählen';
+    }
+    if (selection.length === 1) {
+      return `Fahrplanjahr ${selection[0]}`;
+    }
+    return `${selection.length} Fahrplanjahre`;
+  }
+
+  private createEmptyYearSelection(): Record<PlanningStageId, Set<string>> {
+    return this.stageOrder.reduce((record, stage) => {
+      record[stage] = new Set<string>();
+      return record;
+    }, {} as Record<PlanningStageId, Set<string>>);
+  }
+
+  private ensureStageYearSelection(stage: PlanningStageId, options: TimetableYearBounds[]): void {
+    this.stageYearSelectionState.update((state) => {
+      const current = state[stage] ?? new Set<string>();
+      const validLabels = new Set(options.map((year) => year.label));
+      const next = new Set(Array.from(current).filter((label) => validLabels.has(label)));
+      if (next.size === 0 && options.length > 0) {
+        next.add(this.preferredYearLabel(options));
+      }
+      if (this.areSetsEqual(next, current)) {
+        return state;
+      }
+      return {
+        ...state,
+        [stage]: next,
+      };
+    });
+  }
+
+  private updateStageYearSelection(
+    stage: PlanningStageId,
+    updater: (current: Set<string>, options: TimetableYearBounds[]) => Set<string>,
+  ): void {
+    const options = this.timetableYearOptions();
+    this.stageYearSelectionState.update((state) => {
+      const current = state[stage] ?? new Set<string>();
+      const next = updater(new Set(current), options);
+      if (this.areSetsEqual(next, current)) {
+        return state;
+      }
+      return {
+        ...state,
+        [stage]: next,
+      };
+    });
+  }
+
+  private preferredYearLabel(options: TimetableYearBounds[]): string {
+    if (!options.length) {
+      return '';
+    }
+    const today = new Date();
+    const active =
+      options.find((year) => today >= year.start && today <= year.end) ?? options[0];
+    return active.label;
+  }
+
+  private areSetsEqual(a: Set<string>, b: Set<string>): boolean {
+    if (a.size !== b.size) {
+      return false;
+    }
+    for (const value of a) {
+      if (!b.has(value)) {
+        return false;
+      }
+    }
+    return true;
   }
 
   private setActiveStage(stage: PlanningStageId, updateUrl: boolean): void {

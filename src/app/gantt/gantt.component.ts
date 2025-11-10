@@ -24,7 +24,6 @@ import { MatIconModule } from '@angular/material/icon';
 import { CdkDragEnd, CdkDragMove, CdkDragStart } from '@angular/cdk/drag-drop';
 import { Resource } from '../models/resource';
 import { Activity } from '../models/activity';
-import { ZoomLevel } from '../models/time-scale';
 import { TimeScaleService } from '../core/services/time-scale.service';
 import { createTimeViewport, TimeViewport } from '../core/signals/time-viewport.signal';
 import { GanttMenuComponent } from './gantt-menu.component';
@@ -41,7 +40,8 @@ import { GanttTimelineHeaderComponent } from './gantt-timeline-header.component'
 import { GanttStatusBarComponent, GanttDragStatus } from './gantt-status-bar.component';
 import { TrackHorizontalScrollDirective } from '../shared/directives/track-horizontal-scroll.directive';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { addDays, startOfDay } from '../core/utils/time-math';
+import { addDays, startOfDay, MS_IN_DAY, MS_IN_HOUR, MS_IN_MINUTE } from '../core/utils/time-math';
+import { ZOOM_RANGE_MS, findNearestZoomConfig } from '../core/constants/time-scale.config';
 
 interface PreparedActivity extends Activity {
   startMs: number;
@@ -138,29 +138,30 @@ function arraysEqual<T>(a: T[], b: T[]): boolean {
   return true;
 }
 
-const ZOOM_LEVELS: ZoomLevel[] = [
-  'quarter',
-  '2month',
-  'month',
-  '2week',
-  'week',
-  '3day',
-  'day',
-  '12hour',
-  '6hour',
-  '3hour',
-  'hour',
-  '30min',
-  '15min',
-  '10min',
-  '5min',
-];
-
 const RESOURCE_KIND_LABELS: Record<Resource['kind'], string> = {
   'personnel-service': 'Personaldienst',
   'vehicle-service': 'Fahrzeugdienst',
   personnel: 'Personalressource',
   vehicle: 'Fahrzeugressource',
+};
+
+const ZOOM_LABELS: Record<string, string> = {
+  year: 'Jahr',
+  quarter: 'Quartal',
+  '2month': '2 Monate',
+  month: 'Monat',
+  '2week': '2 Wochen',
+  week: 'Woche',
+  '3day': '3 Tage',
+  day: 'Tag',
+  '12hour': '12 Stunden',
+  '6hour': '6 Stunden',
+  '3hour': '3 Stunden',
+  hour: '1 Stunde',
+  '30min': '30 Minuten',
+  '15min': '15 Minuten',
+  '10min': '10 Minuten',
+  '5min': '5 Minuten',
 };
 
 @Component({
@@ -187,6 +188,12 @@ export class GanttComponent implements AfterViewInit {
   private readonly injector = inject(Injector);
   private readonly destroyRef = inject(DestroyRef);
   private readonly resourcesSignal = signal<Resource[]>([]);
+  private readonly allowedResourceCategories = new Set([
+    'personnel',
+    'personnel-service',
+    'vehicle',
+    'vehicle-service',
+  ]);
   private readonly activitiesSignal = signal<PreparedActivity[]>([]);
   private readonly filterTerm = signal('');
   private readonly cursorTimeSignal = signal<Date | null>(null);
@@ -198,6 +205,7 @@ export class GanttComponent implements AfterViewInit {
   private touchPanLastX: number | null = null;
   private touchPointerContainer: HTMLElement | null = null;
   private readonly pinchLogThreshold = 0.08;
+  private readonly mousePanActivationThreshold = 4;
   private readonly dragFeedbackSignal = signal<DragFeedback>({ state: 'idle', message: '' });
   private readonly dragTimeFormat = new Intl.DateTimeFormat('de-DE', {
     hour: '2-digit',
@@ -211,6 +219,12 @@ export class GanttComponent implements AfterViewInit {
   private dragEditBlockUntil = 0;
   private dragEditBlockGlobalUntil = 0;
   private dragEditBlockActivityId: string | null = null;
+  private mousePanPointerId: number | null = null;
+  private mousePanStartX: number | null = null;
+  private mousePanLastX: number | null = null;
+  private mousePanMoved = false;
+  private mousePanContainer: HTMLElement | null = null;
+  private suppressNextTimelineClick = false;
 
   constructor() {
     this.destroyRef.onDestroy(() => this.updateDragBadge(null));
@@ -244,7 +258,7 @@ export class GanttComponent implements AfterViewInit {
 
   @Input({ required: true })
   set resources(value: Resource[]) {
-    const list = value ?? [];
+    const list = (value ?? []).filter((resource) => this.isDisplayableResource(resource));
     const nextIds = list.map((resource) => resource.id);
     if (this.previousResourceIds && arraysEqual(this.previousResourceIds, nextIds)) {
       return;
@@ -290,12 +304,21 @@ export class GanttComponent implements AfterViewInit {
     if (!value) {
       return;
     }
-    const normalizedStart = startOfDay(value.start);
+    let normalizedStart = startOfDay(value.start);
     const normalizedEndBase = startOfDay(value.end);
-    const normalizedEnd =
+    let normalizedEnd =
       normalizedEndBase.getTime() <= normalizedStart.getTime()
         ? addDays(normalizedStart, 1)
         : addDays(normalizedEndBase, 1);
+    const minTimelineDays = 30;
+    const minTimelineRangeMs = minTimelineDays * MS_IN_DAY;
+    const currentRangeMs = normalizedEnd.getTime() - normalizedStart.getTime();
+    if (currentRangeMs < minTimelineRangeMs) {
+      const deficit = minTimelineRangeMs - currentRangeMs;
+      const halfDeficit = deficit / 2;
+      normalizedStart = new Date(normalizedStart.getTime() - halfDeficit);
+      normalizedEnd = new Date(normalizedEnd.getTime() + halfDeficit);
+    }
     const nextRange = {
       start: normalizedStart.getTime(),
       end: normalizedEnd.getTime(),
@@ -310,8 +333,6 @@ export class GanttComponent implements AfterViewInit {
       this.initializeViewport(normalizedStart, normalizedEnd);
     }
   }
-
-  readonly zoomLevels = ZOOM_LEVELS;
 
   readonly filteredResources = computed(() => {
     const term = this.filterTerm().trim().toLowerCase();
@@ -463,7 +484,7 @@ export class GanttComponent implements AfterViewInit {
     }
     return this.inclusiveViewEnd(this.viewport.viewStart());
   });
-  readonly zoomLevel = computed<ZoomLevel>(() => (this.viewportReady() ? this.viewport.zoomLevel() : 'week'));
+  readonly zoomLabel = computed(() => (this.viewportReady() ? this.describeZoom(this.viewport.rangeMs()) : '—'));
   readonly resourceCount = computed(() => this.resourcesSignal().length);
 
   readonly nowMarkerLeft = computed(() => {
@@ -565,14 +586,6 @@ export class GanttComponent implements AfterViewInit {
     this.syncTimeScaleToViewport();
   }
 
-  onZoomLevelChange(level: ZoomLevel) {
-    if (!this.viewportReady()) {
-      return;
-    }
-    this.viewport.setZoom(level, this.viewport.viewCenter());
-    this.syncTimeScaleToViewport();
-  }
-
   onFilterChange(value: string) {
     this.filterTerm.set(value);
   }
@@ -602,106 +615,141 @@ export class GanttComponent implements AfterViewInit {
     if (!this.viewportReady()) {
       return;
     }
-    if (event.ctrlKey) {
+    const host = container ?? this.headerScrollerDir?.element ?? null;
+    const preferScroll =
+      (!event.ctrlKey && !event.metaKey && !event.altKey && Math.abs(event.deltaX) > Math.abs(event.deltaY)) ||
+      event.shiftKey;
+    if (preferScroll) {
       event.preventDefault();
-      const focus = this.getPointerTime(
-        event.clientX,
-        container ?? this.headerScrollerDir?.element ?? null,
-      );
-      if (event.deltaY < 0) {
-        this.viewport.zoomIn(focus);
-      } else {
-        this.viewport.zoomOut(focus);
-      }
-      this.syncTimeScaleToViewport();
-      return;
-    }
-    if (event.shiftKey) {
-      event.preventDefault();
-      const delta = event.deltaY;
+      const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
       this.viewport.scrollBy(delta);
       return;
     }
+    event.preventDefault();
+    if (event.deltaY === 0) {
+      return;
+    }
+    const factor = Math.exp(event.deltaY * 0.0012);
+    this.applyZoomAtPointer(factor, event.clientX, host ?? (event.currentTarget as HTMLElement | null));
   }
 
   onTimelinePointerDown(event: PointerEvent, container?: HTMLElement | null) {
-    if (!this.viewportReady() || !this.isTouchPointer(event)) {
+    if (!this.viewportReady()) {
       return;
     }
     const host = container ?? (event.currentTarget as HTMLElement | null);
     if (!host) {
       return;
     }
-    this.touchPointerContainer = host;
-    host.setPointerCapture?.(event.pointerId);
-    this.activeTouchPointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
-    if (this.activeTouchPointers.size === 1) {
-      this.touchPanLastX = event.clientX;
-      this.pinchReferenceDistance = null;
-    } else if (this.activeTouchPointers.size === 2) {
-      this.touchPanLastX = null;
-      this.pinchReferenceDistance = this.computePointerDistance();
-    }
-    event.preventDefault();
-  }
-
-  onTimelinePointerMove(event: PointerEvent) {
-    if (!this.viewportReady() || !this.isTouchPointer(event)) {
-      return;
-    }
-    if (!this.activeTouchPointers.has(event.pointerId)) {
-      return;
-    }
-    this.activeTouchPointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
-    if (this.activeTouchPointers.size === 1 && this.touchPanLastX !== null) {
-      const deltaX = event.clientX - this.touchPanLastX;
-      if (Math.abs(deltaX) > 0.5) {
-        this.viewport.scrollBy(-deltaX);
+    if (this.isTouchPointer(event)) {
+      this.touchPointerContainer = host;
+      host.setPointerCapture?.(event.pointerId);
+      this.activeTouchPointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+      if (this.activeTouchPointers.size === 1) {
         this.touchPanLastX = event.clientX;
+        this.pinchReferenceDistance = null;
+      } else if (this.activeTouchPointers.size === 2) {
+        this.touchPanLastX = null;
+        this.pinchReferenceDistance = this.computePointerDistance();
       }
       event.preventDefault();
       return;
     }
-    if (this.activeTouchPointers.size >= 2) {
-      const distance = this.computePointerDistance();
-      if (distance && this.pinchReferenceDistance) {
-        const scale = distance / this.pinchReferenceDistance;
+    if (event.pointerType === 'mouse' && event.button === 0) {
+      if (this.isActivityElement(event.target as HTMLElement | null)) {
+        return;
+      }
+      this.mousePanPointerId = event.pointerId;
+      this.mousePanStartX = event.clientX;
+      this.mousePanLastX = event.clientX;
+      this.mousePanMoved = false;
+      this.mousePanContainer = host;
+      this.suppressNextTimelineClick = false;
+      host.setPointerCapture?.(event.pointerId);
+    }
+  }
+
+  onTimelinePointerMove(event: PointerEvent) {
+    if (!this.viewportReady()) {
+      return;
+    }
+    if (this.isTouchPointer(event)) {
+      if (!this.activeTouchPointers.has(event.pointerId)) {
+        return;
+      }
+      this.activeTouchPointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+      if (this.activeTouchPointers.size === 1 && this.touchPanLastX !== null) {
+        const deltaX = event.clientX - this.touchPanLastX;
+        if (Math.abs(deltaX) > 0.5) {
+          this.viewport.scrollBy(-deltaX);
+          this.touchPanLastX = event.clientX;
+        }
+        event.preventDefault();
+        return;
+      }
+      if (this.activeTouchPointers.size >= 2) {
+        const distance = this.computePointerDistance();
+        if (distance && this.pinchReferenceDistance) {
+          const scale = distance / this.pinchReferenceDistance;
         if (Math.abs(Math.log(scale)) >= this.pinchLogThreshold) {
           const midpointX = this.computePointerMidpointX();
-          const focus = this.getPointerTime(midpointX, this.touchPointerContainer);
-          if (scale > 1) {
-            this.viewport.zoomIn(focus);
-          } else {
-            this.viewport.zoomOut(focus);
-          }
-          this.syncTimeScaleToViewport();
+          const factor = scale > 0 ? 1 / scale : 1;
+          this.applyZoomAtPointer(factor, midpointX, this.touchPointerContainer);
           this.pinchReferenceDistance = distance;
         }
-      } else {
-        this.pinchReferenceDistance = distance;
+        } else {
+          this.pinchReferenceDistance = distance;
+        }
+        event.preventDefault();
+      }
+      return;
+    }
+    if (event.pointerType === 'mouse' && this.mousePanPointerId === event.pointerId && this.mousePanLastX !== null) {
+      const startX = this.mousePanStartX ?? event.clientX;
+      const totalDelta = event.clientX - startX;
+      if (!this.mousePanMoved && Math.abs(totalDelta) < this.mousePanActivationThreshold) {
+        this.mousePanLastX = event.clientX;
+        return;
+      }
+      if (!this.mousePanMoved) {
+        this.mousePanMoved = true;
+        this.suppressNextTimelineClick = true;
+        this.hostElement.nativeElement.classList.add('gantt--panning');
+      }
+      const deltaX = event.clientX - this.mousePanLastX;
+      if (deltaX !== 0) {
+        this.viewport.scrollBy(-deltaX);
+      }
+      this.mousePanLastX = event.clientX;
+      if (this.mousePanStartX === null) {
+        this.mousePanStartX = startX;
       }
       event.preventDefault();
     }
   }
 
   onTimelinePointerUp(event: PointerEvent) {
-    if (!this.isTouchPointer(event)) {
+    if (this.isTouchPointer(event)) {
+      if (this.activeTouchPointers.has(event.pointerId)) {
+        this.activeTouchPointers.delete(event.pointerId);
+      }
+      const target = (event.currentTarget as HTMLElement | null) ?? this.touchPointerContainer;
+      target?.hasPointerCapture?.(event.pointerId) && target.releasePointerCapture(event.pointerId);
+      if (this.activeTouchPointers.size === 0) {
+        this.touchPanLastX = null;
+        this.touchPointerContainer = null;
+      } else if (this.activeTouchPointers.size === 1) {
+        const remaining = Array.from(this.activeTouchPointers.values())[0];
+        this.touchPanLastX = remaining.x;
+      }
+      if (this.activeTouchPointers.size < 2) {
+        this.pinchReferenceDistance = null;
+      }
       return;
     }
-    if (this.activeTouchPointers.has(event.pointerId)) {
-      this.activeTouchPointers.delete(event.pointerId);
-    }
-    const target = (event.currentTarget as HTMLElement | null) ?? this.touchPointerContainer;
-    target?.hasPointerCapture?.(event.pointerId) && target.releasePointerCapture(event.pointerId);
-    if (this.activeTouchPointers.size === 0) {
-      this.touchPanLastX = null;
-      this.touchPointerContainer = null;
-    } else if (this.activeTouchPointers.size === 1) {
-      const remaining = Array.from(this.activeTouchPointers.values())[0];
-      this.touchPanLastX = remaining.x;
-    }
-    if (this.activeTouchPointers.size < 2) {
-      this.pinchReferenceDistance = null;
+    if (event.pointerType === 'mouse' && this.mousePanPointerId === event.pointerId) {
+      const target = (event.currentTarget as HTMLElement | null) ?? this.mousePanContainer;
+      this.endMousePan(target);
     }
   }
 
@@ -743,9 +791,14 @@ export class GanttComponent implements AfterViewInit {
     if (!this.viewportReady()) {
       return;
     }
+    if (this.suppressNextTimelineClick) {
+      this.suppressNextTimelineClick = false;
+      return;
+    }
     const target = container ?? (event.currentTarget as HTMLElement | null) ?? null;
     const start = this.getPointerTime(event.clientX, target);
     this.activityCreateRequested.emit({ resource, start });
+    this.suppressNextTimelineClick = false;
   }
 
   onActivityEditRequested(resource: Resource, activity: Activity) {
@@ -988,7 +1041,7 @@ export class GanttComponent implements AfterViewInit {
     this.viewport = createTimeViewport({
       timelineStart: start,
       timelineEnd: end,
-      initialZoom: 'week',
+      initialRangeMs: ZOOM_RANGE_MS['week'],
       initialCenter: start,
     });
     this.viewportInitialized = true;
@@ -997,14 +1050,14 @@ export class GanttComponent implements AfterViewInit {
   }
 
   private resetViewport(start: Date, end: Date) {
-    const previousZoom = this.viewport?.zoomLevel() ?? 'week';
+    const previousRange = this.viewport?.rangeMs() ?? ZOOM_RANGE_MS['week'];
     const previousCenter = this.viewport?.viewCenter() ?? start;
     this.viewportReady.set(false);
     this.timeScale.setTimelineRange(start, end);
     this.viewport = createTimeViewport({
       timelineStart: start,
       timelineEnd: end,
-      initialZoom: previousZoom,
+      initialRangeMs: previousRange,
       initialCenter: this.clampCenter(previousCenter, start, end),
     });
     this.syncTimeScaleToViewport();
@@ -1124,11 +1177,57 @@ export class GanttComponent implements AfterViewInit {
     return this.timeScale.pxToTime(relativeX);
   }
 
+  private endMousePan(target?: HTMLElement | null): void {
+    if (this.mousePanPointerId !== null) {
+      const host = target ?? this.mousePanContainer;
+      if (host?.hasPointerCapture?.(this.mousePanPointerId)) {
+        host.releasePointerCapture(this.mousePanPointerId);
+      }
+    }
+    if (this.mousePanMoved) {
+      this.hostElement.nativeElement.classList.remove('gantt--panning');
+    }
+    this.mousePanPointerId = null;
+    this.mousePanStartX = null;
+    this.mousePanLastX = null;
+    this.mousePanContainer = null;
+    this.mousePanMoved = false;
+  }
+
   private findTimelineCellForElement(element: HTMLElement | null): HTMLElement | null {
     if (!element) {
       return null;
     }
     return element.closest('.gantt__timeline-cell') as HTMLElement | null;
+  }
+
+  private applyZoomAtPointer(factor: number, clientX: number, container: HTMLElement | null) {
+    if (!this.viewportReady()) {
+      return;
+    }
+    const host = container ?? this.headerScrollerDir?.element ?? null;
+    const focus = this.getPointerTime(clientX, host);
+    const safeFactor = Math.min(Math.max(factor, 0.2), 5);
+    this.viewport.zoomBy(safeFactor, focus);
+    this.syncTimeScaleToViewport();
+    const pointerPx = this.timeScale.timeToPx(focus);
+    const offset = this.computeViewportOffset(clientX, host);
+    this.viewport.setScrollPx(pointerPx - offset);
+  }
+
+  private computeViewportOffset(clientX: number, container: HTMLElement | null): number {
+    const target = container ?? (this.headerScrollerDir?.element ?? this.hostElement.nativeElement);
+    const rect = target.getBoundingClientRect();
+    const raw = clientX - rect.left;
+    const clamped = Math.min(Math.max(raw, 0), target.clientWidth || raw);
+    return Number.isFinite(clamped) ? clamped : 0;
+  }
+
+  private isActivityElement(element: HTMLElement | null): boolean {
+    if (!element) {
+      return false;
+    }
+    return !!element.closest('.gantt-activity');
   }
 
   private findResourceCellAtPoint(x: number, y: number): HTMLElement | null {
@@ -1313,6 +1412,14 @@ export class GanttComponent implements AfterViewInit {
     return typeof poolName === 'string' && poolName.length > 0 ? poolName : null;
   }
 
+  private isDisplayableResource(resource: Resource): boolean {
+    const category = this.resolveCategory(resource);
+    if (category && this.allowedResourceCategories.has(category)) {
+      return true;
+    }
+    return this.allowedResourceCategories.has(resource.kind);
+  }
+
   private groupIdForParts(category: string | null, poolId: string | null): string {
     return `${category ?? 'uncategorized'}|${poolId ?? 'none'}`;
   }
@@ -1355,6 +1462,32 @@ export class GanttComponent implements AfterViewInit {
     return this.resourceViewModes?.[resourceId] ?? 'detail';
   }
 
+  private describeZoom(rangeMs: number): string {
+    const approx = findNearestZoomConfig(rangeMs);
+    const label = ZOOM_LABELS[approx.level] ?? approx.level;
+    const span = this.formatRangeSpan(rangeMs);
+    return `${label} · ${span}`;
+  }
+
+  private formatRangeSpan(rangeMs: number): string {
+    if (!Number.isFinite(rangeMs) || rangeMs <= 0) {
+      return '—';
+    }
+    if (rangeMs >= 3 * MS_IN_DAY) {
+      return `${Math.round(rangeMs / MS_IN_DAY)} Tage`;
+    }
+    if (rangeMs >= MS_IN_DAY) {
+      return `${(rangeMs / MS_IN_DAY).toFixed(1)} Tage`;
+    }
+    if (rangeMs >= 3 * MS_IN_HOUR) {
+      return `${Math.round(rangeMs / MS_IN_HOUR)} Stunden`;
+    }
+    if (rangeMs >= MS_IN_HOUR) {
+      return `${(rangeMs / MS_IN_HOUR).toFixed(1)} Stunden`;
+    }
+    return `${Math.max(1, Math.round(rangeMs / MS_IN_MINUTE))} Minuten`;
+  }
+
   private computePointerDistance(): number {
     const points = Array.from(this.activeTouchPointers.values());
     if (points.length < 2) {
@@ -1384,11 +1517,7 @@ export class GanttComponent implements AfterViewInit {
     if (!this.viewport) {
       return;
     }
-    const desiredZoom = this.viewport.zoomLevel();
-    if (this.timeScale.zoomLevel() !== desiredZoom) {
-      this.timeScale.setZoomLevel(desiredZoom);
-    }
-    this.viewport.setPixelsPerMs(this.timeScale.pixelsPerMs());
+    this.timeScale.setPixelsPerMs(this.viewport.pixelsPerMs());
   }
 
   private categorySortKey(category: string | null): number {
