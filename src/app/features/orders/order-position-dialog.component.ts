@@ -664,10 +664,9 @@ export class OrderPositionDialogComponent {
     const responsible = options.responsible?.trim() || undefined;
     const overridePeriodId = options.trafficPeriodId?.trim() || undefined;
 
-    const periodAssignments =
-      overridePeriodId || !items.length ? null : this.ensureCalendarsForImportedTrains(items);
-
     try {
+      const periodAssignments =
+        overridePeriodId || !items.length ? null : this.ensureCalendarsForImportedTrains(items);
       const missingPeriods: string[] = [];
       const payloads: Array<{ train: ImportedRailMlTrain; trafficPeriodId: string }> = [];
 

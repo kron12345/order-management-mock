@@ -90,6 +90,10 @@ export class TrainPlanService {
     field: 'updatedAt',
     direction: 'desc',
   });
+  private readonly planIndex = computed(() => {
+    const entries = this._plans().map((plan) => [plan.id, plan] as const);
+    return new Map<string, TrainPlan>(entries);
+  });
 
   readonly plans = computed(() => this._plans());
   readonly filters = computed(() => this._filters());
@@ -391,7 +395,7 @@ export class TrainPlanService {
   }
 
   getById(id: string): TrainPlan | undefined {
-    return this._plans().find((plan) => plan.id === id);
+    return this.planIndex().get(id);
   }
 
   private sortPlans(a: TrainPlan, b: TrainPlan, sort: TrainPlanSort) {

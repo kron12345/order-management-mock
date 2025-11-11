@@ -78,6 +78,10 @@ export class ScheduleTemplateService {
     field: 'updatedAt',
     direction: 'desc',
   });
+  private readonly templateIndex = computed(() => {
+    const entries = this._templates().map((template) => [template.id, template] as const);
+    return new Map<string, ScheduleTemplate>(entries);
+  });
 
   readonly templates = computed(() => this._templates());
   readonly filters = computed(() => this._filters());
@@ -152,7 +156,7 @@ export class ScheduleTemplateService {
   }
 
   getById(id: string): ScheduleTemplate | undefined {
-    return this._templates().find((template) => template.id === id);
+    return this.templateIndex().get(id);
   }
 
   createTemplate(payload: CreateScheduleTemplatePayload): ScheduleTemplate {

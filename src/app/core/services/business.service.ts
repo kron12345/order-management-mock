@@ -69,6 +69,10 @@ export class BusinessService {
   private readonly _filters = signal<BusinessFilters>({ ...DEFAULT_BUSINESS_FILTERS });
   private readonly _sort = signal<BusinessSort>({ ...DEFAULT_BUSINESS_SORT });
   private readonly browserStorage = this.detectStorage();
+  private readonly businessIndex = computed(() => {
+    const entries = this._businesses().map((business) => [business.id, business] as const);
+    return new Map<string, Business>(entries);
+  });
 
   readonly businesses = computed(() => this._businesses());
   readonly filters = computed(() => this._filters());
@@ -104,12 +108,16 @@ export class BusinessService {
     }
   }
 
+  getById(id: string): Business | undefined {
+    return this.businessIndex().get(id);
+  }
+
   getByIds(ids: readonly string[]): Business[] {
     if (!ids.length) {
       return [];
     }
 
-    const businessById = new Map(this._businesses().map((b) => [b.id, b]));
+    const businessById = this.businessIndex();
     return ids.reduce<Business[]>((acc, id) => {
       const business = businessById.get(id);
       if (business) {

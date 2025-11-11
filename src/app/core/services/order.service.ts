@@ -1589,19 +1589,8 @@ export class OrderService {
       .map((id) => itemMap.get(id))
       .filter((item): item is OrderItem => !!item && !item.parentItemId);
 
-    let rootCounter = 1;
     roots.forEach((root) => {
-      const existingRootNumber =
-        root.versionPath && root.versionPath.length === 1
-          ? root.versionPath[0]
-          : undefined;
-      if (typeof existingRootNumber === 'number') {
-        this.assignVersionPath(root, [existingRootNumber], itemMap, inputOrder);
-        rootCounter = Math.max(rootCounter, existingRootNumber + 1);
-      } else {
-        this.assignVersionPath(root, [rootCounter], itemMap, inputOrder);
-        rootCounter += 1;
-      }
+      this.assignVersionPath(root, [1], itemMap, inputOrder);
     });
 
     const orphans = inputOrder
@@ -1613,14 +1602,7 @@ export class OrderService {
           !itemMap.has(item.parentItemId),
       );
     orphans.forEach((orphan) => {
-      const existing = orphan.versionPath?.[0];
-      if (typeof existing === 'number') {
-        this.assignVersionPath(orphan, [existing], itemMap, inputOrder);
-        rootCounter = Math.max(rootCounter, existing + 1);
-      } else {
-        this.assignVersionPath(orphan, [rootCounter], itemMap, inputOrder);
-        rootCounter += 1;
-      }
+      this.assignVersionPath(orphan, [1], itemMap, inputOrder);
     });
 
     return result;

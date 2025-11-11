@@ -94,6 +94,10 @@ export class TimetableService {
     field: 'updatedAt',
     direction: 'desc',
   });
+  private readonly timetableIndex = computed(() => {
+    const entries = this._timetables().map((timetable) => [timetable.refTrainId, timetable] as const);
+    return new Map<string, Timetable>(entries);
+  });
 
   readonly timetables = computed(() => this._timetables());
   readonly filters = computed(() => this._filters());
@@ -165,7 +169,7 @@ export class TimetableService {
   }
 
   getByRefTrainId(refTrainId: string): Timetable | undefined {
-    return this._timetables().find((timetable) => timetable.refTrainId === refTrainId);
+    return this.timetableIndex().get(refTrainId);
   }
 
   createTimetable(payload: CreateTimetablePayload): Timetable {

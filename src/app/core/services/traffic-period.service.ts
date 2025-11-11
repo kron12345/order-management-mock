@@ -70,6 +70,11 @@ export class TrafficPeriodService {
     field: 'updatedAt',
     direction: 'desc',
   });
+  private readonly periodIndex = computed(() => {
+    const entries = this._periods().map((period) => [period.id, period] as const);
+    return new Map<string, TrafficPeriod>(entries);
+  });
+  private idCounter = 0;
 
   readonly periods = computed(() => this._periods());
   readonly filters = computed(() => this._filters());
@@ -122,7 +127,7 @@ export class TrafficPeriodService {
   }
 
   getById(id: string): TrafficPeriod | undefined {
-    return this._periods().find((period) => period.id === id);
+    return this.periodIndex().get(id);
   }
 
   private sortPeriods(
@@ -305,7 +310,9 @@ export class TrafficPeriodService {
 
   private generateId(): string {
     const ts = Date.now().toString(36).toUpperCase();
-    return `TPER-${ts}`;
+    this.idCounter = (this.idCounter + 1) % 1679616; // 36^4 combinations
+    const suffix = this.idCounter.toString(36).toUpperCase().padStart(4, '0');
+    return `TPER-${ts}${suffix}`;
   }
 
   private normalizeDaysBitmap(value: string): string {
