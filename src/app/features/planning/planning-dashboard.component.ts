@@ -16,6 +16,7 @@ import { MatExpansionModule } from '@angular/material/expansion';
 import { FormsModule, ReactiveFormsModule, FormBuilder } from '@angular/forms';
 import { GanttComponent } from '../../gantt/gantt.component';
 import { GanttWindowLauncherComponent } from './components/gantt-window-launcher.component';
+import { PlanWeekTemplateComponent } from './components/plan-week-template.component';
 import { DragDropModule } from '@angular/cdk/drag-drop';
 import { PlanningDataService, PlanningTimelineRange } from './planning-data.service';
 import { Resource, ResourceKind } from '../../models/resource';
@@ -155,6 +156,7 @@ type ActivityTypePickerGroup = {
     GanttComponent,
     GanttWindowLauncherComponent,
     MatExpansionModule,
+    PlanWeekTemplateComponent,
   ],
   templateUrl: './planning-dashboard.component.html',
   styleUrl: './planning-dashboard.component.scss',

@@ -1,9 +1,10 @@
-import { Component, signal } from '@angular/core';
+import { Component, computed, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { MATERIAL_IMPORTS } from '../../../core/material.imports.imports';
 import { OrderService, OrderFilters } from '../../../core/services/order.service';
 import { BusinessStatus } from '../../../core/models/business.model';
 import { TimetablePhase } from '../../../core/models/timetable.model';
+import { BusinessService } from '../../../core/services/business.service';
 
 @Component({
   selector: 'app-filter-bar',
@@ -44,7 +45,16 @@ export class FilterBarComponent {
     { value: 'erledigt', label: 'Erledigt' },
   ];
 
-  constructor(public store: OrderService) {
+  readonly activeBusinessFilter = computed(() => {
+    const id = this.store.filters().linkedBusinessId;
+    if (!id) {
+      return null;
+    }
+    const business = this.businessService.getByIds([id])[0];
+    return business ?? { id, title: id };
+  });
+
+  constructor(public store: OrderService, private readonly businessService: BusinessService) {
     const filters = this.store.filters();
     this.search.set(filters.search);
     this.tag.set(filters.tag);
@@ -82,6 +92,7 @@ export class FilterBarComponent {
       businessStatus: 'all',
       trainNumber: '',
       timetableYearLabel: 'all',
+      linkedBusinessId: null,
     });
   }
 
@@ -105,5 +116,9 @@ export class FilterBarComponent {
   onTimetableYearChange(value: string) {
     this.timetableYear.set(value as string);
     this.store.setFilter({ timetableYearLabel: value as string });
+  }
+
+  clearBusinessFilter() {
+    this.store.clearLinkedBusinessFilter();
   }
 }

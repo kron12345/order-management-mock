@@ -6,7 +6,11 @@
     </div>
   } @else {
     @for (it of orderedItems; track it.id) {
-      <div class="item" [ngClass]="versionDepthClass(it)">
+      <div
+        class="item"
+        [attr.id]="'order-item-' + it.id"
+        [ngClass]="[versionDepthClass(it), highlightItemId === it.id ? 'item--highlight' : '']"
+      >
         <div class="left">
           @if (bulkSelectionEnabled) {
             <mat-checkbox

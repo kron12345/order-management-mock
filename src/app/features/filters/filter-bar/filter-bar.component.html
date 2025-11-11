@@ -82,3 +82,16 @@
 
   <button mat-stroked-button (click)="onReset()">Zurücksetzen</button>
 </div>
+
+@if (store.filters().linkedBusinessId) {
+  <div class="business-filter-banner">
+    <mat-icon>work_history</mat-icon>
+    <div class="banner-text">
+      <strong>Gefiltert nach Geschäft</strong>
+      <span>{{ activeBusinessFilter()?.title || store.filters().linkedBusinessId }}</span>
+    </div>
+    <button mat-stroked-button color="primary" (click)="clearBusinessFilter()">
+      Filter entfernen
+    </button>
+  </div>
+}

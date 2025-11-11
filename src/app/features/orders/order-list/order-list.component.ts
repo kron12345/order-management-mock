@@ -1,4 +1,6 @@
-import { Component, computed } from '@angular/core';
+import { Component, computed, effect, inject, signal } from '@angular/core';
+import { DOCUMENT } from '@angular/common';
+import { ActivatedRoute } from '@angular/router';
 import { OrderService } from '../../../core/services/order.service';
 import { FilterBarComponent } from '../../filters/filter-bar/filter-bar.component';
 import { OrderCardComponent } from '../order-card/order-card.component';
@@ -21,12 +23,37 @@ import { BusinessService } from '../../../core/services/business.service';
 })
 export class OrderListComponent {
   readonly orders = computed(() => this.filteredOrders());
+  readonly highlightItemId = signal<string | null>(null);
+
+  private readonly route = inject(ActivatedRoute);
+  private readonly document = inject(DOCUMENT);
 
   constructor(
     private readonly store: OrderService,
     private readonly businessService: BusinessService,
     private readonly dialog: MatDialog,
-  ) {}
+  ) {
+    this.route.queryParamMap.subscribe((params) => {
+      const businessId = params.get('businessId');
+      if (businessId) {
+        this.store.setFilter({ linkedBusinessId: businessId });
+      }
+      const highlightItem = params.get('highlightItem');
+      this.highlightItemId.set(highlightItem);
+      if (highlightItem) {
+        window.setTimeout(() => this.scrollToHighlightedItem(highlightItem), 0);
+      }
+    });
+
+    effect(() => {
+      this.orders();
+      const target = this.highlightItemId();
+      if (!target) {
+        return;
+      }
+      window.setTimeout(() => this.scrollToHighlightedItem(target), 0);
+    });
+  }
 
   openCreateDialog() {
     this.dialog.open(OrderCreateDialogComponent, {
@@ -53,7 +80,9 @@ export class OrderListComponent {
       filters.timeRange !== 'all' ||
       filters.trainStatus !== 'all' ||
       filters.businessStatus !== 'all' ||
-      filters.trainNumber.trim() !== '';
+      filters.trainNumber.trim() !== '' ||
+      filters.timetableYearLabel !== 'all' ||
+      Boolean(filters.linkedBusinessId);
 
     return orders
       .map((order) => ({
@@ -81,5 +110,21 @@ export class OrderListComponent {
     }
     const businesses = this.businessService.getByIds(businessIds);
     return businesses.some((business) => business.status === status);
+  }
+
+  private scrollToHighlightedItem(itemId: string | null): void {
+    if (!itemId) {
+      return;
+    }
+    const element = this.document.getElementById(`order-item-${itemId}`);
+    if (!element) {
+      return;
+    }
+    element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    window.setTimeout(() => {
+      if (this.highlightItemId() === itemId) {
+        this.highlightItemId.set(null);
+      }
+    }, 2500);
   }
 }

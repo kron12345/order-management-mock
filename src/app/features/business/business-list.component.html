@@ -1,228 +1,367 @@
-<div class="business-page">
-  <header class="page-header">
-    <div class="page-header__titles">
-      <h1>Geschäfte</h1>
-      <p>Behalte offene Aufgaben, Zuständigkeiten und Fristen im Blick.</p>
-    </div>
-    <div class="page-header__actions">
-      <button mat-flat-button color="primary" (click)="openCreateDialog()">
-        <mat-icon>add</mat-icon>
-        Neues Geschäft
-      </button>
-    </div>
-  </header>
+<div class="business-page manager-shell">
+  <div class="filter-panel manager-filter">
+    <div class="filter-card">
+      <div class="filter-card__actions">
+        <button mat-stroked-button type="button" (click)="resetFilters()">
+          <mat-icon>refresh</mat-icon>
+          Filter zurücksetzen
+        </button>
+        <button mat-flat-button color="primary" type="button" (click)="openCreateDialog()">
+          <mat-icon>add</mat-icon>
+          Neues Geschäft
+        </button>
+      </div>
 
-  <section class="filters">
-    <mat-form-field appearance="outline" class="filters__search">
-      <mat-label>Suchen</mat-label>
-      <mat-icon matPrefix>search</mat-icon>
-      <input
-        matInput
-        [formControl]="searchControl"
-        placeholder="Titel oder Beschreibung"
-      />
-    </mat-form-field>
+      <div class="filter-grid">
+        <mat-form-field appearance="outline" class="filter-grid__search">
+          <mat-label>Suchen</mat-label>
+          <mat-icon matPrefix>search</mat-icon>
+          <input matInput [formControl]="searchControl" placeholder="Titel oder Beschreibung" />
+        </mat-form-field>
 
-    <mat-form-field appearance="outline">
-      <mat-label>Status</mat-label>
-      <mat-select
-        [value]="filters().status"
-        (valueChange)="onStatusFilterChange($event)"
-      >
-        @for (option of statusOptions; track option.value) {
-          <mat-option [value]="option.value">{{ option.label }}</mat-option>
-        }
-      </mat-select>
-    </mat-form-field>
+        <mat-form-field appearance="outline">
+          <mat-label>Status</mat-label>
+          <mat-icon matPrefix>flag</mat-icon>
+          <mat-select [value]="filters().status" (valueChange)="onStatusFilterChange($event)">
+            @for (option of statusOptions; track option.value) {
+              <mat-option [value]="option.value">{{ option.label }}</mat-option>
+            }
+          </mat-select>
+        </mat-form-field>
 
-    <mat-form-field appearance="outline">
-      <mat-label>Zuständig</mat-label>
-      <mat-select
-        [value]="filters().assignment"
-        (valueChange)="onAssignmentFilterChange($event)"
-      >
-        <mat-option value="all">Alle</mat-option>
-        @for (assignment of assignments(); track assignment.name) {
-          <mat-option [value]="assignment.name">
-            {{ assignment.type === 'group' ? 'Gruppe ' : '' }}
-            {{ assignment.name }}
-          </mat-option>
-        }
-      </mat-select>
-    </mat-form-field>
+        <mat-form-field appearance="outline">
+          <mat-label>Zuständig</mat-label>
+          <mat-icon matPrefix>group</mat-icon>
+          <mat-select [value]="filters().assignment" (valueChange)="onAssignmentFilterChange($event)">
+            <mat-option value="all">Alle</mat-option>
+            @for (assignment of assignments(); track assignment.name) {
+              <mat-option [value]="assignment.name">
+                {{ assignment.type === 'group' ? 'Gruppe ' : '' }}
+                {{ assignment.name }}
+              </mat-option>
+            }
+          </mat-select>
+        </mat-form-field>
 
-    <mat-form-field appearance="outline">
-      <mat-label>Sortierung</mat-label>
-      <mat-select
-        [value]="sort().field + ':' + sort().direction"
-        (valueChange)="onSortChange($event)"
-      >
-        @for (option of sortOptions; track option.value) {
-          <mat-option [value]="option.value">{{ option.label }}</mat-option>
-        }
-      </mat-select>
-    </mat-form-field>
-  </section>
+        <mat-form-field appearance="outline">
+          <mat-label>Sortierung</mat-label>
+          <mat-icon matPrefix>sort</mat-icon>
+          <mat-select [value]="sort().field + ':' + sort().direction" (valueChange)="onSortChange($event)">
+            @for (option of sortOptions; track option.value) {
+              <mat-option [value]="option.value">{{ option.label }}</mat-option>
+            }
+          </mat-select>
+        </mat-form-field>
+      </div>
 
-  <section class="filters filters--condensed">
-    <span class="filters__label">Fälligkeit</span>
-    <mat-button-toggle-group
-      [value]="filters().dueDate"
-      (valueChange)="onDueDatePresetChange($event)"
-      appearance="legacy"
-      class="filters__toggle-group"
-    >
-      @for (preset of dueDatePresetOptions; track preset.value) {
-        <mat-button-toggle [value]="preset.value">
-          <mat-icon>{{ preset.icon }}</mat-icon>
-          {{ preset.label }}
-        </mat-button-toggle>
-      }
-    </mat-button-toggle-group>
-  </section>
-
-  @if (!businesses().length) {
-    <mat-card appearance="outlined" class="empty-state">
-      <mat-card-content>
-        <mat-icon>work_outline</mat-icon>
-        <div>
-          <h3>Keine Geschäfte gefunden</h3>
-          <p>
-            Passe deine Filter an oder erstelle ein neues Geschäft, um loszulegen.
-          </p>
-          <button mat-stroked-button color="primary" (click)="openCreateDialog()">
-            <mat-icon>add</mat-icon>
-            Neues Geschäft erstellen
-          </button>
-        </div>
-      </mat-card-content>
-    </mat-card>
-  } @else {
-    <section class="business-grid">
-      @for (business of businesses(); track trackByBusinessId($index, business)) {
-        <mat-card
-          class="business-card"
-          appearance="outlined"
-          [attr.id]="businessElementId(business.id)"
+      <div class="filter-quick">
+        <span>Fälligkeit</span>
+        <mat-button-toggle-group
+          [value]="filters().dueDate"
+          (valueChange)="onDueDatePresetChange($event)"
+          appearance="legacy"
         >
-          <mat-card-header>
-            <div
-              mat-card-avatar
-              [ngClass]="['due-date', dueDateState(business)]"
-            >
-              <mat-icon>
-                @switch (dueDateState(business)) {
-                  @case ('overdue') { report }
-                  @case ('today') { today }
-                  @default { calendar_today }
-                }
-              </mat-icon>
-            </div>
-            <mat-card-title>{{ business.title }}</mat-card-title>
-            <mat-card-subtitle>
-              <mat-chip-set>
-                <mat-chip
-                  [color]="business.status === 'erledigt' ? 'primary' : undefined"
-                >
-                  {{ statusLabel(business.status) }}
-                </mat-chip>
-                @if (business.dueDate) {
-                  <mat-chip
-                    [ngClass]="['due-chip', 'due-' + dueDateState(business)]"
-                  >
-                    {{ business.dueDate | date: 'fullDate' }}
-                  </mat-chip>
-                }
-              </mat-chip-set>
-            </mat-card-subtitle>
-            <div class="card-meta">
-              <span>
-                <mat-icon>event_available</mat-icon>
-                Erstellt {{ business.createdAt | date: 'short' }}
-              </span>
-              <span>
-                <mat-icon>{{ assignmentIcon(business) }}</mat-icon>
-                {{ assignmentLabel(business) }}
-              </span>
-            </div>
-          </mat-card-header>
+          @for (preset of dueDatePresetOptions; track preset.value) {
+            <mat-button-toggle [value]="preset.value">
+              <mat-icon>{{ preset.icon }}</mat-icon>
+              {{ preset.label }}
+            </mat-button-toggle>
+          }
+        </mat-button-toggle-group>
+      </div>
+    </div>
+  </div>
 
+  <div class="business-main manager-body">
+    @if (!businesses().length) {
+      <div class="business-main__empty">
+        <mat-card appearance="outlined" class="empty-state">
           <mat-card-content>
-            <p class="description">{{ business.description }}</p>
-
-            <div class="status-control">
-              <mat-form-field appearance="outline">
-                <mat-label>Status aktualisieren</mat-label>
-                <mat-select
-                  [value]="business.status"
-                  (valueChange)="onStatusChange(business.id, $event)"
-                >
-                  @for (option of statusOptions; track option.value) {
-                    @if (option.value !== 'all') {
-                      <mat-option [value]="option.value">
-                        {{ option.label }}
-                      </mat-option>
-                    }
-                  }
-                </mat-select>
-              </mat-form-field>
+            <mat-icon>work_outline</mat-icon>
+            <div>
+              <h3>Keine Geschäfte gefunden</h3>
+              <p>
+                Passe deine Filter an oder erstelle ein neues Geschäft, um loszulegen.
+              </p>
+              <button mat-stroked-button color="primary" (click)="openCreateDialog()">
+                <mat-icon>add</mat-icon>
+                Neues Geschäft erstellen
+              </button>
             </div>
-
-            <div class="linked-items">
-              <mat-form-field appearance="outline">
-                <mat-label>Auftragspositionen</mat-label>
-                <mat-select
-                  [value]="business.linkedOrderItemIds || []"
-                  multiple
-                  (valueChange)="onLinkedItemsChange(business.id, $event)"
-                >
-                  @if (!orderItemOptions().length) {
-                    <mat-option disabled>Keine Positionen vorhanden</mat-option>
-                  } @else {
-                    @for (option of orderItemOptions(); track option.itemId) {
-                      <mat-option [value]="option.itemId">
-                        {{ option.orderName }} · {{ option.itemName }}
-                      </mat-option>
-                    }
-                  }
-                </mat-select>
-              </mat-form-field>
-
-              @if (business.linkedOrderItemIds?.length) {
-                <mat-chip-set>
-                  @for (itemId of business.linkedOrderItemIds; track itemId) {
-                    <mat-chip [removable]="true" (removed)="removeLinkedItem(business.id, itemId)">
-                      {{ itemLabel(itemId) }}
-                      <mat-icon matChipRemove>close</mat-icon>
-                    </mat-chip>
-                  }
-                </mat-chip-set>
-              }
-            </div>
-
-            @if (business.documents?.length) {
-              <div class="documents">
-                <span class="documents__title">
-                  <mat-icon>attach_file</mat-icon> Dokumente
-                </span>
-                <div class="documents__list">
-                  @for (doc of business.documents; track doc.id) {
-                    <a
-                      mat-stroked-button
-                      [href]="doc.url || '#'"
-                      target="_blank"
-                      rel="noopener noreferrer"
+          </mat-card-content>
+        </mat-card>
+      </div>
+    } @else {
+      <div class="business-content">
+        <section class="business-grid">
+        @for (business of businesses(); track trackByBusinessId($index, business)) {
+          <mat-card
+            class="business-card"
+            appearance="outlined"
+            [attr.id]="businessElementId(business.id)"
+            [class.business-card--selected]="isBusinessSelected(business)"
+            (click)="selectBusiness(business)"
+          >
+            <mat-card-header class="business-card-header">
+              <div class="card-header-body">
+                <mat-card-title>{{ business.title }}</mat-card-title>
+                <div class="card-highlight-row">
+                  @for (highlight of businessHighlights(business); track highlight.label) {
+                    <button
+                      type="button"
+                      class="info-pill"
+                      [class.info-pill--filter]="highlight.filter"
+                      (click)="applyHighlightFilter($event, highlight)"
                     >
-                      <mat-icon>insert_drive_file</mat-icon>
-                      {{ doc.name }}
-                    </a>
+                      <mat-icon>{{ highlight.icon }}</mat-icon>
+                      <span>{{ highlight.label }}</span>
+                    </button>
                   }
                 </div>
               </div>
+            </mat-card-header>
+
+            <mat-card-content>
+              <mat-tab-group dynamicHeight>
+                <mat-tab label="Details">
+                  <ng-template matTabContent>
+                    <p class="description">{{ business.description }}</p>
+                    <div class="status-control">
+                      <mat-form-field appearance="outline">
+                        <mat-label>Status aktualisieren</mat-label>
+                        <mat-select
+                          [value]="business.status"
+                          (valueChange)="onStatusChange(business.id, $event)"
+                        >
+                          @for (option of statusOptions; track option.value) {
+                            @if (option.value !== 'all') {
+                              <mat-option [value]="option.value">
+                                {{ option.label }}
+                              </mat-option>
+                            }
+                          }
+                        </mat-select>
+                      </mat-form-field>
+                    </div>
+
+                    <div class="metric-pills">
+                      @for (metric of businessMetrics(business); track metric.label) {
+                        <div class="metric-pill" [matTooltip]="metric.hint">
+                          <mat-icon>{{ metric.icon }}</mat-icon>
+                          <div>
+                            <span class="metric-pill__label">{{ metric.label }}</span>
+                            <strong>{{ metric.value }}</strong>
+                          </div>
+                        </div>
+                      }
+                    </div>
+                  </ng-template>
+                </mat-tab>
+                <mat-tab label="Positionen">
+                  <ng-template matTabContent>
+                    <div class="linked-items">
+                      @let linkedCount = business.linkedOrderItemIds?.length ?? 0;
+                      <div class="linked-items__header">
+                        <div>
+                          <h4>Auftragspositionen</h4>
+                          <p>
+                            @if (linkedCount) {
+                              {{ linkedCount }} verknüpfte Positionen
+                            } @else {
+                              Noch keine Zuordnung
+                            }
+                          </p>
+                        </div>
+                        <div class="linked-items__actions">
+                          <button mat-stroked-button color="primary" type="button" (click)="$event.stopPropagation(); openOrderItemPicker(business)">
+                            <mat-icon>playlist_add</mat-icon>
+                            Positionen zuordnen
+                          </button>
+                          <button
+                            mat-button
+                            type="button"
+                            [disabled]="!linkedCount"
+                            (click)="$event.stopPropagation(); openOrderOverview(business)"
+                          >
+                            <mat-icon>open_in_new</mat-icon>
+                            Auftragsübersicht
+                          </button>
+                        </div>
+                      </div>
+
+                      <div class="linked-items__panel linked-items__panel--always">
+                        @if (!linkedCount) {
+                          <div class="linked-items__empty">
+                            <mat-icon>link_off</mat-icon>
+                            <span>Keine Auftragspositionen zugeordnet.</span>
+                          </div>
+                        } @else {
+                          <div class="linked-item-grid">
+                            @for (itemId of business.linkedOrderItemIds; track itemId) {
+                              @let meta = orderItemMeta(itemId);
+                              @let range = orderItemRange(itemId);
+                              <article class="linked-item-card">
+                                <header>
+                                  <div>
+                                    <div class="linked-item-card__title">
+                                      {{ meta?.itemName || itemId }}
+                                    </div>
+                                    <div class="linked-item-card__subtitle">
+                                      {{ meta?.orderName || 'Unbekannter Auftrag' }}
+                                    </div>
+                                  </div>
+                                  @if (meta) {
+                                    <mat-chip appearance="outlined">{{ meta.type }}</mat-chip>
+                                  }
+                                </header>
+                                @if (meta?.serviceType || range) {
+                                  <div class="linked-item-card__meta">
+                                    @if (meta?.serviceType; as serviceType) {
+                                      <span>
+                                        <mat-icon inline>build</mat-icon>
+                                        {{ serviceType }}
+                                      </span>
+                                    }
+                                    @if (range) {
+                                      <span>
+                                        <mat-icon inline>schedule</mat-icon>
+                                        {{ range }}
+                                      </span>
+                                    }
+                                  </div>
+                                }
+                                <div class="linked-item-card__actions">
+                                  <button
+                                    mat-stroked-button
+                                    color="primary"
+                                    type="button"
+                                    (click)="$event.stopPropagation(); goToOrderItem(business, itemId)"
+                                  >
+                                    <mat-icon>open_in_new</mat-icon>
+                                    Öffnen
+                                  </button>
+                                  <button
+                                    mat-icon-button
+                                    type="button"
+                                    color="warn"
+                                    (click)="$event.stopPropagation(); removeLinkedItem(business.id, itemId)"
+                                  >
+                                    <mat-icon>link_off</mat-icon>
+                                  </button>
+                                </div>
+                              </article>
+                            }
+                          </div>
+                        }
+                      </div>
+                    </div>
+                  </ng-template>
+                </mat-tab>
+                <mat-tab label="Dokumente">
+                  <ng-template matTabContent>
+                    @if (business.documents?.length) {
+                      <div class="documents">
+                        <span class="documents__title">
+                          <mat-icon>attach_file</mat-icon> Dokumente
+                        </span>
+                        <div class="documents__list">
+                          @for (doc of business.documents; track doc.id) {
+                            <a
+                              mat-stroked-button
+                              [href]="doc.url || '#'"
+                              target="_blank"
+                              rel="noopener noreferrer"
+                            >
+                              <mat-icon>insert_drive_file</mat-icon>
+                              {{ doc.name }}
+                            </a>
+                          }
+                        </div>
+                      </div>
+                    } @else {
+                      <div class="documents documents--empty">
+                        <mat-icon>inbox</mat-icon>
+                        <p>Keine Dokumente hinterlegt.</p>
+                      </div>
+                    }
+                  </ng-template>
+                </mat-tab>
+              </mat-tab-group>
+            </mat-card-content>
+          </mat-card>
+        }
+        </section>
+        <aside class="business-detail-pane" *ngIf="selectedBusiness() as detail">
+        <header>
+          <h3>{{ detail.title }}</h3>
+          <mat-chip color="primary" appearance="outlined">
+            {{ statusLabel(detail.status) }}
+          </mat-chip>
+        </header>
+        <p>{{ detail.description }}</p>
+        <div class="detail-progress">
+          <div class="progress-ring progress-ring--large" [style.--progress]="dueProgress(detail) + '%'"><span>{{ dueProgress(detail) }}%</span></div>
+          <div class="detail-progress__meta">
+            <strong>
+              @if (daysUntilDue(detail) !== null) {
+                {{ daysUntilDue(detail) }} Tage verbleibend
+              } @else {
+                Keine Fälligkeit
+              }
+            </strong>
+            <span>Fällig am {{ detail.dueDate ? (detail.dueDate | date: 'fullDate') : '—' }}</span>
+            <span>Erstellt {{ detail.createdAt | date: 'short' }}</span>
+          </div>
+        </div>
+        <div class="detail-info">
+          <span>
+            <mat-icon>{{ assignmentIcon(detail) }}</mat-icon>
+            {{ assignmentLabel(detail) }}
+          </span>
+          <span>
+            <mat-icon>flag</mat-icon>
+            {{ statusLabel(detail.status) }}
+          </span>
+        </div>
+        <div class="detail-metrics">
+          @for (metric of businessMetrics(detail); track metric.label) {
+            <div class="detail-metric-card" [matTooltip]="metric.hint">
+              <mat-icon>{{ metric.icon }}</mat-icon>
+              <div>
+                <span class="metric-label">{{ metric.label }}</span>
+                <strong>{{ metric.value }}</strong>
+              </div>
+            </div>
+          }
+        </div>
+        <div class="detail-actions">
+          <button mat-flat-button color="primary" (click)="openOrderItemPicker(detail)">
+            <mat-icon>playlist_add</mat-icon>
+            Positionen pflegen
+          </button>
+          <button mat-stroked-button (click)="openOrderOverview(detail)">
+            <mat-icon>open_in_new</mat-icon>
+            Auftragsübersicht
+          </button>
+          <button mat-stroked-button color="warn" (click)="deleteBusiness(detail)">
+            <mat-icon>delete</mat-icon>
+            Geschäft löschen
+          </button>
+        </div>
+        <div class="detail-list" *ngIf="detail.linkedOrderItemIds?.length">
+          <h4>Verknüpfte Positionen</h4>
+          <ul>
+            @for (itemId of detail.linkedOrderItemIds; track itemId) {
+              @let meta = orderItemMeta(itemId);
+              <li>
+                <span>{{ meta?.itemName || itemId }}</span>
+                <button mat-button (click)="goToOrderItem(detail, itemId)">Öffnen</button>
+              </li>
             }
-          </mat-card-content>
-        </mat-card>
-      }
-    </section>
-  }
+          </ul>
+        </div>
+        </aside>
+      </div>
+    }
+  </div>
 </div>

@@ -37,6 +37,7 @@ export interface OrderFilters {
   businessStatus: BusinessStatus | 'all';
   trainNumber: string;
   timetableYearLabel: string | 'all';
+  linkedBusinessId: string | null;
 }
 
 export interface OrderItemOption {
@@ -44,6 +45,11 @@ export interface OrderItemOption {
   orderId: string;
   orderName: string;
   itemName: string;
+  type: OrderItem['type'];
+  timetableYearLabel: string | null;
+  serviceType?: string;
+  start?: string;
+  end?: string;
 }
 
 export interface CreateOrderPayload {
@@ -205,6 +211,7 @@ export class OrderService {
     businessStatus: 'all',
     trainNumber: '',
     timetableYearLabel: 'all',
+    linkedBusinessId: null,
   });
 
   constructor(
@@ -241,6 +248,11 @@ export class OrderService {
       orderId: entry.orderId,
       orderName: entry.orderName,
       itemName: entry.item.name,
+      type: entry.item.type,
+      timetableYearLabel: this.getItemTimetableYear(entry.item),
+      serviceType: entry.item.serviceType,
+      start: entry.item.start,
+      end: entry.item.end,
     })),
   );
 
@@ -251,7 +263,8 @@ export class OrderService {
       filters.trainStatus !== 'all' ||
       filters.businessStatus !== 'all' ||
       filters.trainNumber.trim() !== '' ||
-      filters.timetableYearLabel !== 'all';
+      filters.timetableYearLabel !== 'all' ||
+      Boolean(filters.linkedBusinessId);
 
     return this._orders().filter((order) => {
       if (!this.matchesOrder(order, filters)) {
@@ -267,6 +280,10 @@ export class OrderService {
 
   setFilter(patch: Partial<OrderFilters>) {
     this._filters.update((f) => ({ ...f, ...patch }));
+  }
+
+  clearLinkedBusinessFilter(): void {
+    this._filters.update((filters) => ({ ...filters, linkedBusinessId: null }));
   }
 
   getOrderById(orderId: string): Order | undefined {
@@ -931,6 +948,13 @@ export class OrderService {
   }
 
   private matchesItem(item: OrderItem, filters: OrderFilters): boolean {
+    if (filters.linkedBusinessId) {
+      const businessIds = item.linkedBusinessIds ?? [];
+      if (!businessIds.includes(filters.linkedBusinessId)) {
+        return false;
+      }
+    }
+
     if (filters.trainStatus !== 'all' || filters.trainNumber.trim()) {
       if (item.type !== 'Fahrplan') {
         if (filters.trainStatus !== 'all' || filters.trainNumber.trim() !== '') {

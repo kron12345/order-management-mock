@@ -1,119 +1,104 @@
-<mat-sidenav-container class="layout">
-  @if (section() === 'manager') {
-    <mat-sidenav class="sidenav" mode="side" opened>
-      <div class="brand">
-        <mat-icon>assignment</mat-icon>
-        <span>Auftragsmanager</span>
+<div class="layout">
+  <mat-toolbar class="toolbar" color="primary">
+    <div class="toolbar-brand">
+      <mat-icon>assignment</mat-icon>
+      <div class="toolbar-brand-text">
+        <span class="brand-title">{{ sectionTitle() }}</span>
+        @if (showSubtitle()) {
+          <small class="brand-subtitle">{{ pageTitle() }}</small>
+        }
       </div>
-
-      <mat-nav-list>
-        <a mat-list-item routerLink="/" routerLinkActive="active" [routerLinkActiveOptions]="{ exact: true }">
-          <mat-icon matListItemIcon>list_alt</mat-icon>
-          <span matListItemTitle>Aufträge</span>
-          <span matListItemLine>Übersicht & Bearbeitung</span>
-        </a>
-        <a mat-list-item routerLink="/customers" routerLinkActive="active">
-          <mat-icon matListItemIcon>groups</mat-icon>
-          <span matListItemTitle>Kunden</span>
-          <span matListItemLine>Stammdaten & Kontakte</span>
-        </a>
-        <a mat-list-item routerLink="/businesses" routerLinkActive="active">
-          <mat-icon matListItemIcon>work_outline</mat-icon>
-          <span matListItemTitle>Geschäfte</span>
-          <span matListItemLine>Aufgaben & Fälligkeiten</span>
-        </a>
-        <a mat-list-item routerLink="/templates" routerLinkActive="active">
-          <mat-icon matListItemIcon>schema</mat-icon>
-          <span matListItemTitle>Vorlagen</span>
-          <span matListItemLine>Fahrplanvorlagen verwalten</span>
-        </a>
-        <a mat-list-item routerLink="/plans" routerLinkActive="active">
-          <mat-icon matListItemIcon>archive</mat-icon>
-          <span matListItemTitle>Fahrplanarchiv</span>
-          <span matListItemLine>Fahrpläne & Referenzkalender</span>
-        </a>
-        <a
-          mat-list-item
-          routerLink="/fahrplanmanager"
-          routerLinkActive="active"
-          [routerLinkActiveOptions]="{ exact: true }"
-        >
-          <mat-icon matListItemIcon>event</mat-icon>
-          <span matListItemTitle>Fahrplanmanager</span>
-          <span matListItemLine>Kommerzielle & Betriebliche Zeiten</span>
-        </a>
-      </mat-nav-list>
-    </mat-sidenav>
-  }
-
-  <mat-sidenav-content class="content" [class.content--full]="section() !== 'manager'">
-    <mat-toolbar class="toolbar" color="primary">
-      <div class="toolbar-brand">
-        <mat-icon>assignment</mat-icon>
-        <div class="toolbar-brand-text">
-          <span class="brand-title">{{ sectionTitle() }}</span>
-          @if (showSubtitle()) {
-            <small class="brand-subtitle">{{ pageTitle() }}</small>
-          }
-        </div>
-      </div>
-      <nav class="primary-nav">
-        <a mat-button routerLink="/" [class.active]="section() === 'manager'">
-          Auftragsmanager
-        </a>
-        <button
-          mat-button
-          type="button"
-          [class.active]="section() === 'planning'"
-          [matMenuTriggerFor]="planningNavMenu"
-          #planningMenuTrigger="matMenuTrigger"
-          (mouseenter)="planningMenuTrigger.openMenu()"
-        >
-          Planung
-          <mat-icon fontIcon="expand_more"></mat-icon>
-        </button>
-        <a mat-button routerLink="/master-data" [class.active]="section() === 'master-data'">
-          Stammdaten
-        </a>
-        <a mat-button routerLink="/settings" [class.active]="section() === 'settings'">
-          Einstellungen
-        </a>
-      </nav>
-      <span class="spacer"></span>
-      <button mat-icon-button matTooltip="Benachrichtigungen">
-        <mat-icon>notifications</mat-icon>
-      </button>
-      <button mat-icon-button matTooltip="Profil">
-        <mat-icon>account_circle</mat-icon>
-      </button>
-      <button mat-icon-button [matMenuTriggerFor]="menu" aria-label="Weitere Optionen">
-        <mat-icon>more_vert</mat-icon>
-      </button>
-    </mat-toolbar>
-
-    <div class="page" [class.page--wide]="section() === 'manager'">
-      <router-outlet />
     </div>
+    <nav class="primary-nav">
+      <button
+        mat-button
+        type="button"
+        [class.active]="section() === 'manager'"
+        [matMenuTriggerFor]="managerNavMenu"
+        #managerMenuTrigger="matMenuTrigger"
+        (mouseenter)="managerMenuTrigger.openMenu()"
+      >
+        Auftragsmanager
+        <mat-icon fontIcon="expand_more"></mat-icon>
+      </button>
+      <button
+        mat-button
+        type="button"
+        [class.active]="section() === 'planning'"
+        [matMenuTriggerFor]="planningNavMenu"
+        #planningMenuTrigger="matMenuTrigger"
+        (mouseenter)="planningMenuTrigger.openMenu()"
+      >
+        Planung
+        <mat-icon fontIcon="expand_more"></mat-icon>
+      </button>
+      <a mat-button routerLink="/master-data" [class.active]="section() === 'master-data'">
+        Stammdaten
+      </a>
+      <a mat-button routerLink="/settings" [class.active]="section() === 'settings'">
+        Einstellungen
+      </a>
+    </nav>
+    <span class="spacer"></span>
+    <button mat-icon-button matTooltip="Benachrichtigungen">
+      <mat-icon>notifications</mat-icon>
+    </button>
+    <button mat-icon-button matTooltip="Profil">
+      <mat-icon>account_circle</mat-icon>
+    </button>
+    <button mat-icon-button [matMenuTriggerFor]="menu" aria-label="Weitere Optionen">
+      <mat-icon>more_vert</mat-icon>
+    </button>
+  </mat-toolbar>
 
-    <mat-menu #menu="matMenu">
-      <button mat-menu-item routerLink="/settings">
-        <mat-icon>settings</mat-icon>Einstellungen
-      </button>
-      <button mat-menu-item disabled>
-        <mat-icon>help_outline</mat-icon>Hilfe
-      </button>
-    </mat-menu>
+  <div class="page" [class.page--wide]="section() === 'manager'" [style.--app-shell-offset]="'64px'">
+    <router-outlet />
+  </div>
 
-    <mat-menu #planningNavMenu="matMenu">
-      <button mat-menu-item routerLink="/planning" [queryParams]="{ stage: 'base' }">
-        <mat-icon>layers</mat-icon>Basisplanung
-      </button>
-      <button mat-menu-item routerLink="/planning" [queryParams]="{ stage: 'operations' }">
-        <mat-icon>precision_manufacturing</mat-icon>Betriebsplanung
-      </button>
-      <button mat-menu-item routerLink="/planning" [queryParams]="{ stage: 'dispatch' }">
-        <mat-icon>support_agent</mat-icon>Disposition
-      </button>
-    </mat-menu>
-  </mat-sidenav-content>
-</mat-sidenav-container>
+  <mat-menu #menu="matMenu">
+    <button mat-menu-item routerLink="/settings">
+      <mat-icon>settings</mat-icon>Einstellungen
+    </button>
+    <button mat-menu-item disabled>
+      <mat-icon>help_outline</mat-icon>Hilfe
+    </button>
+  </mat-menu>
+
+  <mat-menu #managerNavMenu="matMenu">
+    <button mat-menu-item routerLink="/" [routerLinkActive]="['active']" [routerLinkActiveOptions]="{ exact: true }">
+      <mat-icon>list_alt</mat-icon>Aufträge
+    </button>
+    <button mat-menu-item routerLink="/customers" routerLinkActive="active">
+      <mat-icon>groups</mat-icon>Kunden
+    </button>
+    <button mat-menu-item routerLink="/businesses" routerLinkActive="active">
+      <mat-icon>work_outline</mat-icon>Geschäfte
+    </button>
+    <button mat-menu-item routerLink="/templates" routerLinkActive="active">
+      <mat-icon>schema</mat-icon>Vorlagen
+    </button>
+    <button mat-menu-item routerLink="/plans" routerLinkActive="active">
+      <mat-icon>archive</mat-icon>Fahrplanarchiv
+    </button>
+    <button
+      mat-menu-item
+      routerLink="/fahrplanmanager"
+      routerLinkActive="active"
+      [routerLinkActiveOptions]="{ exact: true }"
+    >
+      <mat-icon>event</mat-icon>Fahrplanmanager
+    </button>
+  </mat-menu>
+
+  <mat-menu #planningNavMenu="matMenu">
+    <button mat-menu-item routerLink="/planning" [queryParams]="{ stage: 'base' }">
+      <mat-icon>layers</mat-icon>Basisplanung
+    </button>
+    <button mat-menu-item routerLink="/planning" [queryParams]="{ stage: 'operations' }">
+      <mat-icon>precision_manufacturing</mat-icon>Betriebsplanung
+    </button>
+    <button mat-menu-item routerLink="/planning" [queryParams]="{ stage: 'dispatch' }">
+      <mat-icon>support_agent</mat-icon>Disposition
+    </button>
+  </mat-menu>
+</div>

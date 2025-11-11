@@ -1,21 +1,28 @@
-<div class="orders-header">
-  <h2>Aufträge</h2>
-  <button mat-flat-button color="primary" (click)="openCreateDialog()">
-    <mat-icon>add</mat-icon>
-    Neuer Auftrag
-  </button>
-</div>
-
-<app-filter-bar />
-
-<div class="grid">
-  @if (orders().length === 0) {
-    <mat-card appearance="outlined">
-      <mat-card-content>Keine Aufträge gefunden.</mat-card-content>
-    </mat-card>
-  } @else {
-    @for (entry of orders(); track entry.order.id) {
-      <app-order-card [order]="entry.order" [items]="entry.items" />
+<div class="orders-page manager-shell">
+  <div class="manager-filter orders-filter">
+    <div class="filter-card">
+        <div class="filter-card__actions">
+          <button mat-flat-button color="primary" (click)="openCreateDialog()">
+            <mat-icon>add</mat-icon>
+            Neuer Auftrag
+          </button>
+        </div>
+      <app-filter-bar class="orders-filter-bar" />
+    </div>
+  </div>
+  <div class="grid orders-body">
+    @if (orders().length === 0) {
+      <mat-card appearance="outlined">
+        <mat-card-content>Keine Aufträge gefunden.</mat-card-content>
+      </mat-card>
+    } @else {
+      @for (entry of orders(); track entry.order.id) {
+        <app-order-card
+          [order]="entry.order"
+          [items]="entry.items"
+          [highlightItemId]="highlightItemId()"
+        />
+      }
     }
-  }
+  </div>
 </div>

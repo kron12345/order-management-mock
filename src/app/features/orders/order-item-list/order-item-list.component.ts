@@ -33,6 +33,7 @@ export class OrderItemListComponent {
   @Input({ required: true }) orderId!: string;
   @Input() bulkSelectionEnabled = false;
   @Input() selectedIds: ReadonlySet<string> | null = null;
+  @Input() highlightItemId: string | null = null;
   @Output() bulkSelectionChange = new EventEmitter<{ id: string; selected: boolean }>();
   @Output() submitRequested = new EventEmitter<string>();
 

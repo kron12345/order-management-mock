@@ -1,4 +1,15 @@
 :host {
+  display: block;
+}
+
+.customers-page {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  height: 100%;
+}
+
+.customers-body {
   display: flex;
   flex-direction: column;
   gap: 24px;

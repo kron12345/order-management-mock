@@ -1,15 +1,24 @@
-.orders-header {
+.orders-page {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 16px;
+  flex-direction: column;
+  gap: 0;
+}
 
-  h2 {
-    margin: 0;
-    font-size: 1.6rem;
-    font-weight: 600;
-  }
+.orders-filter .filter-card {
+  gap: 8px;
+}
+
+.orders-filter {
+  padding-inline: max(24px, (100vw - 1400px) / 2);
+}
+
+.orders-filter-bar {
+  width: 100%;
+  display: block;
+}
+
+.orders-body {
+  flex: 1;
 }
 
 .grid {

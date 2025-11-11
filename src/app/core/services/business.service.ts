@@ -174,6 +174,20 @@ export class BusinessService {
     );
   }
 
+  deleteBusiness(businessId: string): void {
+    const business = this._businesses().find((b) => b.id === businessId);
+    if (!business) {
+      return;
+    }
+    const linked = business.linkedOrderItemIds ?? [];
+    this._businesses.update((businesses) =>
+      businesses.filter((entry) => entry.id !== businessId),
+    );
+    linked.forEach((itemId) =>
+      this.orderService.unlinkBusinessFromItem(businessId, itemId),
+    );
+  }
+
   private matchesFilters(
     business: Business,
     filters: BusinessFilters,

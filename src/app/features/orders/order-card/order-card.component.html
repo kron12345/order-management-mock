@@ -225,6 +225,7 @@
       [orderId]="order.id"
       [bulkSelectionEnabled]="selectionMode()"
       [selectedIds]="selectedIds()"
+      [highlightItemId]="highlightItemId"
       (bulkSelectionChange)="onBulkSelectionChange($event)"
       (submitRequested)="submitSingle($event)"
     />

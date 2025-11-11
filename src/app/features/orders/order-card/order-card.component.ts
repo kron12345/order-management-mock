@@ -48,6 +48,9 @@ export class OrderCardComponent {
   get items(): OrderItem[] | null {
     return this.itemsSignal();
   }
+
+  @Input()
+  highlightItemId: string | null = null;
   expanded = signal(true);
   readonly businessStatusSummaries = computed(() =>
     this.computeBusinessStatusSummaries(this.effectiveItems()),

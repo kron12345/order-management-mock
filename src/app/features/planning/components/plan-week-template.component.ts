@@ -115,7 +115,7 @@ export class PlanWeekTemplateComponent implements OnInit {
     }
     const value = this.validityForm.getRawValue();
     const validity: PlanWeekValidity = {
-      id: value.id || crypto.randomUUID?.() ?? `validity-${Date.now()}`,
+      id: value.id || (crypto.randomUUID?.() ?? `validity-${Date.now()}`),
       templateId,
       validFromIso: value.validFromIso,
       validToIso: value.validToIso,
