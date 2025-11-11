@@ -21,6 +21,7 @@ import { MatNativeDateModule } from '@angular/material/core';
 import { MatCheckboxModule } from '@angular/material/checkbox';
 import { MatSlideToggleModule } from '@angular/material/slide-toggle';
 import { MatTabsModule } from '@angular/material/tabs';
+import { MatAutocompleteModule } from '@angular/material/autocomplete';
 
 export const MATERIAL_IMPORTS = [
   MatToolbarModule,
@@ -46,4 +47,5 @@ export const MATERIAL_IMPORTS = [
   MatCheckboxModule,
   MatSlideToggleModule,
   MatTabsModule,
+  MatAutocompleteModule,
 ];

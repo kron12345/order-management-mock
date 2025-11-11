@@ -20,7 +20,31 @@ export interface BusinessFilters {
   status: BusinessStatus | 'all';
   dueDate: BusinessDueDateFilter;
   assignment: 'all' | string;
+  tags: string[];
 }
+
+const DEFAULT_BUSINESS_FILTERS: BusinessFilters = {
+  search: '',
+  status: 'all',
+  dueDate: 'all',
+  assignment: 'all',
+  tags: [],
+};
+
+const DEFAULT_BUSINESS_SORT: BusinessSort = {
+  field: 'dueDate',
+  direction: 'asc',
+};
+
+const BUSINESS_FILTERS_STORAGE_KEY = 'business.filters.v1';
+const BUSINESS_SORT_STORAGE_KEY = 'business.sort.v1';
+
+type ParsedSearchTokens = {
+  textTerms: string[];
+  tags: string[];
+  assignment?: string;
+  status?: BusinessStatus;
+};
 
 export type BusinessSortField = 'dueDate' | 'createdAt' | 'status' | 'title';
 
@@ -36,21 +60,15 @@ export interface CreateBusinessPayload {
   assignment: BusinessAssignment;
   documents?: BusinessDocument[];
   linkedOrderItemIds?: string[];
+  tags?: string[];
 }
 
 @Injectable({ providedIn: 'root' })
 export class BusinessService {
   private readonly _businesses = signal<Business[]>(MOCK_BUSINESSES);
-  private readonly _filters = signal<BusinessFilters>({
-    search: '',
-    status: 'all',
-    dueDate: 'all',
-    assignment: 'all',
-  });
-  private readonly _sort = signal<BusinessSort>({
-    field: 'dueDate',
-    direction: 'asc',
-  });
+  private readonly _filters = signal<BusinessFilters>({ ...DEFAULT_BUSINESS_FILTERS });
+  private readonly _sort = signal<BusinessSort>({ ...DEFAULT_BUSINESS_SORT });
+  private readonly browserStorage = this.detectStorage();
 
   readonly businesses = computed(() => this._businesses());
   readonly filters = computed(() => this._filters());
@@ -59,8 +77,9 @@ export class BusinessService {
     const filters = this._filters();
     const sort = this._sort();
     const now = new Date();
+    const searchTokens = this.parseSearchTokens(filters.search);
     return this._businesses()
-      .filter((business) => this.matchesFilters(business, filters, now))
+      .filter((business) => this.matchesFilters(business, filters, now, searchTokens))
       .sort((a, b) => this.sortBusinesses(a, b, sort));
   });
   readonly assignments = computed(() =>
@@ -74,7 +93,16 @@ export class BusinessService {
     ),
   );
 
-  constructor(private readonly orderService: OrderService) {}
+  constructor(private readonly orderService: OrderService) {
+    const restoredFilters = this.restoreFilters();
+    if (restoredFilters) {
+      this._filters.set(restoredFilters);
+    }
+    const restoredSort = this.restoreSort();
+    if (restoredSort) {
+      this._sort.set(restoredSort);
+    }
+  }
 
   getByIds(ids: readonly string[]): Business[] {
     if (!ids.length) {
@@ -92,20 +120,21 @@ export class BusinessService {
   }
 
   setFilters(patch: Partial<BusinessFilters>) {
-    this._filters.update((current) => ({ ...current, ...patch }));
+    this._filters.update((current) => {
+      const next = { ...current, ...patch };
+      this.persistFilters(next);
+      return next;
+    });
   }
 
   resetFilters() {
-    this._filters.set({
-      search: '',
-      status: 'all',
-      dueDate: 'all',
-      assignment: 'all',
-    });
+    this._filters.set({ ...DEFAULT_BUSINESS_FILTERS });
+    this.persistFilters(this._filters());
   }
 
   setSort(sort: BusinessSort) {
     this._sort.set(sort);
+    this.persistSort(sort);
   }
 
   createBusiness(payload: CreateBusinessPayload) {
@@ -121,6 +150,7 @@ export class BusinessService {
       assignment: payload.assignment,
       documents: payload.documents,
       linkedOrderItemIds: linkedIds.length ? [...new Set(linkedIds)] : undefined,
+      tags: payload.tags?.length ? [...new Set(payload.tags)] : undefined,
     };
 
     this._businesses.update((businesses) => [newBusiness, ...businesses]);
@@ -139,6 +169,16 @@ export class BusinessService {
 
   updateStatus(businessId: string, status: BusinessStatus) {
     this.updateBusiness(businessId, { status });
+  }
+
+  updateTags(businessId: string, tags: string[]) {
+    const cleaned = tags
+      .map((tag) => tag.trim())
+      .filter((tag) => !!tag);
+    const unique = Array.from(new Set(cleaned));
+    this.updateBusiness(businessId, {
+      tags: unique.length ? unique : undefined,
+    });
   }
 
   setLinkedOrderItems(businessId: string, itemIds: string[]) {
@@ -192,14 +232,8 @@ export class BusinessService {
     business: Business,
     filters: BusinessFilters,
     now: Date,
+    searchTokens: ParsedSearchTokens,
   ): boolean {
-    if (filters.search) {
-      const haystack =
-        `${business.title} ${business.description}`.toLowerCase();
-      if (!haystack.includes(filters.search.toLowerCase())) {
-        return false;
-      }
-    }
 
     if (filters.status !== 'all' && business.status !== filters.status) {
       return false;
@@ -207,6 +241,30 @@ export class BusinessService {
 
     if (filters.assignment !== 'all') {
       if (business.assignment.name !== filters.assignment) {
+        return false;
+      }
+    }
+
+    if (filters.tags.length) {
+      if (!this.hasAllTags(business.tags ?? [], filters.tags)) {
+        return false;
+      }
+    }
+
+    if (searchTokens.assignment) {
+      if (business.assignment.name.toLowerCase() !== searchTokens.assignment) {
+        return false;
+      }
+    }
+
+    if (searchTokens.status) {
+      if (business.status !== searchTokens.status) {
+        return false;
+      }
+    }
+
+    if (searchTokens.tags.length) {
+      if (!this.hasAllTags(business.tags ?? [], searchTokens.tags)) {
         return false;
       }
     }
@@ -240,7 +298,29 @@ export class BusinessService {
       }
     }
 
+    if (searchTokens.textTerms.length) {
+      const haystack =
+        `${business.title} ${business.description} ${business.assignment.name} ${
+          business.tags?.join(' ') ?? ''
+        } ${business.status}`.toLowerCase();
+      const hasAllTerms = searchTokens.textTerms.every((term) =>
+        haystack.includes(term),
+      );
+      if (!hasAllTerms) {
+        return false;
+      }
+    }
+
     return true;
+  }
+
+  private hasAllTags(source: string[], required: string[]): boolean {
+    if (!required.length) {
+      return true;
+    }
+    return required.every((tag) =>
+      source.some((existing) => existing.toLowerCase() === tag.toLowerCase()),
+    );
   }
 
   private sortBusinesses(a: Business, b: Business, sort: BusinessSort): number {
@@ -324,5 +404,190 @@ export class BusinessService {
   private generateBusinessId(): string {
     const timestamp = Date.now().toString(36).toUpperCase();
     return `G-${timestamp}`;
+  }
+
+  private parseSearchTokens(search: string): ParsedSearchTokens {
+    const tokens: ParsedSearchTokens = {
+      textTerms: [],
+      tags: [],
+    };
+    if (!search.trim()) {
+      return tokens;
+    }
+    const segments = this.tokenizeSearch(search);
+
+    segments.forEach((segment) => {
+      const lower = segment.toLowerCase();
+      if (lower.startsWith('tag:')) {
+        const value = this.stripQuotes(segment.slice(4).trim());
+        if (value) {
+          tokens.tags.push(value);
+        }
+        return;
+      }
+      if (segment.startsWith('#')) {
+        const value = this.stripQuotes(segment.slice(1).trim());
+        if (value) {
+          tokens.tags.push(value);
+        }
+        return;
+      }
+
+      if (lower.startsWith('status:')) {
+        const value = this.stripQuotes(lower.slice(7).trim());
+        const status = this.findStatusByToken(value);
+        if (status) {
+          tokens.status = status;
+        }
+        return;
+      }
+
+      if (
+        lower.startsWith('assign:') ||
+        lower.startsWith('zuständig:') ||
+        lower.startsWith('zustaendig:') ||
+        lower.startsWith('owner:')
+      ) {
+        const separatorIndex = segment.indexOf(':');
+        const value = this.stripQuotes(
+          segment.slice(separatorIndex + 1).trim(),
+        ).toLowerCase();
+        if (value) {
+          tokens.assignment = value;
+        }
+        return;
+      }
+
+      tokens.textTerms.push(this.stripQuotes(segment).toLowerCase());
+    });
+
+    if (
+      !tokens.textTerms.length &&
+      !tokens.tags.length &&
+      !tokens.assignment &&
+      !tokens.status
+    ) {
+      tokens.textTerms.push(search.trim().toLowerCase());
+    }
+
+    return tokens;
+  }
+
+  private findStatusByToken(token: string): BusinessStatus | undefined {
+    switch (token) {
+      case 'neu':
+        return 'neu';
+      case 'in_arbeit':
+      case 'inarbeit':
+      case 'arbeit':
+        return 'in_arbeit';
+      case 'pausiert':
+        return 'pausiert';
+      case 'erledigt':
+      case 'done':
+        return 'erledigt';
+      default:
+        return undefined;
+    }
+  }
+
+  private tokenizeSearch(search: string): string[] {
+    const tokens: string[] = [];
+    let current = '';
+    let inQuotes = false;
+    for (let i = 0; i < search.length; i += 1) {
+      const char = search[i];
+      if (char === '"') {
+        inQuotes = !inQuotes;
+        continue;
+      }
+      if (/\s/.test(char) && !inQuotes) {
+        if (current.trim().length) {
+          tokens.push(current.trim());
+          current = '';
+        }
+        continue;
+      }
+      current += char;
+    }
+    if (current.trim().length) {
+      tokens.push(current.trim());
+    }
+    return tokens;
+  }
+
+  private stripQuotes(value: string): string {
+    if (value.startsWith('"') && value.endsWith('"') && value.length > 1) {
+      return value.slice(1, -1);
+    }
+    return value;
+  }
+
+  private detectStorage(): Storage | null {
+    try {
+      if (typeof window === 'undefined' || !window.localStorage) {
+        return null;
+      }
+      return window.localStorage;
+    } catch {
+      return null;
+    }
+  }
+
+  private restoreFilters(): BusinessFilters | null {
+    if (!this.browserStorage) {
+      return null;
+    }
+    try {
+      const raw = this.browserStorage.getItem(BUSINESS_FILTERS_STORAGE_KEY);
+      if (!raw) {
+        return null;
+      }
+      const parsed = JSON.parse(raw) as Partial<BusinessFilters>;
+      return { ...DEFAULT_BUSINESS_FILTERS, ...parsed };
+    } catch {
+      return null;
+    }
+  }
+
+  private persistFilters(filters: BusinessFilters): void {
+    if (!this.browserStorage) {
+      return;
+    }
+    try {
+      this.browserStorage.setItem(BUSINESS_FILTERS_STORAGE_KEY, JSON.stringify(filters));
+    } catch {
+      // ignore
+    }
+  }
+
+  private restoreSort(): BusinessSort | null {
+    if (!this.browserStorage) {
+      return null;
+    }
+    try {
+      const raw = this.browserStorage.getItem(BUSINESS_SORT_STORAGE_KEY);
+      if (!raw) {
+        return null;
+      }
+      const parsed = JSON.parse(raw) as Partial<BusinessSort>;
+      return {
+        field: (parsed.field as BusinessSortField) ?? DEFAULT_BUSINESS_SORT.field,
+        direction: parsed.direction ?? DEFAULT_BUSINESS_SORT.direction,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  private persistSort(sort: BusinessSort): void {
+    if (!this.browserStorage) {
+      return;
+    }
+    try {
+      this.browserStorage.setItem(BUSINESS_SORT_STORAGE_KEY, JSON.stringify(sort));
+    } catch {
+      // ignore
+    }
   }
 }

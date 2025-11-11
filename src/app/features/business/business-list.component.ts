@@ -1,5 +1,5 @@
 import { CommonModule, DOCUMENT, DatePipe } from '@angular/common';
-import { Component, computed, effect, inject, signal } from '@angular/core';
+import { Component, HostListener, computed, effect, inject, signal } from '@angular/core';
 import {
   FormControl,
   ReactiveFormsModule,
@@ -10,7 +10,9 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { MATERIAL_IMPORTS } from '../../core/material.imports.imports';
 import {
   BusinessDueDateFilter,
+  BusinessFilters,
   BusinessService,
+  BusinessSort,
   BusinessSortField,
   CreateBusinessPayload,
 } from '../../core/services/business.service';
@@ -23,12 +25,17 @@ import {
   OrderService,
 } from '../../core/services/order.service';
 import { MatDialog } from '@angular/material/dialog';
+import { MatAutocompleteSelectedEvent } from '@angular/material/autocomplete';
 import { BusinessCreateDialogComponent } from './business-create-dialog.component';
 import { ActivatedRoute, Router } from '@angular/router';
 import {
   OrderItemPickerDialogComponent,
   OrderItemPickerDialogData,
 } from './order-item-picker-dialog.component';
+import {
+  BusinessCommandDefinition,
+  BusinessCommandPaletteDialogComponent,
+} from './business-command-palette-dialog.component';
 
 interface SortOption {
   value: string;
@@ -42,11 +49,72 @@ type BusinessMetric = {
   hint: string;
 };
 
-type BusinessHighlight = {
+interface BusinessHighlight {
   icon: string;
   label: string;
   filter?: { kind: 'status' | 'assignment'; value: string };
+}
+
+interface SavedFilterPreset {
+  id: string;
+  name: string;
+  filters: BusinessFilters;
+  sort: BusinessSort;
+}
+
+type PipelineMetrics = {
+  total: number;
+  active: number;
+  completed: number;
+  overdue: number;
+  dueSoon: number;
 };
+
+type MetricTrend = {
+  active: number | null;
+  completed: number | null;
+  overdue: number | null;
+  dueSoon: number | null;
+};
+
+type HealthTone = 'critical' | 'warning' | 'ok' | 'done' | 'idle';
+
+interface HealthBadge {
+  tone: HealthTone;
+  label: string;
+}
+
+type TimelineState = 'past' | 'current' | 'future' | 'none';
+
+interface TimelineEntry {
+  label: string;
+  description: string;
+  state: TimelineState;
+  date: Date | null;
+}
+
+interface ActivityFeedItem {
+  icon: string;
+  title: string;
+  subtitle: string;
+}
+
+interface SearchSuggestion {
+  label: string;
+  value: string;
+  icon: string;
+  description: string;
+  kind: 'tag' | 'assignment' | 'status';
+}
+
+interface BusinessInsightContext {
+  title: string;
+  message: string;
+  hint: string;
+  icon: string;
+}
+
+const BUSINESS_INSIGHTS_STORAGE_KEY = 'business.insightsCollapsed.v1';
 
 @Component({
   selector: 'app-business-list',
@@ -98,6 +166,18 @@ export class BusinessListComponent {
     { value: 'title:asc', label: 'Titel A–Z' },
   ];
 
+  readonly statusLabelLookup: Record<BusinessStatus | 'all', string> =
+    this.statusOptions.reduce((acc, option) => {
+      acc[option.value] = option.label;
+      return acc;
+    }, {} as Record<BusinessStatus | 'all', string>);
+
+  readonly dueDateLabelLookup: Record<BusinessDueDateFilter, string> =
+    this.dueDatePresetOptions.reduce((acc, option) => {
+      acc[option.value] = option.label;
+      return acc;
+    }, {} as Record<BusinessDueDateFilter, string>);
+
   readonly assignments = computed(() => this.businessService.assignments());
   readonly filters = computed(() => this.businessService.filters());
   readonly sort = computed(() => this.businessService.sort());
@@ -105,6 +185,82 @@ export class BusinessListComponent {
   readonly orderItemOptions = computed<OrderItemOption[]>(() =>
     this.orderService.orderItemOptions(),
   );
+  readonly availableTags = computed(() => {
+    const stats = new Map<string, number>();
+    this.businesses().forEach((business) => {
+      business.tags?.forEach((tag) => {
+        stats.set(tag, (stats.get(tag) ?? 0) + 1);
+      });
+    });
+    return Array.from(stats.entries())
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'de', { sensitivity: 'base' }))
+      .map(([tag]) => tag);
+  });
+  readonly tagStats = computed(() => {
+    const stats = new Map<string, number>();
+    this.businesses().forEach((business) => {
+      business.tags?.forEach((tag) => {
+        stats.set(tag, (stats.get(tag) ?? 0) + 1);
+      });
+    });
+    return Array.from(stats.entries()).sort(
+      (a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'de', { sensitivity: 'base' }),
+    );
+  });
+  readonly topTagInsights = computed(() => this.tagStats().slice(0, 3));
+  readonly insightsCollapsed = signal(this.loadInsightsCollapsed());
+  readonly topAssignments = computed(() => this.computeTopAssignments());
+  readonly statusBreakdown = computed(() => this.computeStatusBreakdown());
+  readonly dueSoonHighlights = computed(() => this.computeDueSoonHighlights());
+  readonly insightContext = computed(() => this.computeInsightContext());
+  readonly searchSuggestions = computed<SearchSuggestion[]>(() => {
+    const query = this.searchControl.value.trim().toLowerCase();
+    const suggestions: SearchSuggestion[] = [];
+
+    this.tagStats().forEach(([tag, count]) => {
+      const encoded = this.encodeTokenValue(tag);
+      suggestions.push({
+        label: this.formatTagLabel(tag),
+        value: `tag:${encoded}`,
+        icon: 'sell',
+        description: `${count} Treffer · Tag`,
+        kind: 'tag',
+      });
+    });
+
+    this.assignments().forEach((assignment) => {
+      const encoded = this.encodeTokenValue(assignment.name);
+      suggestions.push({
+        label: assignment.name,
+        value: `assign:${encoded}`,
+        icon: assignment.type === 'group' ? 'groups' : 'person',
+        description: 'Verantwortlich',
+        kind: 'assignment',
+      });
+    });
+
+    this.statusOptions
+      .filter((option) => option.value !== 'all')
+      .forEach((option) => {
+        suggestions.push({
+          label: option.label,
+          value: `status:${option.value}`,
+          icon: 'flag',
+          description: 'Status',
+          kind: 'status',
+        });
+      });
+
+    const filtered = query
+      ? suggestions.filter(
+          (suggestion) =>
+            suggestion.label.toLowerCase().includes(query) ||
+            suggestion.value.toLowerCase().includes(query),
+        )
+      : suggestions;
+
+    return filtered.slice(0, 8);
+  });
   readonly orderItemLookup = computed(() => {
     const map = new Map<string, OrderItemOption>();
     this.orderItemOptions().forEach((option) => map.set(option.itemId, option));
@@ -112,6 +268,24 @@ export class BusinessListComponent {
   });
 
   private readonly selectedBusinessId = signal<string | null>(null);
+  private readonly savedPresets = signal<SavedFilterPreset[]>([]);
+  private readonly activePresetId = signal<string | null>(null);
+  private readonly presetStorageKey = 'om.business.presets.v1';
+  private readonly metricsBaseline = signal<PipelineMetrics | null>(null);
+  readonly metricTrends = signal<MetricTrend>({
+    active: null,
+    completed: null,
+    overdue: null,
+    dueSoon: null,
+  });
+  private readonly bulkSelection = signal<Set<string>>(new Set());
+  readonly bulkSelectionCount = computed(() => this.bulkSelection().size);
+  readonly hasBulkSelection = computed(() => this.bulkSelectionCount() > 0);
+  private readonly viewTransitionFlag = signal(false);
+  readonly isViewTransitioning = computed(() => this.viewTransitionFlag());
+  private viewTransitionTimer: number | null = null;
+  readonly skeletonPlaceholders = Array.from({ length: 6 }, (_, index) => index);
+
   readonly selectedBusiness = computed(() => {
     const id = this.selectedBusinessId();
     if (!id) {
@@ -120,20 +294,69 @@ export class BusinessListComponent {
     return this.businesses().find((business) => business.id === id) ?? null;
   });
 
+  readonly savedFilterPresets = computed(() => this.savedPresets());
+  readonly activePreset = computed(() => this.activePresetId());
+
   private readonly statusLabels: Record<BusinessStatus, string> = {
     neu: 'Neu',
     pausiert: 'Pausiert',
     in_arbeit: 'In Arbeit',
     erledigt: 'Erledigt',
   };
+
+  readonly overviewMetrics = computed(() => {
+    const entries = this.businesses();
+    const total = entries.length;
+    let active = 0;
+    let completed = 0;
+    let overdue = 0;
+    let dueSoon = 0;
+    const startToday = new Date();
+    startToday.setHours(0, 0, 0, 0);
+    const soonThreshold = new Date(startToday);
+    soonThreshold.setDate(soonThreshold.getDate() + 7);
+
+    entries.forEach((business) => {
+      if (business.status === 'erledigt') {
+        completed += 1;
+      } else {
+        active += 1;
+      }
+
+      if (!business.dueDate) {
+        return;
+      }
+
+      const due = new Date(business.dueDate);
+      if (due < startToday) {
+        overdue += 1;
+        return;
+      }
+      if (due >= startToday && due <= soonThreshold) {
+        dueSoon += 1;
+      }
+    });
+
+    return {
+      total,
+      active,
+      completed,
+      overdue,
+      dueSoon,
+    };
+  });
+
   private pendingScrollId: string | null = null;
 
   constructor() {
+    this.restorePresetsFromStorage();
     this.searchControl.setValue(this.filters().search, { emitEvent: false });
 
     this.searchControl.valueChanges
       .pipe(debounceTime(200), distinctUntilChanged(), takeUntilDestroyed())
       .subscribe((value) => {
+        this.startViewTransition();
+        this.clearActivePreset();
         this.businessService.setFilters({ search: value });
       });
 
@@ -151,20 +374,65 @@ export class BusinessListComponent {
         window.setTimeout(() => this.scrollToPendingBusiness(), 0);
       });
 
-    effect(() => {
-      const businesses = this.businesses();
-      if (businesses.length && !this.selectedBusinessId()) {
-        this.selectedBusinessId.set(businesses[0].id);
-      } else if (businesses.length && this.selectedBusinessId()) {
-        const exists = businesses.some((biz) => biz.id === this.selectedBusinessId());
-        if (!exists) {
+    effect(
+      () => {
+        const businesses = this.businesses();
+        if (businesses.length && !this.selectedBusinessId()) {
           this.selectedBusinessId.set(businesses[0].id);
+        } else if (businesses.length && this.selectedBusinessId()) {
+          const exists = businesses.some((biz) => biz.id === this.selectedBusinessId());
+          if (!exists) {
+            this.selectedBusinessId.set(businesses[0].id);
+          }
+        } else if (!businesses.length) {
+          this.selectedBusinessId.set(null);
         }
-      } else if (!businesses.length) {
-        this.selectedBusinessId.set(null);
-      }
-      window.setTimeout(() => this.scrollToPendingBusiness(), 0);
+        window.setTimeout(() => this.scrollToPendingBusiness(), 0);
+      },
+      { allowSignalWrites: true },
+    );
+
+    effect(
+      () => {
+        const current = this.overviewMetrics();
+        const baseline = this.metricsBaseline();
+        if (baseline) {
+          this.metricTrends.set({
+            active: current.active - baseline.active,
+            completed: current.completed - baseline.completed,
+            overdue: current.overdue - baseline.overdue,
+            dueSoon: current.dueSoon - baseline.dueSoon,
+          });
+        } else {
+          this.metricTrends.set({
+            active: null,
+            completed: null,
+            overdue: null,
+            dueSoon: null,
+          });
+        }
+        this.metricsBaseline.set(current);
+      },
+      { allowSignalWrites: true },
+    );
+
+    effect(() => {
+      this.persistPresets(this.savedPresets());
     });
+
+    effect(
+      () => {
+        const activeId = this.activePresetId();
+        if (!activeId) {
+          return;
+        }
+        const preset = this.savedPresets().find((entry) => entry.id === activeId);
+        if (!preset || !this.presetsMatchCurrent(preset)) {
+          this.activePresetId.set(null);
+        }
+      },
+      { allowSignalWrites: true },
+    );
   }
 
   openCreateDialog(): void {
@@ -187,18 +455,25 @@ export class BusinessListComponent {
   }
 
   onStatusFilterChange(value: BusinessStatus | 'all'): void {
+    this.startViewTransition();
+    this.clearActivePreset();
     this.businessService.setFilters({ status: value });
   }
 
   onAssignmentFilterChange(value: string | 'all'): void {
+    this.startViewTransition();
+    this.clearActivePreset();
     this.businessService.setFilters({ assignment: value });
   }
 
   onDueDatePresetChange(value: BusinessDueDateFilter): void {
+    this.startViewTransition();
+    this.clearActivePreset();
     this.businessService.setFilters({ dueDate: value });
   }
 
   onSortChange(value: string): void {
+    this.startViewTransition();
     const [field, direction] = value.split(':') as [
       BusinessSortField,
       'asc' | 'desc',
@@ -207,9 +482,491 @@ export class BusinessListComponent {
   }
 
   resetFilters(): void {
+    this.startViewTransition();
+    this.clearActivePreset();
     this.searchControl.setValue('', { emitEvent: false });
     this.businessService.resetFilters();
     this.businessService.setSort({ field: 'dueDate', direction: 'asc' });
+    this.clearBulkSelection();
+  }
+
+  clearFilter(kind: 'search' | 'status' | 'assignment' | 'dueDate' | 'tags'): void {
+    if (kind === 'tags') {
+      this.clearTagFilters();
+      return;
+    }
+    this.startViewTransition();
+    this.clearActivePreset();
+    switch (kind) {
+      case 'search':
+        this.searchControl.setValue('');
+        break;
+      case 'status':
+        this.onStatusFilterChange('all');
+        break;
+      case 'assignment':
+        this.onAssignmentFilterChange('all');
+        break;
+      case 'dueDate':
+        this.onDueDatePresetChange('all');
+        break;
+    }
+  }
+
+  saveCurrentFilterPreset(): void {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    const name = window
+      .prompt('Filteransicht benennen', this.defaultPresetName())
+      ?.trim();
+    if (!name) {
+      return;
+    }
+    const preset: SavedFilterPreset = {
+      id: this.generatePresetId(),
+      name,
+      filters: { ...this.filters(), search: this.searchControl.value },
+      sort: { ...this.sort() },
+    };
+    this.savedPresets.update((current) => [...current, preset]);
+    this.activePresetId.set(preset.id);
+  }
+
+  applyFilterPreset(preset: SavedFilterPreset): void {
+    this.startViewTransition();
+    this.searchControl.setValue(preset.filters.search, { emitEvent: false });
+    this.businessService.setFilters({ ...preset.filters });
+    this.businessService.setSort({ ...preset.sort });
+    this.activePresetId.set(preset.id);
+    this.clearBulkSelection();
+  }
+
+  removeFilterPreset(id: string): void {
+    this.savedPresets.update((current) =>
+      current.filter((preset) => preset.id !== id),
+    );
+    if (this.activePresetId() === id) {
+      this.activePresetId.set(null);
+    }
+  }
+
+  renameFilterPreset(preset: SavedFilterPreset): void {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    const nextName = window
+      .prompt('Neuen Namen vergeben', preset.name)
+      ?.trim();
+    if (!nextName || nextName === preset.name) {
+      return;
+    }
+    this.savedPresets.update((current) =>
+      current.map((entry) =>
+        entry.id === preset.id ? { ...entry, name: nextName } : entry,
+      ),
+    );
+  }
+
+  duplicateFilterPreset(preset: SavedFilterPreset): void {
+    const copy: SavedFilterPreset = {
+      id: this.generatePresetId(),
+      name: `${preset.name} (Kopie)`,
+      filters: { ...preset.filters },
+      sort: { ...preset.sort },
+    };
+    this.savedPresets.update((current) => [...current, copy]);
+  }
+
+  applyMetricFilter(
+    kind: 'active' | 'completed' | 'overdue' | 'dueSoon',
+  ): void {
+    this.clearBulkSelection();
+    switch (kind) {
+      case 'active':
+        this.onStatusFilterChange('in_arbeit');
+        break;
+      case 'completed':
+        this.onStatusFilterChange('erledigt');
+        break;
+      case 'overdue':
+        this.onDueDatePresetChange('overdue');
+        break;
+      case 'dueSoon':
+        this.onDueDatePresetChange('this_week');
+        break;
+    }
+  }
+
+  isTagSelected(tag: string): boolean {
+    const normalized = tag.toLowerCase();
+    return this.filters().tags.some((entry) => entry.toLowerCase() === normalized);
+  }
+
+  toggleTagFilter(tag: string): void {
+    const value = tag.trim();
+    if (!value) {
+      return;
+    }
+    const normalized = value.toLowerCase();
+    const current = this.filters().tags;
+    const has = current.some((entry) => entry.toLowerCase() === normalized);
+    const next = has
+      ? current.filter((entry) => entry.toLowerCase() !== normalized)
+      : [...current, value];
+    this.startViewTransition();
+    this.clearActivePreset();
+    this.businessService.setFilters({ tags: next });
+  }
+
+  removeTagFilter(tag: string): void {
+    const normalized = tag.toLowerCase();
+    const current = this.filters().tags;
+    if (!current.some((entry) => entry.toLowerCase() === normalized)) {
+      return;
+    }
+    const next = current.filter((entry) => entry.toLowerCase() !== normalized);
+    this.startViewTransition();
+    this.clearActivePreset();
+    this.businessService.setFilters({ tags: next });
+  }
+
+  clearTagFilters(): void {
+    if (!this.filters().tags.length) {
+      return;
+    }
+    this.startViewTransition();
+    this.clearActivePreset();
+    this.businessService.setFilters({ tags: [] });
+  }
+
+  toggleInsightsCollapsed(): void {
+    this.insightsCollapsed.update((current) => {
+      const next = !current;
+      this.persistInsightsCollapsed(next);
+      return next;
+    });
+  }
+
+  applyTagInsight(tag: string): void {
+    const value = tag.trim();
+    if (!value) {
+      return;
+    }
+    this.startViewTransition();
+    this.clearActivePreset();
+    this.businessService.setFilters({ tags: [value] });
+  }
+
+  applyAssignmentInsight(name: string): void {
+    this.onAssignmentFilterChange(name);
+  }
+
+  applyStatusInsight(status: BusinessStatus): void {
+    this.onStatusFilterChange(status);
+  }
+
+  focusDueSoon(): void {
+    this.onDueDatePresetChange('this_week');
+  }
+
+  formatTagLabel(tag: string): string {
+    return tag.startsWith('#') ? tag : `#${tag}`;
+  }
+
+  private encodeTokenValue(value: string): string {
+    return value.includes(' ') ? `"${value}"` : value;
+  }
+
+  addTagToBusiness(business: Business, raw: string): void {
+    const value = raw.trim();
+    if (!value) {
+      return;
+    }
+    const existing = business.tags ?? [];
+    if (existing.some((entry) => entry.toLowerCase() === value.toLowerCase())) {
+      return;
+    }
+    this.businessService.updateTags(business.id, [...existing, value]);
+  }
+
+  removeTagFromBusiness(business: Business, tag: string): void {
+    const existing = business.tags ?? [];
+    const next = existing.filter((entry) => entry !== tag);
+    this.businessService.updateTags(business.id, next);
+  }
+
+  tagTone(tag: string): 'region' | 'phase' | 'risk' | 'priority' | 'default' {
+    const normalized = tag.toLowerCase();
+    if (normalized.startsWith('de-') || ['ch', 'at', 'basel'].some((region) => normalized.includes(region))) {
+      return 'region';
+    }
+    if (['pitch', 'rollout', 'vertrag', 'pilot'].some((keyword) => normalized.includes(keyword))) {
+      return 'phase';
+    }
+    if (['risk', 'risiko', 'escalation', 'warn'].some((keyword) => normalized.includes(keyword))) {
+      return 'risk';
+    }
+    if (['highimpact', 'premium', 'prio'].some((keyword) => normalized.includes(keyword))) {
+      return 'priority';
+    }
+    return 'default';
+  }
+
+  tagCount(tag: string): number {
+    return this.tagStats().find(([entry]) => entry === tag)?.[1] ?? 0;
+  }
+
+  suggestedTagsForBusiness(business: Business): string[] {
+    const existing = new Set((business.tags ?? []).map((tag) => tag.toLowerCase()));
+    return this.availableTags()
+      .filter((tag) => !existing.has(tag.toLowerCase()))
+      .slice(0, 6);
+  }
+
+  onSearchSuggestionSelected(event: MatAutocompleteSelectedEvent): void {
+    const value = event.option.value as string;
+    if (!value) {
+      return;
+    }
+    const current = this.searchControl.value.trim();
+    const next = current.length ? `${current} ${value}` : value;
+    this.searchControl.setValue(`${next} `);
+  }
+
+  toggleBulkSelection(id: string, checked: boolean | undefined): void {
+    const next = new Set(this.bulkSelection());
+    if (checked) {
+      next.add(id);
+    } else {
+      next.delete(id);
+    }
+    this.bulkSelection.set(next);
+  }
+
+  isInBulkSelection(id: string): boolean {
+    return this.bulkSelection().has(id);
+  }
+
+  selectAllVisible(): void {
+    this.bulkSelection.set(new Set(this.businesses().map((business) => business.id)));
+  }
+
+  clearBulkSelection(): void {
+    if (this.bulkSelection().size) {
+      this.bulkSelection.set(new Set());
+    }
+  }
+
+  bulkUpdateStatus(status: BusinessStatus): void {
+    if (!this.bulkSelection().size) {
+      return;
+    }
+    this.startViewTransition();
+    this.bulkSelection().forEach((id) => this.businessService.updateStatus(id, status));
+    this.clearBulkSelection();
+  }
+
+  private removeFromBulkSelection(id: string): void {
+    if (!this.bulkSelection().has(id)) {
+      return;
+    }
+    const next = new Set(this.bulkSelection());
+    next.delete(id);
+    this.bulkSelection.set(next);
+  }
+
+  openCommandPalette(): void {
+    const commands = this.buildCommandDefinitions();
+    const dialogRef = this.dialog.open(BusinessCommandPaletteDialogComponent, {
+      width: '520px',
+      data: { commands },
+    });
+    dialogRef.afterClosed().subscribe((commandId?: string) => {
+      if (commandId) {
+        this.executeCommand(commandId);
+      }
+    });
+  }
+
+  executeCommand(commandId: string): void {
+    switch (commandId) {
+      case 'create-business':
+        this.openCreateDialog();
+        break;
+      case 'reset-filters':
+        this.resetFilters();
+        break;
+      case 'filter-overdue':
+        this.applyMetricFilter('overdue');
+        break;
+      case 'filter-due-soon':
+        this.applyMetricFilter('dueSoon');
+        break;
+      case 'filter-active':
+        this.applyMetricFilter('active');
+        break;
+      case 'select-all-visible':
+        this.selectAllVisible();
+        break;
+      case 'clear-selection':
+        this.clearBulkSelection();
+        break;
+      default:
+        break;
+    }
+  }
+
+  private buildCommandDefinitions(): BusinessCommandDefinition[] {
+    const metrics = this.overviewMetrics();
+    return [
+      {
+        id: 'create-business',
+        label: 'Neues Geschäft erstellen',
+        icon: 'add',
+        hint: 'Shift + N',
+      },
+      {
+        id: 'reset-filters',
+        label: 'Filter zurücksetzen',
+        icon: 'refresh',
+      },
+      {
+        id: 'filter-overdue',
+        label: `Überfällige anzeigen (${metrics.overdue})`,
+        icon: 'priority_high',
+      },
+      {
+        id: 'filter-due-soon',
+        label: `Fällig diese Woche (${metrics.dueSoon})`,
+        icon: 'event',
+      },
+      {
+        id: 'filter-active',
+        label: `Aktive Vorgänge (${metrics.active})`,
+        icon: 'work',
+      },
+      {
+        id: 'select-all-visible',
+        label: 'Alle sichtbaren auswählen',
+        icon: 'select_all',
+      },
+      {
+        id: 'clear-selection',
+        label: 'Auswahl leeren',
+        icon: 'close',
+      },
+    ];
+  }
+
+  @HostListener('window:keydown', ['$event'])
+  handleGlobalShortcut(event: KeyboardEvent): void {
+    const key = event.key.toLowerCase();
+    if ((event.ctrlKey || event.metaKey) && key === 'k') {
+      event.preventDefault();
+      this.openCommandPalette();
+      return;
+    }
+    if (event.shiftKey && key === 'n') {
+      event.preventDefault();
+      this.openCreateDialog();
+    }
+  }
+
+  private startViewTransition(): void {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    if (this.viewTransitionTimer) {
+      window.clearTimeout(this.viewTransitionTimer);
+    }
+    this.viewTransitionFlag.set(true);
+    this.viewTransitionTimer = window.setTimeout(() => {
+      this.viewTransitionFlag.set(false);
+      this.viewTransitionTimer = null;
+    }, 320);
+  }
+
+  private clearActivePreset(): void {
+    if (this.activePresetId()) {
+      this.activePresetId.set(null);
+    }
+  }
+
+  private restorePresetsFromStorage(): void {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    const raw = window.localStorage.getItem(this.presetStorageKey);
+    if (!raw) {
+      return;
+    }
+    try {
+      const parsed = JSON.parse(raw) as SavedFilterPreset[];
+      if (Array.isArray(parsed)) {
+        this.savedPresets.set(
+          parsed.map((preset) => ({
+            ...preset,
+            filters: this.normalizeFilters(preset.filters as BusinessFilters | undefined),
+            sort: { ...preset.sort },
+          })),
+        );
+      }
+    } catch (error) {
+      console.warn('Filter-Presets konnten nicht geladen werden', error);
+    }
+  }
+
+  private persistPresets(presets: SavedFilterPreset[]): void {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    try {
+      window.localStorage.setItem(this.presetStorageKey, JSON.stringify(presets));
+    } catch (error) {
+      console.warn('Filter-Presets konnten nicht gespeichert werden', error);
+    }
+  }
+
+  private presetsMatchCurrent(preset: SavedFilterPreset): boolean {
+    const currentFilters = this.filters();
+    const currentSort = this.sort();
+    return (
+      this.filtersEqual(preset.filters, currentFilters) &&
+      preset.sort.field === currentSort.field &&
+      preset.sort.direction === currentSort.direction
+    );
+  }
+
+  private filtersEqual(a: BusinessFilters, b: BusinessFilters): boolean {
+    return (
+      a.search === b.search &&
+      a.assignment === b.assignment &&
+      a.status === b.status &&
+      a.dueDate === b.dueDate &&
+      this.sameTags(a.tags, b.tags)
+    );
+  }
+
+  private normalizeFilters(filters?: BusinessFilters): BusinessFilters {
+    return {
+      search: filters?.search ?? '',
+      status: filters?.status ?? 'all',
+      dueDate: filters?.dueDate ?? 'all',
+      assignment: filters?.assignment ?? 'all',
+      tags: filters?.tags ?? [],
+    } as BusinessFilters;
+  }
+
+  private sameTags(a: string[], b: string[]): boolean {
+    if (a.length !== b.length) {
+      return false;
+    }
+    const normalize = (tags: string[]) =>
+      [...tags].map((tag) => tag.toLowerCase()).sort();
+    const aSorted = normalize(a);
+    const bSorted = normalize(b);
+    return aSorted.every((tag, index) => tag === bSorted[index]);
   }
 
   onStatusChange(id: string, status: BusinessStatus): void {
@@ -229,10 +986,12 @@ export class BusinessListComponent {
     if (!confirmed) {
       return;
     }
+    this.startViewTransition();
     this.businessService.deleteBusiness(business.id);
     if (this.selectedBusinessId() === business.id) {
       this.selectedBusinessId.set(null);
     }
+    this.removeFromBulkSelection(business.id);
   }
 
   openOrderItemPicker(business: Business): void {
@@ -336,6 +1095,8 @@ export class BusinessListComponent {
       return;
     }
     event.stopPropagation();
+    this.startViewTransition();
+    this.clearActivePreset();
     if (highlight.filter.kind === 'status') {
       this.businessService.setFilters({ status: highlight.filter.value as BusinessStatus });
     }
@@ -395,6 +1156,109 @@ export class BusinessListComponent {
     ];
   }
 
+  businessTimeline(business: Business): TimelineEntry[] {
+    const created = new Date(business.createdAt);
+    const due = business.dueDate ? new Date(business.dueDate) : null;
+    const today = new Date();
+    const createdLabel =
+      this.datePipe.transform(created, 'mediumDate') ?? created.toDateString();
+    const dueLabel = due
+      ? this.datePipe.transform(due, 'mediumDate') ?? due.toDateString()
+      : 'Keine Angabe';
+
+    const dueState: TimelineState = due
+      ? this.isBeforeDay(due, today)
+        ? 'past'
+        : this.isSameDay(due, today)
+        ? 'current'
+        : 'future'
+      : 'none';
+
+    return [
+      {
+        label: 'Erstellt',
+        description: createdLabel,
+        state: 'past',
+        date: created,
+      },
+      {
+        label: 'Heute',
+        description: this.datePipe.transform(today, 'mediumDate') ?? '',
+        state:
+          dueState === 'past'
+            ? 'past'
+            : dueState === 'current'
+            ? 'current'
+            : 'future',
+        date: today,
+      },
+      {
+        label: 'Fälligkeit',
+        description: dueLabel,
+        state: dueState,
+        date: due,
+      },
+    ];
+  }
+
+  businessActivityFeed(business: Business): ActivityFeedItem[] {
+    const items: ActivityFeedItem[] = [
+      {
+        icon: 'flag',
+        title: `Status: ${this.statusLabel(business.status)}`,
+        subtitle: `Aktualisiert am ${
+          this.datePipe.transform(new Date(business.createdAt), 'medium') ??
+          ''
+        }`,
+      },
+    ];
+
+    if (business.dueDate) {
+      items.push({
+        icon: 'calendar_today',
+        title: 'Fälligkeit geplant',
+        subtitle:
+          this.datePipe.transform(business.dueDate, 'fullDate') ??
+          business.dueDate,
+      });
+    }
+
+    if (business.linkedOrderItemIds?.length) {
+      items.push({
+        icon: 'link',
+        title: `${business.linkedOrderItemIds.length} Position${
+          business.linkedOrderItemIds.length === 1 ? '' : 'en'
+        } verknüpft`,
+        subtitle: 'Zuletzt gepflegt im Positionen-Tab',
+      });
+    }
+
+    return items;
+  }
+
+  healthBadge(business: Business): HealthBadge {
+    if (business.status === 'erledigt') {
+      return { tone: 'done', label: 'Abgeschlossen' };
+    }
+    const daysLeft = this.daysUntilDue(business);
+    if (daysLeft === null) {
+      return { tone: 'idle', label: 'Ohne Termin' };
+    }
+    if (daysLeft < 0) {
+      return {
+        tone: 'critical',
+        label: `${Math.abs(daysLeft)} Tage überfällig`,
+      };
+    }
+    if (daysLeft <= 3) {
+      return {
+        tone: 'warning',
+        label: `Fällig in ${daysLeft} Tag${daysLeft === 1 ? '' : 'en'}`,
+      };
+    }
+    return { tone: 'ok', label: 'Im Plan' };
+  }
+
   assignmentLabel(business: Business): string {
     return business.assignment.type === 'group'
       ? `Gruppe ${business.assignment.name}`
@@ -448,6 +1312,136 @@ export class BusinessListComponent {
     const startA = new Date(a.getFullYear(), a.getMonth(), a.getDate());
     const startB = new Date(b.getFullYear(), b.getMonth(), b.getDate());
     return startA.getTime() < startB.getTime();
+  }
+
+  private generatePresetId(): string {
+    return `preset-${Date.now().toString(36)}-${Math.random()
+      .toString(36)
+      .slice(2, 7)}`;
+  }
+
+  private defaultPresetName(): string {
+    return `Ansicht ${this.savedPresets().length + 1}`;
+  }
+
+  private computeTopAssignments(): { name: string; type: Business['assignment']['type']; count: number }[] {
+    const stats = new Map<
+      string,
+      { count: number; type: Business['assignment']['type'] }
+    >();
+    this.businesses().forEach((business) => {
+      const entry = stats.get(business.assignment.name) ?? {
+        count: 0,
+        type: business.assignment.type,
+      };
+      entry.count += 1;
+      entry.type = business.assignment.type;
+      stats.set(business.assignment.name, entry);
+    });
+    return Array.from(stats.entries())
+      .map(([name, info]) => ({ name, type: info.type, count: info.count }))
+      .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, 'de', { sensitivity: 'base' }))
+      .slice(0, 3);
+  }
+
+  private computeStatusBreakdown(): { status: BusinessStatus; label: string; count: number }[] {
+    const counts = new Map<BusinessStatus, number>();
+    this.businesses().forEach((business) => {
+      counts.set(business.status, (counts.get(business.status) ?? 0) + 1);
+    });
+    const statuses: BusinessStatus[] = ['neu', 'in_arbeit', 'pausiert', 'erledigt'];
+    return statuses
+      .map((status) => ({
+        status,
+        label: this.statusLabel(status),
+        count: counts.get(status) ?? 0,
+      }))
+      .filter((entry) => entry.count > 0)
+      .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label, 'de', { sensitivity: 'base' }));
+  }
+
+  private computeDueSoonHighlights(): Business[] {
+    return this.businesses()
+      .filter((business) => business.dueDate && business.status !== 'erledigt')
+      .sort(
+        (a, b) =>
+          new Date(a.dueDate ?? 0).getTime() - new Date(b.dueDate ?? 0).getTime(),
+      )
+      .slice(0, 3);
+  }
+
+  private computeInsightContext(): BusinessInsightContext {
+    const filters = this.filters();
+    const search = this.searchControl.value.trim();
+    const resultCount = this.businesses().length;
+    if (search.length) {
+      return {
+        title: 'Suche aktiv',
+        message: `Gefiltert nach "${search}" · ${resultCount} Treffer.`,
+        hint: 'Suche leeren, um wieder alle Geschäfte zu sehen.',
+        icon: 'search',
+      };
+    }
+    if (filters.status !== 'all') {
+      return {
+        title: 'Statusfilter aktiv',
+        message: `${this.statusLabel(filters.status as BusinessStatus)} · ${resultCount} Treffer.`,
+        hint: 'Status oben im Filterbereich zurücksetzen.',
+        icon: 'flag',
+      };
+    }
+    if (filters.assignment !== 'all') {
+      return {
+        title: 'Zuständigkeit aktiv',
+        message: `${filters.assignment} · ${resultCount} Geschäfte.`,
+        hint: 'Zuständigkeitsfilter anpassen, um weitere anzuzeigen.',
+        icon: 'groups',
+      };
+    }
+    if (filters.dueDate !== 'all') {
+      return {
+        title: 'Fälligkeit aktiv',
+        message: `${this.dueDateLabelLookup[filters.dueDate]} · ${resultCount} Geschäfte.`,
+        hint: 'Preset in der Suche zurücksetzen für alle Termine.',
+        icon: 'event',
+      };
+    }
+    if (filters.tags.length) {
+      return {
+        title: 'Tags aktiv',
+        message: `${filters.tags.map((tag) => this.formatTagLabel(tag)).join(', ')}`,
+        hint: 'Tag-Chips unten anklicken, um Filter zu entfernen.',
+        icon: 'sell',
+      };
+    }
+    const metrics = this.overviewMetrics();
+    return {
+      title: 'Pipeline Überblick',
+      message: `${metrics.total} Geschäfte · ${metrics.overdue} überfällig · ${metrics.dueSoon} fällig in 7 Tagen.`,
+      hint: 'Nutze die Insights, um schnell in Tags, Zuständigkeiten oder Termine zu springen.',
+      icon: 'insights',
+    };
+  }
+
+  private loadInsightsCollapsed(): boolean {
+    try {
+      const storage = this.document?.defaultView?.localStorage;
+      if (!storage) {
+        return false;
+      }
+      return storage.getItem(BUSINESS_INSIGHTS_STORAGE_KEY) === 'true';
+    } catch {
+      return false;
+    }
+  }
+
+  private persistInsightsCollapsed(value: boolean): void {
+    try {
+      const storage = this.document?.defaultView?.localStorage;
+      storage?.setItem(BUSINESS_INSIGHTS_STORAGE_KEY, String(value));
+    } catch {
+      // ignore storage issues
+    }
   }
 
   private scrollToPendingBusiness(): void {

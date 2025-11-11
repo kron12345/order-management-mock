@@ -1,38 +1,120 @@
-import { Component, computed, effect, inject, signal } from '@angular/core';
-import { DOCUMENT } from '@angular/common';
+import { CommonModule, DOCUMENT } from '@angular/common';
+import { Component, HostListener, computed, effect, inject, signal } from '@angular/core';
+import { FormControl, ReactiveFormsModule } from '@angular/forms';
+import { MatAutocompleteSelectedEvent } from '@angular/material/autocomplete';
 import { ActivatedRoute } from '@angular/router';
-import { OrderService } from '../../../core/services/order.service';
-import { FilterBarComponent } from '../../filters/filter-bar/filter-bar.component';
-import { OrderCardComponent } from '../order-card/order-card.component';
 import { MatDialog } from '@angular/material/dialog';
-import { OrderCreateDialogComponent } from '../order-create-dialog.component';
-import { MatButtonModule } from '@angular/material/button';
-import { MatIconModule } from '@angular/material/icon';
-import { MatCardModule } from '@angular/material/card';
+import { debounceTime, distinctUntilChanged } from 'rxjs';
+
+import { MATERIAL_IMPORTS } from '../../../core/material.imports.imports';
+import { OrderFilters, OrderService } from '../../../core/services/order.service';
 import { Order } from '../../../core/models/order.model';
 import { OrderItem } from '../../../core/models/order-item.model';
 import { BusinessStatus } from '../../../core/models/business.model';
+import { TimetablePhase } from '../../../core/models/timetable.model';
 import { BusinessService } from '../../../core/services/business.service';
+import { FilterBarComponent } from '../../filters/filter-bar/filter-bar.component';
+import { OrderCardComponent } from '../order-card/order-card.component';
+import { OrderCreateDialogComponent } from '../order-create-dialog.component';
+
+interface OrderSummary {
+  order: Order;
+  items: OrderItem[];
+  itemCount: number;
+  upcomingCount: number;
+  attentionCount: number;
+  tags: string[];
+  customer?: string;
+  timetableYear?: string;
+  responsibles: string[];
+}
+
+interface OrderHeroMetrics {
+  totalOrders: number;
+  totalItems: number;
+  upcomingItems: number;
+  attentionItems: number;
+}
+
+interface SearchSuggestion {
+  label: string;
+  value: string;
+  icon: string;
+  description: string;
+}
+
+interface OrdersHealthInsight {
+  tone: 'ok' | 'warn' | 'critical';
+  attentionPercent: number;
+  upcomingPercent: number;
+  summary: string;
+  icon: string;
+  title: string;
+}
+
+interface CollaborationContext {
+  title: string;
+  message: string;
+  hint: string;
+  icon: string;
+}
+
+const INSIGHTS_COLLAPSED_STORAGE_KEY = 'orders.insightsCollapsed.v1';
 
 @Component({
   selector: 'app-order-list',
   standalone: true,
-  imports: [MatButtonModule, MatIconModule, MatCardModule, FilterBarComponent, OrderCardComponent],
+  imports: [
+    CommonModule,
+    ReactiveFormsModule,
+    ...MATERIAL_IMPORTS,
+    FilterBarComponent,
+    OrderCardComponent,
+  ],
   templateUrl: './order-list.component.html',
   styleUrl: './order-list.component.scss',
 })
 export class OrderListComponent {
-  readonly orders = computed(() => this.filteredOrders());
-  readonly highlightItemId = signal<string | null>(null);
-
+  private readonly store = inject(OrderService);
+  private readonly businessService = inject(BusinessService);
+  private readonly dialog = inject(MatDialog);
   private readonly route = inject(ActivatedRoute);
   private readonly document = inject(DOCUMENT);
 
-  constructor(
-    private readonly store: OrderService,
-    private readonly businessService: BusinessService,
-    private readonly dialog: MatDialog,
-  ) {
+  readonly searchControl = new FormControl('', { nonNullable: true });
+  readonly highlightItemId = signal<string | null>(null);
+  private readonly viewTransitionFlag = signal(false);
+  readonly isViewTransitioning = computed(() => this.viewTransitionFlag());
+  readonly skeletonPlaceholders = Array.from({ length: 6 }, (_, index) => index);
+
+  readonly orders = computed(() => this.filteredOrders());
+  readonly filters = computed(() => this.store.filters());
+  readonly heroMetrics = computed(() => this.computeHeroMetrics());
+  readonly tagStats = computed(() => this.computeTagStats());
+  readonly responsibleStats = computed(() => this.computeResponsibleStats());
+  readonly searchSuggestions = computed(() => this.computeSearchSuggestions());
+  readonly topTags = computed(() => this.tagStats().slice(0, 3));
+  readonly topResponsibles = computed(() => this.responsibleStats().slice(0, 3));
+  readonly healthInsight = computed(() => this.computeHealthInsight());
+  readonly collaborationContext = computed(() => this.computeCollaborationContext());
+  readonly insightsCollapsed = signal(this.loadInsightsCollapsed());
+
+  constructor() {
+    this.searchControl.setValue(this.store.filters().search, { emitEvent: false });
+    this.searchControl.valueChanges
+      .pipe(debounceTime(200), distinctUntilChanged())
+      .subscribe((value) => {
+        this.startViewTransition();
+        this.store.setFilter({ search: value });
+      });
+
+    effect(() => {
+      const next = this.store.filters().search;
+      if (this.searchControl.value !== next) {
+        this.searchControl.setValue(next, { emitEvent: false });
+      }
+    });
+
     this.route.queryParamMap.subscribe((params) => {
       const businessId = params.get('businessId');
       if (businessId) {
@@ -53,24 +135,135 @@ export class OrderListComponent {
       }
       window.setTimeout(() => this.scrollToHighlightedItem(target), 0);
     });
+
   }
 
-  openCreateDialog() {
+  readonly heroMetricList = computed(() => [
+    {
+      key: 'orders',
+      label: 'Aufträge',
+      value: this.heroMetrics().totalOrders,
+      hint: 'Aktive Aufträge',
+      icon: 'inventory_2',
+      action: () => this.store.setFilter({ timeRange: 'all' }),
+    },
+    {
+      key: 'items',
+      label: 'Positionen',
+      value: this.heroMetrics().totalItems,
+      hint: 'Summe aller Positionen',
+      icon: 'view_list',
+      action: () => {},
+    },
+    {
+      key: 'upcoming',
+      label: 'Diese Woche',
+      value: this.heroMetrics().upcomingItems,
+      hint: 'Start in den nächsten 7 Tagen',
+      icon: 'event',
+      action: () => this.store.setFilter({ timeRange: 'thisWeek' }),
+    },
+    {
+      key: 'attention',
+      label: 'Auffälligkeiten',
+      value: this.heroMetrics().attentionItems,
+      hint: 'Positionen mit Abweichung',
+      icon: 'warning',
+      action: () => this.searchControl.setValue('deviation'),
+    },
+  ]);
+
+  openCreateDialog(): void {
     this.dialog.open(OrderCreateDialogComponent, {
       width: '760px',
       maxWidth: '95vw',
     });
   }
 
-  filteredItems(order: Order): OrderItem[] {
-    const filters = this.store.filters();
-    const base = this.store.filterItemsForOrder(order);
-    if (filters.businessStatus === 'all') {
-      return base;
+  trackByOrderId(_: number, entry: { order: Order }): string {
+    return entry.order.id;
+  }
+
+  formatTagLabel(tag?: string | null): string {
+    if (!tag || tag === 'all') {
+      return '#—';
     }
-    return base.filter((item) =>
-      this.itemMatchesBusinessStatus(item, filters.businessStatus as BusinessStatus),
-    );
+    return tag.startsWith('#') ? tag : `#${tag}`;
+  }
+
+  tagTone(tag: string): 'region' | 'phase' | 'risk' | 'priority' | 'default' {
+    const normalized = tag.toLowerCase();
+    if (normalized.startsWith('de-') || ['ch', 'at'].some((region) => normalized.includes(region))) {
+      return 'region';
+    }
+    if (['rollout', 'pitch', 'vertrag', 'pilot'].some((keyword) => normalized.includes(keyword))) {
+      return 'phase';
+    }
+    if (['risk', 'risiko', 'warn', 'esc'].some((keyword) => normalized.includes(keyword))) {
+      return 'risk';
+    }
+    if (['premium', 'priority', 'vip', 'high'].some((keyword) => normalized.includes(keyword))) {
+      return 'priority';
+    }
+    return 'default';
+  }
+
+  isTagSelected(tag: string): boolean {
+    return this.store.filters().tag === tag;
+  }
+
+  toggleTagFilter(tag: string): void {
+    const current = this.store.filters().tag;
+    const next = current === tag ? 'all' : tag;
+    this.store.setFilter({ tag: next });
+  }
+
+  clearTagFilter(): void {
+    this.store.setFilter({ tag: 'all' });
+  }
+
+  applyTagInsight(tag: string): void {
+    this.startViewTransition();
+    this.store.setFilter({ tag });
+  }
+
+  applyResponsibleInsight(responsible: string): void {
+    this.upsertSearchToken('resp', responsible);
+  }
+
+  focusAttention(): void {
+    this.searchControl.setValue('deviation');
+  }
+
+  focusUpcoming(): void {
+    this.startViewTransition();
+    this.store.setFilter({ timeRange: 'thisWeek' });
+  }
+
+  toggleInsightsCollapsed(): void {
+    this.insightsCollapsed.update((current) => {
+      const next = !current;
+      this.persistInsightsCollapsed(next);
+      return next;
+    });
+  }
+
+  tagUsageCount(tag: string): number {
+    if (!tag || tag === 'all') {
+      return this.orders().length;
+    }
+    const stat = this.tagStats().find(([name]) => name === tag);
+    return stat ? stat[1] : 0;
+  }
+
+  onSearchSuggestionSelected(event: MatAutocompleteSelectedEvent): void {
+    const value = event.option?.value as string;
+    if (!value) {
+      return;
+    }
+    const current = this.searchControl.value.trim();
+    const next = current.length ? `${current} ${value}` : value;
+    this.searchControl.setValue(`${next} `);
   }
 
   private filteredOrders() {
@@ -89,27 +282,286 @@ export class OrderListComponent {
         order,
         items: this.filteredItems(order),
       }))
-      .filter(({ items, order }) => {
-        if (items.length > 0) {
-          return true;
-        }
-        if (itemFiltersActive) {
-          return false;
-        }
-        return true;
-      });
+      .filter(({ items }) => (itemFiltersActive ? items.length > 0 : true));
   }
 
-  private itemMatchesBusinessStatus(
-    item: OrderItem,
-    status: BusinessStatus,
-  ): boolean {
+  private filteredItems(order: Order): OrderItem[] {
+    const filters = this.store.filters();
+    const base = this.store.filterItemsForOrder(order);
+    if (filters.businessStatus === 'all') {
+      return base;
+    }
+    return base.filter((item) =>
+      this.itemMatchesBusinessStatus(item, filters.businessStatus as BusinessStatus),
+    );
+  }
+
+  private itemMatchesBusinessStatus(item: OrderItem, status: BusinessStatus): boolean {
     const businessIds = item.linkedBusinessIds ?? [];
     if (!businessIds.length) {
       return false;
     }
     const businesses = this.businessService.getByIds(businessIds);
     return businesses.some((business) => business.status === status);
+  }
+
+  private computeHeroMetrics(): OrderHeroMetrics {
+    const entries = this.orders();
+    let totalItems = 0;
+    let upcoming = 0;
+    let attention = 0;
+    const now = new Date();
+    const nextWeek = new Date();
+    nextWeek.setDate(now.getDate() + 7);
+
+    entries.forEach(({ items }) => {
+      items.forEach((item) => {
+        totalItems += 1;
+        if (item.deviation) {
+          attention += 1;
+        }
+        const start = item.start ? new Date(item.start) : null;
+        if (start && start >= now && start <= nextWeek) {
+          upcoming += 1;
+        }
+      });
+    });
+
+    return {
+      totalOrders: entries.length,
+      totalItems,
+      upcomingItems: upcoming,
+      attentionItems: attention,
+    };
+  }
+
+  private computeTagStats(): [string, number][] {
+    const stats = new Map<string, number>();
+    this.orders().forEach(({ order }) => {
+      order.tags?.forEach((tag) => stats.set(tag, (stats.get(tag) ?? 0) + 1));
+    });
+    return Array.from(stats.entries()).sort(
+      (a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'de', { sensitivity: 'base' }),
+    );
+  }
+
+  private computeResponsibleStats(): [string, number][] {
+    const stats = new Map<string, number>();
+    this.orders().forEach(({ items }) => {
+      items.forEach((item) => {
+        const responsible = item.responsible?.trim();
+        if (responsible) {
+          stats.set(responsible, (stats.get(responsible) ?? 0) + 1);
+        }
+      });
+    });
+    return Array.from(stats.entries()).sort(
+      (a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'de', { sensitivity: 'base' }),
+    );
+  }
+
+  private computeSearchSuggestions(): SearchSuggestion[] {
+    const query = this.searchControl.value.trim().toLowerCase();
+    const suggestions: SearchSuggestion[] = [];
+
+    this.tagStats().forEach(([tag, count]) => {
+      suggestions.push({
+        label: this.formatTagLabel(tag),
+        value: `tag:${this.encodeTokenValue(tag)}`,
+        icon: 'sell',
+        description: `${count} Treffer · Tag`,
+      });
+    });
+
+    this.responsibleStats().forEach(([name, count]) => {
+      suggestions.push({
+        label: name,
+        value: `resp:${this.encodeTokenValue(name)}`,
+        icon: 'person',
+        description: `${count} Positionen · Verantwortlich`,
+      });
+    });
+
+    const filtered = query
+      ? suggestions.filter(
+          (suggestion) =>
+            suggestion.label.toLowerCase().includes(query) ||
+            suggestion.value.toLowerCase().includes(query),
+        )
+      : suggestions;
+
+    return filtered.slice(0, 8);
+  }
+
+  private computeHealthInsight(): OrdersHealthInsight {
+    const metrics = this.heroMetrics();
+    const total = Math.max(metrics.totalItems, 1);
+    const attentionPercent = Math.round((metrics.attentionItems / total) * 100);
+    const upcomingPercent = Math.round((metrics.upcomingItems / total) * 100);
+    let tone: OrdersHealthInsight['tone'];
+    let icon: string;
+    let title: string;
+
+    if (attentionPercent >= 30) {
+      tone = 'critical';
+      icon = 'crisis_alert';
+      title = 'Hohe Aufmerksamkeit';
+    } else if (attentionPercent >= 12) {
+      tone = 'warn';
+      icon = 'warning_amber';
+      title = 'Im Blick behalten';
+    } else {
+      tone = 'ok';
+      icon = 'task_alt';
+      title = 'Planmäßig';
+    }
+
+    return {
+      tone,
+      attentionPercent,
+      upcomingPercent,
+      icon,
+      title,
+      summary: `${metrics.attentionItems} Abweichung${metrics.attentionItems === 1 ? '' : 'en'} · ${metrics.upcomingItems} Starts in 7 Tagen`,
+    };
+  }
+
+
+  private encodeTokenValue(value: string): string {
+    return value.includes(' ') ? `"${value}"` : value;
+  }
+
+  private upsertSearchToken(tokenPrefix: string, rawValue: string): void {
+    const normalizedPrefix = `${tokenPrefix.toLowerCase()}:`;
+    const formatted = `${tokenPrefix}:${this.encodeTokenValue(rawValue)}`;
+    const currentTokens = this.searchControl.value
+      .trim()
+      .split(/\s+/)
+      .filter((token) => token.length);
+    const filteredTokens = currentTokens.filter(
+      (token) => !token.toLowerCase().startsWith(normalizedPrefix),
+    );
+    filteredTokens.push(formatted);
+    this.searchControl.setValue(`${filteredTokens.join(' ')} `);
+  }
+
+  private computeCollaborationContext(): CollaborationContext {
+    const filters = this.filters();
+    const metrics = this.heroMetrics();
+    const totalOrders = this.orders().length;
+    if (filters.tag !== 'all') {
+      const count = this.tagUsageCount(filters.tag);
+      return {
+        title: 'Tag-Fokus aktiv',
+        message: `${this.formatTagLabel(filters.tag)} in ${count} Auftrag${count === 1 ? '' : 'en'} sichtbar.`,
+        hint: 'Filter entfernen, um alle Tags zu sehen.',
+        icon: 'sell',
+      };
+    }
+
+    const search = filters.search.trim();
+    if (search) {
+      return {
+        title: 'Freitextsuche aktiv',
+        message: `Gefiltert nach "${search}" · ${totalOrders} Treffer.`,
+        hint: 'Suchfeld leeren für den Gesamtabgleich.',
+        icon: 'search',
+      };
+    }
+
+    if (filters.linkedBusinessId) {
+      return {
+        title: 'Geschäfts-Kontext',
+        message: `Nur Positionen des Geschäfts ${filters.linkedBusinessId} eingeblendet.`,
+        hint: 'Filter zurücksetzen, um alle Verknüpfungen zu prüfen.',
+        icon: 'hub',
+      };
+    }
+
+    if (filters.timeRange !== 'all') {
+      return {
+        title: 'Zeitfenster aktiv',
+        message: `Ansicht auf ${this.describeTimeRange(filters.timeRange)} reduziert.`,
+        hint: 'Zeitfilter oben in den Pills löschen.',
+        icon: 'event',
+      };
+    }
+
+    if (filters.businessStatus !== 'all' || filters.trainStatus !== 'all') {
+      return {
+        title: 'Status-Fokus',
+        message: `Pipeline zeigt nur ${filters.businessStatus !== 'all' ? this.friendlyBusinessStatus(filters.businessStatus as BusinessStatus) : this.friendlyPhase(filters.trainStatus as TimetablePhase)}.`,
+        hint: 'Status-Chips im Kartenkopf zurücksetzen.',
+        icon: 'adjust',
+      };
+    }
+
+    return {
+      title: 'Pipeline Überblick',
+      message: `${metrics.totalOrders} Aufträge · ${metrics.attentionItems} Auffälligkeiten · ${metrics.upcomingItems} demnächst.`,
+      hint: 'Insights unterhalb liefern Details zu Tags & Verantwortlichen.',
+      icon: 'group_work',
+    };
+  }
+
+  private describeTimeRange(range: OrderFilters['timeRange']): string {
+    switch (range) {
+      case 'next4h':
+        return 'die nächsten 4 Stunden';
+      case 'next12h':
+        return 'die nächsten 12 Stunden';
+      case 'today':
+        return 'heute';
+      case 'thisWeek':
+        return 'diese Woche';
+      default:
+        return 'alle Zeiträume';
+    }
+  }
+
+  private friendlyBusinessStatus(status: BusinessStatus): string {
+    switch (status) {
+      case 'neu':
+        return 'neue Geschäfte';
+      case 'in_arbeit':
+        return 'laufende Geschäfte';
+      case 'pausiert':
+        return 'pausierte Geschäfte';
+      case 'erledigt':
+        return 'erledigte Geschäfte';
+      default:
+        return 'Geschäfte';
+    }
+  }
+
+  private friendlyPhase(phase: TimetablePhase | 'all'): string {
+    switch (phase) {
+      case 'bedarf':
+        return 'Bedarf';
+      case 'path_request':
+        return 'Trassenanmeldung';
+      case 'offer':
+        return 'Angebot';
+      case 'contract':
+        return 'Vertrag';
+      case 'operational':
+        return 'Betrieb';
+      case 'archived':
+        return 'Archiv';
+      default:
+        return 'alle Phasen';
+    }
+  }
+
+  private isUpcoming(item: OrderItem): boolean {
+    if (!item.start) {
+      return false;
+    }
+    const start = new Date(item.start);
+    const now = new Date();
+    const week = new Date();
+    week.setDate(now.getDate() + 7);
+    return start >= now && start <= week;
   }
 
   private scrollToHighlightedItem(itemId: string | null): void {
@@ -126,5 +578,40 @@ export class OrderListComponent {
         this.highlightItemId.set(null);
       }
     }, 2500);
+  }
+
+  private startViewTransition(): void {
+    this.viewTransitionFlag.set(true);
+    window.setTimeout(() => this.viewTransitionFlag.set(false), 320);
+  }
+
+  @HostListener('window:keydown', ['$event'])
+  handleShortcuts(event: KeyboardEvent): void {
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'f') {
+      event.preventDefault();
+      const input = this.document.querySelector<HTMLInputElement>('input[matinput]');
+      input?.focus();
+    }
+  }
+
+  private loadInsightsCollapsed(): boolean {
+    try {
+      const storage = this.document?.defaultView?.localStorage;
+      if (!storage) {
+        return false;
+      }
+      return storage.getItem(INSIGHTS_COLLAPSED_STORAGE_KEY) === 'true';
+    } catch {
+      return false;
+    }
+  }
+
+  private persistInsightsCollapsed(value: boolean): void {
+    try {
+      const storage = this.document?.defaultView?.localStorage;
+      storage?.setItem(INSIGHTS_COLLAPSED_STORAGE_KEY, String(value));
+    } catch {
+      // ignore
+    }
   }
 }

@@ -14,6 +14,14 @@ import { Customer } from '../../../core/models/customer.model';
 import { TimetableService } from '../../../core/services/timetable.service';
 import { TimetablePhase } from '../../../core/models/timetable.model';
 import { MatSnackBar } from '@angular/material/snack-bar';
+import {
+  OrderLinkBusinessDialogComponent,
+  OrderLinkBusinessDialogData,
+} from '../order-link-business-dialog.component';
+import {
+  OrderStatusUpdateDialogComponent,
+  OrderStatusUpdateDialogData,
+} from '../order-status-update-dialog.component';
 
 @Component({
   selector: 'app-order-card',
@@ -51,7 +59,7 @@ export class OrderCardComponent {
 
   @Input()
   highlightItemId: string | null = null;
-  expanded = signal(true);
+  expanded = signal(false);
   readonly businessStatusSummaries = computed(() =>
     this.computeBusinessStatusSummaries(this.effectiveItems()),
   );
@@ -64,6 +72,7 @@ export class OrderCardComponent {
   readonly timetableYearSummaries = computed(() =>
     this.computeTimetableYearSummaries(this.effectiveItems()),
   );
+  readonly orderHealth = computed(() => this.computeOrderHealth());
   private readonly filters = computed(() => this.orderService.filters());
   readonly effectiveItems = computed(() => this.resolveItems());
   readonly selectionMode = signal(false);
@@ -134,6 +143,32 @@ export class OrderCardComponent {
     event?.stopPropagation();
     this.selectedIds.set(new Set());
     this.selectionMode.set(false);
+  }
+
+  openLinkBusinessDialog(event: MouseEvent): void {
+    event.stopPropagation();
+    const data: OrderLinkBusinessDialogData = {
+      order: this.order,
+      items: this.effectiveItems(),
+    };
+    this.dialog.open(OrderLinkBusinessDialogComponent, {
+      data,
+      width: '720px',
+      maxWidth: '95vw',
+    });
+  }
+
+  openStatusUpdateDialog(event: MouseEvent): void {
+    event.stopPropagation();
+    const data: OrderStatusUpdateDialogData = {
+      order: this.order,
+      items: this.effectiveItems(),
+    };
+    this.dialog.open(OrderStatusUpdateDialogComponent, {
+      data,
+      width: '640px',
+      maxWidth: '95vw',
+    });
   }
 
   onBulkSelectionChange(change: { id: string; selected: boolean }) {
@@ -367,6 +402,94 @@ export class OrderCardComponent {
     }
     return this.customerService.getById(order.customerId);
   }
+
+  private computeOrderHealth(): OrderHealthSnapshot {
+    const items = this.effectiveItems();
+    const total = items.length;
+    if (!total) {
+      return {
+        total: 0,
+        upcoming: 0,
+        attention: 0,
+        active: 0,
+        idle: 0,
+        tone: 'ok',
+        label: 'Keine Positionen',
+        icon: 'task_alt',
+        caption: 'Keine Positionen im aktuellen Filter sichtbar.',
+        pastPercent: 0,
+        upcomingPercent: 0,
+        idlePercent: 100,
+      };
+    }
+
+    let upcoming = 0;
+    let attention = 0;
+    let active = 0;
+    const now = new Date();
+
+    items.forEach((item) => {
+      if (item.deviation) {
+        attention += 1;
+      }
+      const start = this.tryParseDate(item.start);
+      if (!start) {
+        return;
+      }
+      if (start <= now) {
+        active += 1;
+      } else {
+        upcoming += 1;
+      }
+    });
+
+    const idle = Math.max(total - active - upcoming, 0);
+    const attentionRatio = attention / total;
+    let tone: OrderHealthSnapshot['tone'];
+    let label: string;
+    let icon: string;
+
+    if (attentionRatio >= 0.3) {
+      tone = 'critical';
+      label = 'Kritisch';
+      icon = 'priority_high';
+    } else if (attentionRatio >= 0.12) {
+      tone = 'warn';
+      label = 'Beobachten';
+      icon = 'warning';
+    } else {
+      tone = 'ok';
+      label = upcoming ? 'Planmäßig' : 'Stabil';
+      icon = 'task_alt';
+    }
+
+    const pastPercent = Math.round((active / total) * 100);
+    const upcomingPercent = Math.round((upcoming / total) * 100);
+    const idlePercent = Math.max(0, 100 - pastPercent - upcomingPercent);
+
+    return {
+      total,
+      upcoming,
+      attention,
+      active,
+      idle,
+      tone,
+      label,
+      icon,
+      caption: `${attention} Abweichung${attention !== 1 ? 'en' : ''} · ${upcoming} demnächst`,
+      pastPercent,
+      upcomingPercent,
+      idlePercent,
+    };
+  }
+
+  private tryParseDate(value?: string): Date | null {
+    if (!value) {
+      return null;
+    }
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
 }
 
 interface StatusSummary {
@@ -374,4 +497,19 @@ interface StatusSummary {
   label: string;
   count: number;
   value: string;
+}
+
+interface OrderHealthSnapshot {
+  total: number;
+  upcoming: number;
+  attention: number;
+  active: number;
+  idle: number;
+  tone: 'ok' | 'warn' | 'critical';
+  label: string;
+  icon: string;
+  caption: string;
+  pastPercent: number;
+  upcomingPercent: number;
+  idlePercent: number;
 }

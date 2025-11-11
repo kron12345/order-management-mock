@@ -1,12 +1,15 @@
 import { CommonModule } from '@angular/common';
-import { Component, computed, inject } from '@angular/core';
+import { Component, computed, inject, signal } from '@angular/core';
 import {
   FormArray,
   FormBuilder,
+  FormControl,
   FormGroup,
   ReactiveFormsModule,
   Validators,
 } from '@angular/forms';
+import { debounceTime, distinctUntilChanged } from 'rxjs';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { MATERIAL_IMPORTS } from '../../core/material.imports.imports';
 import {
   CreateCustomerPayload,
@@ -15,6 +18,23 @@ import {
 import { Customer } from '../../core/models/customer.model';
 import { OrderService } from '../../core/services/order.service';
 import { Order } from '../../core/models/order.model';
+
+interface CustomerHeroMetrics {
+  totalCustomers: number;
+  totalContacts: number;
+  activeProjects: number;
+  linkedOrders: number;
+}
+
+interface InsightContext {
+  title: string;
+  message: string;
+  hint: string;
+  icon: string;
+}
+
+const CUSTOMER_SEARCH_STORAGE_KEY = 'customers.search.v1';
+const CUSTOMER_INSIGHTS_STORAGE_KEY = 'customers.insightsCollapsed.v1';
 
 @Component({
   selector: 'app-customer-list',
@@ -31,6 +51,61 @@ export class CustomerListComponent {
   readonly customers = this.customerService.customers;
   readonly orders = this.orderService.orders;
   readonly hasCustomers = computed(() => this.customers().length > 0);
+  readonly searchControl = new FormControl('', { nonNullable: true });
+  private readonly searchTerm = signal('');
+  readonly filteredCustomers = computed(() => this.filterCustomers(this.searchTerm()));
+  readonly insightsCollapsed = signal(this.loadInsightsCollapsed());
+  readonly heroMetrics = computed(() => this.computeHeroMetrics());
+  readonly heroMetricList = computed(() => [
+    {
+      key: 'customers',
+      label: 'Kunden',
+      value: this.heroMetrics().totalCustomers,
+      hint: 'im CRM erfasst',
+      icon: 'groups',
+      action: () => this.clearSearch(),
+    },
+    {
+      key: 'contacts',
+      label: 'Kontakte',
+      value: this.heroMetrics().totalContacts,
+      hint: 'aktive Ansprechpartner',
+      icon: 'badge',
+      action: () => {},
+    },
+    {
+      key: 'projects',
+      label: 'Projekte',
+      value: this.heroMetrics().activeProjects,
+      hint: 'mit Projektnummer',
+      icon: 'workspaces',
+      action: () => {},
+    },
+    {
+      key: 'orders',
+      label: 'Verknüpfte Aufträge',
+      value: this.heroMetrics().linkedOrders,
+      hint: 'mit Zuordnung',
+      icon: 'assignment',
+      action: () => {},
+    },
+  ]);
+  readonly topContactRoles = computed(() => this.computeTopContactRoles());
+  readonly topProjects = computed(() => this.computeTopProjects());
+  readonly topAccountsByOrders = computed(() => this.computeTopAccountsByOrders());
+  readonly insightContext = computed(() => this.computeInsightContext());
+
+  constructor() {
+    const initialSearch = this.loadSearchTerm();
+    this.searchControl.setValue(initialSearch, { emitEvent: false });
+    this.searchTerm.set(initialSearch);
+    this.searchControl.valueChanges
+      .pipe(debounceTime(200), distinctUntilChanged(), takeUntilDestroyed())
+      .subscribe((value) => {
+        this.searchTerm.set(value);
+        this.persistSearchTerm(value);
+      });
+  }
 
   readonly form = this.fb.group({
     name: ['', [Validators.required, Validators.maxLength(120)]],
@@ -119,5 +194,181 @@ export class CustomerListComponent {
       notes: '',
     });
     this.contacts.clear();
+  }
+
+  clearSearch() {
+    if (!this.searchControl.value) {
+      return;
+    }
+    this.searchControl.setValue('');
+  }
+
+  toggleInsightsCollapsed(): void {
+    this.insightsCollapsed.update((current) => {
+      const next = !current;
+      this.persistInsightsCollapsed(next);
+      return next;
+    });
+  }
+
+  private filterCustomers(term: string): Customer[] {
+    const normalized = term.trim().toLowerCase();
+    if (!normalized.length) {
+      return this.customers();
+    }
+    return this.customers().filter((customer) => this.matchesCustomer(customer, normalized));
+  }
+
+  private matchesCustomer(customer: Customer, term: string): boolean {
+    const fields = [
+      customer.id,
+      customer.name,
+      customer.customerNumber,
+      customer.projectNumber,
+      customer.address,
+      customer.notes,
+    ];
+    const contactFields = customer.contacts.flatMap((contact) => [
+      contact.name,
+      contact.role,
+      contact.email,
+      contact.phone,
+    ]);
+    const linkedOrderFields = this.orders()
+      .filter((order) => order.customerId === customer.id)
+      .flatMap((order) => [order.id, order.name]);
+    return [...fields, ...contactFields, ...linkedOrderFields]
+      .filter((value): value is string => !!value)
+      .some((value) => value.toLowerCase().includes(term));
+  }
+
+  private computeHeroMetrics(): CustomerHeroMetrics {
+    const customers = this.customers();
+    const orders = this.orders();
+    const totalContacts = customers.reduce((total, customer) => total + customer.contacts.length, 0);
+    const activeProjects = customers.filter((customer) => (customer.projectNumber ?? '').trim().length > 0).length;
+    const linkedOrders = orders.filter((order) => !!order.customerId).length;
+    return {
+      totalCustomers: customers.length,
+      totalContacts,
+      activeProjects,
+      linkedOrders,
+    };
+  }
+
+  private computeTopContactRoles(): [string, number][] {
+    const stats = new Map<string, number>();
+    this.customers().forEach((customer) =>
+      customer.contacts.forEach((contact) => {
+        const role = contact.role?.trim();
+        if (!role) {
+          return;
+        }
+        stats.set(role, (stats.get(role) ?? 0) + 1);
+      }),
+    );
+    return Array.from(stats.entries())
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'de', { sensitivity: 'base' }))
+      .slice(0, 3);
+  }
+
+  private computeTopProjects(): [string, number][] {
+    const stats = new Map<string, number>();
+    this.customers()
+      .map((customer) => customer.projectNumber?.trim())
+      .filter((project): project is string => !!project)
+      .forEach((project) => stats.set(project, (stats.get(project) ?? 0) + 1));
+    return Array.from(stats.entries())
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'de', { sensitivity: 'base' }))
+      .slice(0, 3);
+  }
+
+  private computeTopAccountsByOrders(): { customer: Customer; count: number }[] {
+    const orderCounts = new Map<string, number>();
+    this.orders().forEach((order) => {
+      if (!order.customerId) {
+        return;
+      }
+      orderCounts.set(order.customerId, (orderCounts.get(order.customerId) ?? 0) + 1);
+    });
+    return this.customers()
+      .map((customer) => ({
+        customer,
+        count: orderCounts.get(customer.id) ?? 0,
+      }))
+      .filter((entry) => entry.count > 0)
+      .sort((a, b) => b.count - a.count || a.customer.name.localeCompare(b.customer.name, 'de', { sensitivity: 'base' }))
+      .slice(0, 3);
+  }
+
+  private computeInsightContext(): InsightContext {
+    const search = this.searchTerm().trim();
+    const metrics = this.heroMetrics();
+    if (search.length) {
+      return {
+        title: 'Suche aktiv',
+        message: `Gefiltert nach "${search}" · ${this.filteredCustomers().length} Treffer.`,
+        hint: 'Suche leeren, um alle Kunden zu sehen.',
+        icon: 'search',
+      };
+    }
+    if (!metrics.totalCustomers) {
+      return {
+        title: 'Noch keine Kunden',
+        message: 'Lege deinen ersten Kunden mit dem Formular an.',
+        hint: 'Kontakte helfen später bei der Zuordnung von Aufträgen.',
+        icon: 'sentiment_satisfied',
+      };
+    }
+    return {
+      title: 'CRM Überblick',
+      message: `${metrics.totalCustomers} Kunden · ${metrics.totalContacts} Kontakte · ${metrics.linkedOrders} Aufträge zugeordnet.`,
+      hint: 'Insights unten zeigen Rollen, Projekte und Accounts mit hoher Aktivität.',
+      icon: 'group_work',
+    };
+  }
+
+  private loadSearchTerm(): string {
+    try {
+      if (typeof window === 'undefined' || !window.localStorage) {
+        return '';
+      }
+      return window.localStorage.getItem(CUSTOMER_SEARCH_STORAGE_KEY) ?? '';
+    } catch {
+      return '';
+    }
+  }
+
+  private persistSearchTerm(value: string): void {
+    try {
+      if (typeof window === 'undefined' || !window.localStorage) {
+        return;
+      }
+      window.localStorage.setItem(CUSTOMER_SEARCH_STORAGE_KEY, value ?? '');
+    } catch {
+      // ignore storage issues
+    }
+  }
+
+  private loadInsightsCollapsed(): boolean {
+    try {
+      if (typeof window === 'undefined' || !window.localStorage) {
+        return false;
+      }
+      return window.localStorage.getItem(CUSTOMER_INSIGHTS_STORAGE_KEY) === 'true';
+    } catch {
+      return false;
+    }
+  }
+
+  private persistInsightsCollapsed(value: boolean): void {
+    try {
+      if (typeof window === 'undefined' || !window.localStorage) {
+        return;
+      }
+      window.localStorage.setItem(CUSTOMER_INSIGHTS_STORAGE_KEY, String(value));
+    } catch {
+      // ignore storage issues
+    }
   }
 }

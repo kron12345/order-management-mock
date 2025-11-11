@@ -23,4 +23,5 @@ export interface Business {
   assignment: BusinessAssignment;
   documents?: BusinessDocument[];
   linkedOrderItemIds?: string[];
+  tags?: string[];
 }

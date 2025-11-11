@@ -40,6 +40,25 @@ export interface OrderFilters {
   linkedBusinessId: string | null;
 }
 
+const ORDER_FILTERS_STORAGE_KEY = 'orders.filters.v1';
+const DEFAULT_ORDER_FILTERS: OrderFilters = {
+  search: '',
+  tag: 'all',
+  timeRange: 'all',
+  trainStatus: 'all',
+  businessStatus: 'all',
+  trainNumber: '',
+  timetableYearLabel: 'all',
+  linkedBusinessId: null,
+};
+
+type OrderSearchTokens = {
+  textTerms: string[];
+  tags: string[];
+  responsibles: string[];
+  customers: string[];
+};
+
 export interface OrderItemOption {
   itemId: string;
   orderId: string;
@@ -203,16 +222,8 @@ export interface SplitOrderItemPayload {
 @Injectable({ providedIn: 'root' })
 export class OrderService {
   private readonly _orders = signal<Order[]>(MOCK_ORDERS);
-  private readonly _filters = signal<OrderFilters>({
-    search: '',
-    tag: 'all',
-    timeRange: 'all',
-    trainStatus: 'all',
-    businessStatus: 'all',
-    trainNumber: '',
-    timetableYearLabel: 'all',
-    linkedBusinessId: null,
-  });
+  private readonly _filters = signal<OrderFilters>({ ...DEFAULT_ORDER_FILTERS });
+  private readonly browserStorage = this.detectStorage();
 
   constructor(
     private readonly trainPlanService: TrainPlanService,
@@ -229,6 +240,10 @@ export class OrderService {
         this.syncTimetableCalendarArtifacts(item.generatedTimetableRefId),
       ),
     );
+    const restoredFilters = this.restoreFilters();
+    if (restoredFilters) {
+      this._filters.set(restoredFilters);
+    }
   }
 
   readonly filters = computed(() => this._filters());
@@ -258,6 +273,7 @@ export class OrderService {
 
   readonly filteredOrders = computed(() => {
     const filters = this._filters();
+    const searchTokens = this.parseSearchTokens(filters.search);
     const itemFiltersActive =
       filters.timeRange !== 'all' ||
       filters.trainStatus !== 'all' ||
@@ -267,7 +283,7 @@ export class OrderService {
       Boolean(filters.linkedBusinessId);
 
     return this._orders().filter((order) => {
-      if (!this.matchesOrder(order, filters)) {
+      if (!this.matchesOrder(order, filters, searchTokens)) {
         return false;
       }
       const filteredItems = this.filterItemsForOrder(order);
@@ -279,11 +295,19 @@ export class OrderService {
   });
 
   setFilter(patch: Partial<OrderFilters>) {
-    this._filters.update((f) => ({ ...f, ...patch }));
+    this._filters.update((f) => {
+      const next = { ...f, ...patch };
+      this.persistFilters(next);
+      return next;
+    });
   }
 
   clearLinkedBusinessFilter(): void {
-    this._filters.update((filters) => ({ ...filters, linkedBusinessId: null }));
+    this._filters.update((filters) => {
+      const next = { ...filters, linkedBusinessId: null };
+      this.persistFilters(next);
+      return next;
+    });
   }
 
   getOrderById(orderId: string): Order | undefined {
@@ -781,19 +805,15 @@ export class OrderService {
     return next;
   }
 
-  private matchesOrder(order: Order, filters: OrderFilters): boolean {
-    const term = filters.search.trim().toLowerCase();
-    if (
-      term &&
-      !(
-        order.name.toLowerCase().includes(term) ||
-        order.id.toLowerCase().includes(term) ||
-        this.matchesCustomerTerm(order, term)
-      )
-    ) {
+  private matchesOrder(
+    order: Order,
+    filters: OrderFilters,
+    tokens: OrderSearchTokens,
+  ): boolean {
+    if (filters.tag !== 'all' && !(order.tags?.includes(filters.tag) ?? false)) {
       return false;
     }
-    if (filters.tag !== 'all' && !(order.tags?.includes(filters.tag) ?? false)) {
+    if (tokens.tags.length && !this.hasAllTags(order.tags ?? [], tokens.tags)) {
       return false;
     }
     if (filters.timetableYearLabel !== 'all') {
@@ -810,7 +830,92 @@ export class OrderService {
         }
       }
     }
+    if (tokens.responsibles.length) {
+      const hasResponsible = order.items.some((item) => {
+        if (!item.responsible) {
+          return false;
+        }
+        const lower = item.responsible.toLowerCase();
+        return tokens.responsibles.some((term) => lower.includes(term));
+      });
+      if (!hasResponsible) {
+        return false;
+      }
+    }
+    if (tokens.customers.length) {
+      const customer = (order.customer ?? '').toLowerCase();
+      const matchesCustomer = tokens.customers.some((term) =>
+        customer.includes(term),
+      );
+      if (!matchesCustomer) {
+        return false;
+      }
+    }
+    if (tokens.textTerms.length) {
+      const haystack = `
+        ${order.name}
+        ${order.id}
+        ${order.customer ?? ''}
+        ${order.comment ?? ''}
+        ${order.tags?.join(' ') ?? ''}
+        ${order.items.map((item) => this.buildItemSearchHaystack(item)).join(' ')}
+      `.toLowerCase();
+      const hasAll = tokens.textTerms.every((term) => haystack.includes(term));
+      if (!hasAll) {
+        return false;
+      }
+    }
     return true;
+  }
+
+  private buildItemSearchHaystack(item: OrderItem): string {
+    const timetable = item.originalTimetable;
+    const timetableStops =
+      timetable?.stops?.map((stop) => stop.locationName).join(' ') ?? '';
+    const timetableVariants =
+      timetable?.variants
+        ?.map(
+          (variant) =>
+            `${variant.variantNumber ?? variant.id ?? ''} ${variant.description ?? ''}`,
+        )
+        .join(' ') ?? '';
+    const timetableModifications =
+      timetable?.modifications
+        ?.map((modification) => `${modification.date} ${modification.description ?? ''}`)
+        .join(' ') ?? '';
+    const validitySegments =
+      item.validity
+        ?.map((segment) => `${segment.startDate} ${segment.endDate}`)
+        .join(' ') ?? '';
+    const timetableYear = this.getItemTimetableYear(item);
+
+    const fields = [
+      item.id,
+      item.name,
+      item.type,
+      item.serviceType,
+      item.responsible,
+      item.deviation,
+      item.fromLocation,
+      item.toLocation,
+      item.start,
+      item.end,
+      timetableYear ?? '',
+      item.timetableYearLabel ?? '',
+      item.timetablePhase ?? '',
+      item.linkedBusinessIds?.join(' ') ?? '',
+      timetable?.refTrainId ?? '',
+      timetable?.trainNumber ?? '',
+      timetable?.title ?? '',
+      timetableStops,
+      timetableVariants,
+      timetableModifications,
+      validitySegments,
+    ];
+
+    return fields
+      .filter((value): value is string => !!value && value.trim().length > 0)
+      .join(' ');
   }
 
   private deriveCalendarForChild(
@@ -1091,6 +1196,48 @@ export class OrderService {
     });
   }
 
+  setItemTimetablePhase(itemId: string, phase: TimetablePhase): void {
+    this.updateItem(itemId, (item) => ({ ...item, timetablePhase: phase }));
+  }
+
+  private detectStorage(): Storage | null {
+    try {
+      if (typeof window === 'undefined' || !window.localStorage) {
+        return null;
+      }
+      return window.localStorage;
+    } catch {
+      return null;
+    }
+  }
+
+  private restoreFilters(): OrderFilters | null {
+    if (!this.browserStorage) {
+      return null;
+    }
+    try {
+      const raw = this.browserStorage.getItem(ORDER_FILTERS_STORAGE_KEY);
+      if (!raw) {
+        return null;
+      }
+      const parsed = JSON.parse(raw) as Partial<OrderFilters>;
+      return { ...DEFAULT_ORDER_FILTERS, ...parsed };
+    } catch {
+      return null;
+    }
+  }
+
+  private persistFilters(filters: OrderFilters): void {
+    if (!this.browserStorage) {
+      return;
+    }
+    try {
+      this.browserStorage.setItem(ORDER_FILTERS_STORAGE_KEY, JSON.stringify(filters));
+    } catch {
+      // ignore persistence issues
+    }
+  }
+
   linkTemplateToItem(templateId: string, itemId: string) {
     this.updateItem(itemId, (item) => {
       if (item.linkedTemplateId === templateId) {
@@ -1255,6 +1402,113 @@ export class OrderService {
         .filter((value): value is string => !!value)
         .some((value) => value.toLowerCase().includes(normalized)),
     );
+  }
+
+  private hasAllTags(source: string[], required: string[]): boolean {
+    if (!required.length) {
+      return true;
+    }
+    return required.every((tag) =>
+      source.some((existing) => existing.toLowerCase() === tag.toLowerCase()),
+    );
+  }
+
+  private parseSearchTokens(search: string): OrderSearchTokens {
+    const tokens: OrderSearchTokens = {
+      textTerms: [],
+      tags: [],
+      responsibles: [],
+      customers: [],
+    };
+    const trimmed = search.trim();
+    if (!trimmed.length) {
+      return tokens;
+    }
+    const segments = this.tokenizeSearch(trimmed);
+    segments.forEach((segment) => {
+      const lower = segment.toLowerCase();
+      if (lower.startsWith('tag:')) {
+        const value = this.stripQuotes(segment.slice(4).trim());
+        if (value) {
+          tokens.tags.push(value);
+        }
+        return;
+      }
+      if (segment.startsWith('#')) {
+        const value = this.stripQuotes(segment.slice(1).trim());
+        if (value) {
+          tokens.tags.push(value);
+        }
+        return;
+      }
+      if (
+        lower.startsWith('resp:') ||
+        lower.startsWith('responsible:') ||
+        segment.startsWith('@')
+      ) {
+        const suffix = segment.startsWith('@')
+          ? segment.slice(1)
+          : segment.slice(segment.indexOf(':') + 1);
+        const value = this.stripQuotes(suffix.trim()).toLowerCase();
+        if (value) {
+          tokens.responsibles.push(value);
+        }
+        return;
+      }
+      if (lower.startsWith('cust:') || lower.startsWith('kunde:')) {
+        const value = this.stripQuotes(
+          segment.slice(segment.indexOf(':') + 1).trim(),
+        ).toLowerCase();
+        if (value) {
+          tokens.customers.push(value);
+        }
+        return;
+      }
+      tokens.textTerms.push(this.stripQuotes(segment).toLowerCase());
+    });
+
+    if (
+      !tokens.textTerms.length &&
+      !tokens.tags.length &&
+      !tokens.responsibles.length &&
+      !tokens.customers.length
+    ) {
+      tokens.textTerms.push(trimmed.toLowerCase());
+    }
+
+    return tokens;
+  }
+
+  private tokenizeSearch(search: string): string[] {
+    const segments: string[] = [];
+    let current = '';
+    let inQuotes = false;
+    for (let i = 0; i < search.length; i += 1) {
+      const char = search[i];
+      if (char === '"') {
+        inQuotes = !inQuotes;
+        continue;
+      }
+      if (/\s/.test(char) && !inQuotes) {
+        if (current.trim().length) {
+          segments.push(current.trim());
+          current = '';
+        }
+        continue;
+      }
+      current += char;
+    }
+    if (current.trim().length) {
+      segments.push(current.trim());
+    }
+    return segments;
+  }
+
+  private stripQuotes(value: string): string {
+    if (value.startsWith('"') && value.endsWith('"') && value.length > 1) {
+      return value.slice(1, -1);
+    }
+    return value;
   }
 
   private resolveCustomerName(

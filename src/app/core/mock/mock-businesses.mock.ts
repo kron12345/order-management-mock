@@ -17,6 +17,7 @@ export const MOCK_BUSINESSES: Business[] = [
       { id: 'BUS-ICE-01-DOC-2', name: 'Splitting-Checkliste.xlsx', url: '#' },
     ],
     linkedOrderItemIds: ['ORD-2030-001-OP-001', 'ORD-2030-001-OP-002'],
+    tags: ['DE-Nord', 'Rollout', 'HighImpact'],
   },
   {
     id: 'BUS-RE-01',
@@ -30,6 +31,7 @@ export const MOCK_BUSINESSES: Business[] = [
       name: 'Luca Nef',
     },
     linkedOrderItemIds: ['ORD-2030-002-OP-001'],
+    tags: ['CH', 'Pitch', 'Premiumkunde'],
   },
   {
     id: 'BUS-CARGO-01',
@@ -43,5 +45,6 @@ export const MOCK_BUSINESSES: Business[] = [
       name: 'CargoNet Dispatch',
     },
     linkedOrderItemIds: ['ORD-2030-003-OP-001'],
+    tags: ['Basel', 'Nacht', 'Escalation'],
   },
 ];

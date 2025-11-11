@@ -8,6 +8,7 @@
         </span>
         <span class="name">{{ order.name }}</span>
       </div>
+      @let health = orderHealth();
       @if (order.customer || order.tags?.length || order.timetableYearLabel) {
         <div class="meta">
           @if (order.customer) {
@@ -44,6 +45,63 @@
           }
         </div>
       }
+
+      <div class="order-health">
+        <div class="order-health__summary">
+          <span class="signal-badge" [ngClass]="'signal-badge--' + health.tone">
+            <mat-icon>{{ health.icon }}</mat-icon>
+            {{ health.label }}
+          </span>
+          <span class="order-health__caption">{{ health.caption }}</span>
+        </div>
+        <div class="order-health__mini-stats">
+          <div class="mini-stat" matTooltip="Positionen starten in den nächsten 7 Tagen">
+            <span class="mini-stat__value">{{ health.upcoming }}</span>
+            <span class="mini-stat__label">Demnächst</span>
+          </div>
+          <div class="mini-stat" matTooltip="Positionen mit Abweichung">
+            <span class="mini-stat__value">{{ health.attention }}</span>
+            <span class="mini-stat__label">Abweichungen</span>
+          </div>
+          <div class="mini-stat" matTooltip="Positionen im Filter">
+            <span class="mini-stat__value">{{ health.total }}</span>
+            <span class="mini-stat__label">Positionen</span>
+          </div>
+        </div>
+        <div class="order-health__timeline" aria-label="Zeitlinie">
+          <div class="timeline-track">
+            @if (health.pastPercent > 0) {
+              <span
+                class="timeline-track__segment timeline-track__segment--past"
+                [style.flex]="'0 0 ' + health.pastPercent + '%'"
+                matTooltip="{{ health.active }} aktiv"
+                matTooltipPosition="above"
+              ></span>
+            }
+            @if (health.upcomingPercent > 0) {
+              <span
+                class="timeline-track__segment timeline-track__segment--upcoming"
+                [style.flex]="'0 0 ' + health.upcomingPercent + '%'"
+                matTooltip="{{ health.upcoming }} bevorstehend"
+                matTooltipPosition="above"
+              ></span>
+            }
+            @if (health.idlePercent > 0) {
+              <span
+                class="timeline-track__segment timeline-track__segment--idle"
+                [style.flex]="'0 0 ' + health.idlePercent + '%'"
+                matTooltip="{{ health.idle }} offen"
+                matTooltipPosition="above"
+              ></span>
+            }
+          </div>
+          <div class="timeline-legend">
+            <span><span class="dot dot--past"></span> Aktiv</span>
+            <span><span class="dot dot--upcoming"></span> Bevorstehend</span>
+            <span><span class="dot dot--idle"></span> Offen</span>
+          </div>
+        </div>
+      </div>
 
       @if (customerDetails(); as customer) {
         <div class="customer-panel">
@@ -172,26 +230,38 @@
     </div>
 
     <div class="right">
-      <button
-        mat-icon-button
-        [class.active]="selectionMode()"
-        (click)="toggleSelectionMode($event)"
-        matTooltip="Mehrfachauswahl"
-      >
-        <mat-icon>checklist</mat-icon>
-      </button>
-      <button
-        mat-stroked-button
-        color="primary"
-        (click)="openPositionDialog($event)"
-        matTooltip="Auftragsposition hinzufügen"
-      >
-        <mat-icon>add</mat-icon>
-        Position
-      </button>
-      <button mat-icon-button matTooltip="Optionen" (click)="$event.stopPropagation()">
-        <mat-icon>more_vert</mat-icon>
-      </button>
+      <div class="right__primary">
+        <button
+          mat-icon-button
+          [class.active]="selectionMode()"
+          (click)="toggleSelectionMode($event)"
+          matTooltip="Mehrfachauswahl"
+        >
+          <mat-icon>checklist</mat-icon>
+        </button>
+        <button
+          mat-stroked-button
+          color="primary"
+          (click)="openPositionDialog($event)"
+          matTooltip="Auftragsposition hinzufügen"
+        >
+          <mat-icon>add</mat-icon>
+          Position
+        </button>
+        <button mat-icon-button matTooltip="Optionen" (click)="$event.stopPropagation()">
+          <mat-icon>more_vert</mat-icon>
+        </button>
+      </div>
+      <div class="right__quick-actions">
+        <button mat-button type="button" (click)="openLinkBusinessDialog($event)">
+          <mat-icon>hub</mat-icon>
+          Geschäft verknüpfen
+        </button>
+        <button mat-button type="button" (click)="openStatusUpdateDialog($event)">
+          <mat-icon>flag</mat-icon>
+          Status aktualisieren
+        </button>
+      </div>
     </div>
   </div>
 
