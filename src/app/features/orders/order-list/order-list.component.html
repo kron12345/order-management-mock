@@ -33,6 +33,13 @@
     </div>
   </section>
 
+  @if (templatePanelOpen()) {
+    <app-order-template-recommendation
+      [filters]="filters()"
+      (close)="toggleTemplatePanel(false)"
+    />
+  }
+
   <section class="orders-insights" aria-label="Auftrags-Insights">
     <div class="insights-header">
       <div>
@@ -238,38 +245,50 @@
       </div>
 
       <div class="filter-shelf__row filter-shelf__row--secondary">
-        <div class="filter-pills">
-          @if (searchControl.value.trim()) {
-            <button type="button" class="filter-pill" (click)="searchControl.setValue('')">
-              <mat-icon>search</mat-icon>
-              <span>Suche</span>
-              <strong>"{{ searchControl.value.trim() }}"</strong>
-              <span class="filter-pill__count">{{ orders().length }} Treffer</span>
-              <mat-icon>close</mat-icon>
-            </button>
-          }
-
-          @if (filters().tag !== 'all') {
-            <button type="button" class="filter-pill" (click)="clearTagFilter()">
-              <mat-icon>sell</mat-icon>
-              <span>Tag</span>
-              <strong>{{ formatTagLabel(filters().tag) }}</strong>
-              <span class="filter-pill__count">
-                {{ tagUsageCount(filters().tag) }} Aufträge
+        <div class="filter-shelf__active">
+          <div class="filter-shelf__active-header">
+            <div class="filter-shelf__active-title">
+              <span>Aktive Filter</span>
+              <span class="filter-count">
+                <mat-icon>list_alt</mat-icon>
+                {{ orders().length }} Ergebnisse
               </span>
-              <mat-icon>close</mat-icon>
-            </button>
-          }
+            </div>
+          </div>
 
-          @if (
-            !searchControl.value.trim() &&
-            filters().tag === 'all'
-          ) {
-            <span class="filter-pill filter-pill--empty">
-              <mat-icon>radio_button_unchecked</mat-icon>
-              Keine Filter aktiv
-            </span>
-          }
+          <div class="filter-pills">
+            @if (searchControl.value.trim()) {
+              <button type="button" class="filter-pill" (click)="searchControl.setValue('')">
+                <mat-icon>search</mat-icon>
+                <span>Suche</span>
+                <strong>"{{ searchControl.value.trim() }}"</strong>
+                <span class="filter-pill__count">{{ orders().length }} Treffer</span>
+                <mat-icon>close</mat-icon>
+              </button>
+            }
+
+            @if (filters().tag !== 'all') {
+              <button type="button" class="filter-pill" (click)="clearTagFilter()">
+                <mat-icon>sell</mat-icon>
+                <span>Tag</span>
+                <strong>{{ formatTagLabel(filters().tag) }}</strong>
+                <span class="filter-pill__count">
+                  {{ tagUsageCount(filters().tag) }} Aufträge
+                </span>
+                <mat-icon>close</mat-icon>
+              </button>
+            }
+
+            @if (
+              !searchControl.value.trim() &&
+              filters().tag === 'all'
+            ) {
+              <span class="filter-pill filter-pill--empty">
+                <mat-icon>radio_button_unchecked</mat-icon>
+                Keine Filter aktiv
+              </span>
+            }
+          </div>
         </div>
 
         <div class="filter-tags">
@@ -298,7 +317,73 @@
           </div>
         </div>
 
-        <app-filter-bar class="orders-filter-bar" />
+        <button
+          mat-stroked-button
+          type="button"
+          class="template-panel-toggle"
+          (click)="toggleTemplatePanel()"
+        >
+          <mat-icon>workspace_premium</mat-icon>
+          Vorlagen-Empfehlungen
+        </button>
+
+        <div class="orders-filter-stack">
+          <app-filter-bar
+            class="orders-filter-bar"
+            (savePreset)="saveCurrentFilterPreset()"
+          />
+
+          @if (savedFilterPresets().length) {
+            <div class="saved-presets saved-presets--inline">
+              <span>Gespeicherte Ansichten</span>
+              <div class="saved-presets__list">
+                @for (preset of savedFilterPresets(); track preset.id) {
+                  <div
+                    class="preset-chip"
+                    [class.preset-chip--active]="activePreset() === preset.id"
+                  >
+                    <button type="button" class="preset-pill" (click)="applyFilterPreset(preset)">
+                      <mat-icon>layers</mat-icon>
+                      <span>{{ preset.name }}</span>
+                      @if (activePreset() === preset.id) {
+                        <span class="preset-active">
+                          <mat-icon>star</mat-icon>
+                          Aktiv
+                        </span>
+                      }
+                    </button>
+                    <button
+                      type="button"
+                      class="preset-action"
+                      matTooltip="Duplizieren"
+                      (click)="duplicateFilterPreset(preset)"
+                      aria-label="Filteransicht duplizieren"
+                    >
+                      <mat-icon>content_copy</mat-icon>
+                    </button>
+                    <button
+                      type="button"
+                      class="preset-action"
+                      matTooltip="Umbenennen"
+                      (click)="renameFilterPreset(preset)"
+                      aria-label="Filteransicht umbenennen"
+                    >
+                      <mat-icon>edit</mat-icon>
+                    </button>
+                    <button
+                      type="button"
+                      class="preset-remove"
+                      (click)="removeFilterPreset(preset.id)"
+                      aria-label="Filteransicht entfernen"
+                    >
+                      <mat-icon>close</mat-icon>
+                    </button>
+                  </div>
+                }
+              </div>
+            </div>
+          }
+        </div>
       </div>
     </div>
   </section>

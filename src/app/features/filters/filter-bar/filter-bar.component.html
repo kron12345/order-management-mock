@@ -80,7 +80,12 @@
 
   <span class="spacer"></span>
 
-  <button mat-stroked-button (click)="onReset()">Zurücksetzen</button>
+  <div class="filters-actions">
+    <button mat-stroked-button (click)="onReset()">Zurücksetzen</button>
+    <button mat-stroked-button color="primary" (click)="onSavePreset()">
+      Ansicht speichern
+    </button>
+  </div>
 </div>
 
 @if (store.filters().linkedBusinessId) {

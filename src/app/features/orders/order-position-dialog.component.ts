@@ -33,6 +33,8 @@ import {
 import { TrafficPeriodVariantType } from '../../core/models/traffic-period.model';
 import { TimetableYearService } from '../../core/services/timetable-year.service';
 import { ScheduleTemplate, ScheduleTemplateStop } from '../../core/models/schedule-template.model';
+import { BusinessTemplateService } from '../../core/services/business-template.service';
+import { BusinessService } from '../../core/services/business.service';
 import { ScheduleTemplateCreateDialogComponent } from '../schedule-templates/schedule-template-create-dialog.component';
 import {
   OrderItemGeneralFieldsComponent,
@@ -53,6 +55,8 @@ import {
 } from './order-plan-preview/plan-preview.models';
 import { OrderImportFiltersComponent } from './order-import-filters/order-import-filters.component';
 import { ReferenceCalendarInlineFormComponent } from './reference-calendar-inline-form/reference-calendar-inline-form.component';
+import { OrderItem } from '../../core/models/order-item.model';
+import { BusinessTemplateAutomation } from '../../core/models/business-template.model';
 
 interface OrderPositionDialogData {
   order: Order;
@@ -83,6 +87,12 @@ function nonEmptyDates(control: AbstractControl<string[] | null>): ValidationErr
   styleUrl: './order-position-dialog.component.scss',
 })
 export class OrderPositionDialogComponent {
+  private readonly tabModes: ReadonlyArray<'service' | 'plan' | 'manualPlan' | 'import'> = [
+    'service',
+    'plan',
+    'manualPlan',
+    'import',
+  ];
   private readonly dialogRef = inject(MatDialogRef<OrderPositionDialogComponent>);
   private readonly data = inject<OrderPositionDialogData>(MAT_DIALOG_DATA);
   private readonly fb = inject(FormBuilder);
@@ -90,6 +100,8 @@ export class OrderPositionDialogComponent {
   private readonly templateService = inject(ScheduleTemplateService);
   private readonly trafficPeriodService = inject(TrafficPeriodService);
   private readonly timetableYearService = inject(TimetableYearService);
+  private readonly businessTemplateService = inject(BusinessTemplateService);
+  private readonly businessService = inject(BusinessService);
   private readonly dialog = inject(MatDialog);
 
   readonly modeControl = new FormControl<'service' | 'plan' | 'manualPlan' | 'import'>(
@@ -162,11 +174,25 @@ export class OrderPositionDialogComponent {
     responsible: [''],
   });
 
+  readonly businessForm = this.fb.group({
+    mode: this.fb.nonNullable.control<'none' | 'existing' | 'template'>('none'),
+    existingBusinessId: [''],
+    templateId: [''],
+    customTitle: ['', [Validators.maxLength(120)]],
+    note: ['', [Validators.maxLength(400)]],
+    targetDate: [''],
+    enableAutomations: this.fb.nonNullable.control(true),
+    automationRuleIds: this.fb.nonNullable.control<string[]>([]),
+  });
+
   readonly templates = computed(() => this.templateService.templates());
   readonly taktTemplates = computed(() =>
     this.templates().filter((template) => !!template.recurrence),
   );
   readonly trafficPeriods = computed(() => this.trafficPeriodService.periods());
+  readonly businessTemplates = this.businessTemplateService.templates;
+  readonly businessOptions = computed(() => this.businessService.businesses());
+  readonly businessAutomations = this.businessTemplateService.automationRules;
   readonly mode = signal<'service' | 'plan' | 'manualPlan' | 'import'>(
     this.modeControl.value,
   );
@@ -379,6 +405,46 @@ export class OrderPositionDialogComponent {
         });
       });
 
+    this.businessForm.controls.mode.valueChanges
+      .pipe(takeUntilDestroyed())
+      .subscribe((mode) => {
+        const existingControl = this.businessForm.controls.existingBusinessId;
+        const templateControl = this.businessForm.controls.templateId;
+
+        if (mode === 'existing') {
+          existingControl.addValidators(Validators.required);
+        } else {
+          existingControl.removeValidators(Validators.required);
+          existingControl.setValue('', { emitEvent: false });
+        }
+        existingControl.updateValueAndValidity({ emitEvent: false });
+
+        if (mode === 'template') {
+          templateControl.addValidators(Validators.required);
+        } else {
+          templateControl.removeValidators(Validators.required);
+          templateControl.setValue('', { emitEvent: false });
+          this.businessForm.patchValue(
+            {
+              customTitle: '',
+              note: '',
+              targetDate: '',
+              automationRuleIds: [],
+              enableAutomations: true,
+            },
+            { emitEvent: false },
+          );
+        }
+        templateControl.updateValueAndValidity({ emitEvent: false });
+        this.errorMessage.set(null);
+      });
+
+    this.businessForm.controls.templateId.valueChanges
+      .pipe(takeUntilDestroyed())
+      .subscribe(() => {
+        this.businessForm.controls.automationRuleIds.setValue([], { emitEvent: false });
+        this.errorMessage.set(null);
+      });
   }
 
   onImportFiltersReset() {
@@ -400,6 +466,18 @@ export class OrderPositionDialogComponent {
       minDeviation: 0,
       deviationSort: 'none',
     });
+  }
+
+  modeIndex(): number {
+    const idx = this.tabModes.indexOf(this.modeControl.value);
+    return idx === -1 ? 0 : idx;
+  }
+
+  onModeTabChange(index: number) {
+    const nextMode = this.tabModes[index] ?? 'service';
+    if (this.modeControl.value !== nextMode) {
+      this.modeControl.setValue(nextMode);
+    }
   }
 
   openTemplateCreateDialog() {
@@ -533,8 +611,13 @@ export class OrderPositionDialogComponent {
       return;
     }
 
+    if (!this.ensureBusinessSelectionValid()) {
+      return;
+    }
+
+    const createdItems: OrderItem[] = [];
     try {
-      selectedDates.forEach((date) => {
+      for (const date of selectedDates) {
         const start = this.buildIsoFromMinutes(date, startMinutes);
         const end = this.buildIsoFromMinutes(date, endMinutes, endOffsetDays);
         if (!start || !end) {
@@ -565,11 +648,16 @@ export class OrderPositionDialogComponent {
           name: value.name?.trim() || undefined,
           timetableYearLabel: value.calendarYear ?? undefined,
         };
-        this.orderService.addServiceOrderItem(payload);
-      });
+        const item = this.orderService.addServiceOrderItem(payload);
+        createdItems.push(item);
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unbekannter Fehler';
       this.errorMessage.set(message);
+      return;
+    }
+
+    if (!this.applyBusinessLink(createdItems)) {
       return;
     }
 
@@ -597,6 +685,10 @@ export class OrderPositionDialogComponent {
     const trainNumber = value.trainNumber?.trim();
     if (!trainNumber) {
       this.errorMessage.set('Bitte eine Zugnummer angeben.');
+      return;
+    }
+
+    if (!this.ensureBusinessSelectionValid()) {
       return;
     }
 
@@ -638,7 +730,10 @@ export class OrderPositionDialogComponent {
         daysBitmap: this.buildDaysBitmapFromDates(sortedDates),
         timetableYearLabel: yearInfo.label,
       };
-      this.orderService.addManualPlanOrderItem(payload);
+      const item = this.orderService.addManualPlanOrderItem(payload);
+      if (!this.applyBusinessLink([item])) {
+        return;
+      }
       this.dialogRef.close(true);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unbekannter Fehler';
@@ -656,6 +751,10 @@ export class OrderPositionDialogComponent {
     const items = trains.filter((train) => selected.has(train.id));
     if (!items.length) {
       this.errorMessage.set('Bitte mindestens einen Zug auswählen.');
+      return;
+    }
+
+    if (!this.ensureBusinessSelectionValid()) {
       return;
     }
 
@@ -707,6 +806,7 @@ export class OrderPositionDialogComponent {
       const createdItemIds = new Map<string, string>();
       const groupRootIds = new Map<string, string>();
 
+      const createdItems: OrderItem[] = [];
       orderedPayloads.forEach(({ train, trafficPeriodId }) => {
         let parentItemId: string | undefined;
         if (train.variantOf) {
@@ -727,7 +827,12 @@ export class OrderPositionDialogComponent {
         if (!train.variantOf) {
           groupRootIds.set(train.groupId ?? train.id, item.id);
         }
+        createdItems.push(item);
       });
+
+      if (!this.applyBusinessLink(createdItems)) {
+        return;
+      }
 
       this.dialogRef.close(true);
     } catch (error) {
@@ -799,6 +904,10 @@ export class OrderPositionDialogComponent {
       trainNumberInterval = Math.floor(intervalRaw);
     }
 
+    if (!this.ensureBusinessSelectionValid()) {
+      return;
+    }
+
     const planPayload: CreatePlanOrderItemsPayload = {
       orderId: this.order.id,
       templateId: value.templateId!,
@@ -821,6 +930,9 @@ export class OrderPositionDialogComponent {
       const items = this.orderService.addPlanOrderItems(planPayload);
       if (!items.length) {
         this.errorMessage.set('Es konnten keine Auftragspositionen erzeugt werden.');
+        return;
+      }
+      if (!this.applyBusinessLink(items)) {
         return;
       }
       this.dialogRef.close(true);
@@ -2258,6 +2370,92 @@ export class OrderPositionDialogComponent {
     }
     baseTrain.calendarVariantType = 'series';
     return trains;
+  }
+
+  businessAutomationsForSelection(): BusinessTemplateAutomation[] {
+    const templateId = this.businessForm.controls.templateId.value;
+    if (!templateId) {
+      return [];
+    }
+    return this.businessAutomations()
+      .filter((rule) => rule.templateId === templateId)
+      .sort((a, b) => a.title.localeCompare(b.title, 'de', { sensitivity: 'base' }));
+  }
+
+  onAutomationToggle(ruleId: string, checked: boolean) {
+    const control = this.businessForm.controls.automationRuleIds;
+    const current = new Set(control.value ?? []);
+    if (checked) {
+      current.add(ruleId);
+    } else {
+      current.delete(ruleId);
+    }
+    control.setValue(Array.from(current), { emitEvent: false });
+  }
+
+  private ensureBusinessSelectionValid(): boolean {
+    const mode = this.businessForm.controls.mode.value;
+    if (mode === 'existing' && !this.businessForm.controls.existingBusinessId.value) {
+      this.errorMessage.set('Bitte ein bestehendes Geschäft auswählen oder Modus anpassen.');
+      this.businessForm.controls.existingBusinessId.markAsTouched();
+      return false;
+    }
+    if (mode === 'template' && !this.businessForm.controls.templateId.value) {
+      this.errorMessage.set('Bitte eine Geschäftsvorlage auswählen.');
+      this.businessForm.controls.templateId.markAsTouched();
+      return false;
+    }
+    return true;
+  }
+
+  private applyBusinessLink(items: OrderItem[]): boolean {
+    if (!items.length) {
+      return true;
+    }
+    const mode = this.businessForm.controls.mode.value;
+    if (mode === 'none') {
+      return true;
+    }
+    if (mode === 'existing') {
+      const businessId = this.businessForm.controls.existingBusinessId.value?.trim();
+      if (!businessId) {
+        return true;
+      }
+      items.forEach((item) => this.orderService.linkBusinessToItem(businessId, item.id));
+      this.errorMessage.set(null);
+      return true;
+    }
+    const templateId = this.businessForm.controls.templateId.value?.trim();
+    if (!templateId) {
+      return true;
+    }
+    try {
+      const targetDateRaw = this.businessForm.controls.targetDate.value?.trim();
+      const targetDate = targetDateRaw ? new Date(`${targetDateRaw}T00:00:00`) : undefined;
+      if (targetDate && Number.isNaN(targetDate.getTime())) {
+        throw new Error('Das Zieldatum für das Geschäft ist ungültig.');
+      }
+      const business = this.businessTemplateService.instantiateTemplate(templateId, {
+        targetDate,
+        note: this.businessForm.controls.note.value?.trim() || undefined,
+        customTitle: this.businessForm.controls.customTitle.value?.trim() || undefined,
+        linkedOrderItemIds: items.map((item) => item.id),
+      });
+      if (this.businessForm.controls.enableAutomations.value) {
+        const automationIds = this.businessForm.controls.automationRuleIds.value ?? [];
+        this.businessTemplateService.triggerAutomationsForTemplate(templateId, business.id, {
+          automationIds: automationIds.length ? automationIds : undefined,
+          linkedOrderItemIds: items.map((item) => item.id),
+        });
+      }
+      this.errorMessage.set(null);
+      return true;
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Geschäftsvorlage konnte nicht instanziiert werden.';
+      this.errorMessage.set(message);
+      return false;
+    }
   }
 
   private buildArchiveGroupTags(groupId: string, label?: string, origin?: string): string[] {

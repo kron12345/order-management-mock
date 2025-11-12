@@ -12,7 +12,6 @@ import { MatCardModule } from '@angular/material/card';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { MatSelectModule } from '@angular/material/select';
-import { MatExpansionModule } from '@angular/material/expansion';
 import { FormsModule, ReactiveFormsModule, FormBuilder } from '@angular/forms';
 import { GanttComponent } from '../../gantt/gantt.component';
 import { GanttWindowLauncherComponent } from './components/gantt-window-launcher.component';
@@ -37,6 +36,8 @@ import { ActivatedRoute, Router } from '@angular/router';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { TimetableYearService } from '../../core/services/timetable-year.service';
 import { TimetableYearBounds } from '../../core/models/timetable-year.model';
+import { PlanWeekTemplateStoreService } from './stores/plan-week-template.store';
+import { PlanWeekActivity } from '../../models/planning-template';
 
 interface PlanningBoard {
   id: string;
@@ -155,7 +156,6 @@ type ActivityTypePickerGroup = {
     DragDropModule,
     GanttComponent,
     GanttWindowLauncherComponent,
-    MatExpansionModule,
     PlanWeekTemplateComponent,
   ],
   templateUrl: './planning-dashboard.component.html',
@@ -168,6 +168,7 @@ export class PlanningDashboardComponent {
   private readonly fb = inject(FormBuilder);
   private readonly timetableYearService = inject(TimetableYearService);
   private readonly managedTimetableYearBounds = this.timetableYearService.managedYearBoundsSignal();
+  private readonly templateStore = inject(PlanWeekTemplateStoreService);
 
   readonly stages = PLANNING_STAGE_METAS;
   private readonly stageMetaMap: Record<PlanningStageId, PlanningStageMeta> = this.stages.reduce(
@@ -186,8 +187,11 @@ export class PlanningDashboardComponent {
     dispatch: this.data.stageResources('dispatch'),
   };
 
+  private readonly baseTimelineFallback = this.data.stageTimelineRange('base');
+  private readonly templateActivitySignal = computed(() => this.mapTemplateActivities());
+
   private readonly stageActivitySignals: Record<PlanningStageId, Signal<Activity[]>> = {
-    base: this.data.stageActivities('base'),
+    base: this.templateActivitySignal,
     operations: this.data.stageActivities('operations'),
     dispatch: this.data.stageActivities('dispatch'),
   };
@@ -198,8 +202,10 @@ export class PlanningDashboardComponent {
     dispatch: computed(() => this.normalizeActivityList(this.stageActivitySignals.dispatch())),
   };
 
+  protected readonly isBasePlanningPanelOpen = signal(false);
+
   private readonly stageTimelineSignals = {
-    base: this.data.stageTimelineRange('base'),
+    base: computed(() => this.computeBaseTimelineRange()),
     operations: this.data.stageTimelineRange('operations'),
     dispatch: this.data.stageTimelineRange('dispatch'),
   } as const;
@@ -401,6 +407,15 @@ export class PlanningDashboardComponent {
       },
       { allowSignalWrites: true },
     );
+
+    effect(
+      () => {
+        if (this.activeStageSignal() !== 'base' && this.isBasePlanningPanelOpen()) {
+          this.isBasePlanningPanelOpen.set(false);
+        }
+      },
+      { allowSignalWrites: true },
+    );
   }
 
   protected readonly activeStageId = computed(() => this.activeStageSignal());
@@ -438,6 +453,9 @@ export class PlanningDashboardComponent {
 
   protected readonly timetableYearSummary = computed(() =>
     this.formatTimetableYearSummary(this.activeStageSignal()),
+  );
+  protected readonly basePlanningYearRange = computed(() =>
+    this.computeStageYearRange('base'),
   );
 
   protected readonly boards = computed(
@@ -672,6 +690,10 @@ export class PlanningDashboardComponent {
     if (!definition) {
       return;
     }
+    if (stage === 'base') {
+      this.handleBaseActivityCreate(event, definition);
+      return;
+    }
     const endDate =
       definition.timeMode === 'duration'
         ? new Date(event.start.getTime() + definition.defaultDurationMinutes * 60 * 1000)
@@ -739,6 +761,10 @@ export class PlanningDashboardComponent {
     end: Date | null;
   }): void {
     const stage = this.activeStageSignal();
+    if (stage === 'base') {
+      this.handleBaseActivityReposition(event);
+      return;
+    }
     const targetId = event.targetResourceId;
     this.updateStageActivities(stage, (activities) =>
       activities.map((activity) => {
@@ -826,7 +852,13 @@ export class PlanningDashboardComponent {
         updated.remark = undefined;
       }
     }
-    this.replaceActivity(this.applyActivityTypeConstraints(updated));
+    const normalized = this.applyActivityTypeConstraints(updated);
+    if (this.activeStageSignal() === 'base') {
+      this.saveTemplateActivity(normalized);
+      this.selectedActivityState.set({ activity: normalized, resource: selection.resource });
+      return;
+    }
+    this.replaceActivity(normalized);
   }
 
   protected deleteSelectedActivity(): void {
@@ -835,6 +867,14 @@ export class PlanningDashboardComponent {
       return;
     }
     const stage = this.activeStageSignal();
+    if (stage === 'base') {
+      const templateId = this.templateStore.selectedTemplate()?.id;
+      if (templateId) {
+        this.templateStore.deleteActivity(templateId, selection.activity.id);
+      }
+      this.selectedActivityState.set(null);
+      return;
+    }
     this.updateStageActivities(stage, (activities) =>
       activities.filter((activity) => activity.id !== selection.activity.id),
     );
@@ -1686,6 +1726,35 @@ export class PlanningDashboardComponent {
     };
   }
 
+  private computeBaseTimelineRange(): PlanningTimelineRange {
+    const template = this.templateStore.selectedTemplate();
+    if (!template?.baseWeekStartIso) {
+      const fallback = this.baseTimelineFallback();
+      return { start: new Date(fallback.start), end: new Date(fallback.end) };
+    }
+    const start = new Date(`${template.baseWeekStartIso}T00:00:00Z`);
+    const end = new Date(start.getTime());
+    end.setUTCDate(end.getUTCDate() + 7);
+    return { start, end };
+  }
+
+  private computeStageYearRange(
+    stage: PlanningStageId,
+  ): { startIso: string; endIso: string } | null {
+    const selected = this.selectedYearBounds(stage);
+    const source =
+      selected.length > 0 ? selected : [this.timetableYearService.defaultYearBounds()];
+    if (!source.length) {
+      return null;
+    }
+    const minStart = Math.min(...source.map((year) => year.start.getTime()));
+    const maxEnd = Math.max(...source.map((year) => year.end.getTime()));
+    return {
+      startIso: this.toIsoDate(new Date(minStart)),
+      endIso: this.toIsoDate(new Date(maxEnd)),
+    };
+  }
+
   private selectedYearBounds(stage: PlanningStageId): TimetableYearBounds[] {
     const selection = Array.from(this.stageYearSelectionState()[stage] ?? []);
     if (!selection.length) {
@@ -1775,6 +1844,129 @@ export class PlanningDashboardComponent {
       }
     }
     return true;
+  }
+
+  private toIsoDate(date: Date): string {
+    return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()))
+      .toISOString()
+      .slice(0, 10);
+  }
+
+  private mapTemplateActivities(): Activity[] {
+    const plans = this.templateStore.selectedActivities();
+    if (!plans.length) {
+      return [];
+    }
+    const resources = this.stageResourceSignals.base();
+    return this.normalizeActivityList(plans.map((item) => this.planActivityToActivity(item, resources)));
+  }
+
+  private planActivityToActivity(plan: PlanWeekActivity, resources: Resource[]): Activity {
+    const resource = resources.find((entry) => entry.id === plan.resourceId) ?? null;
+    const activity: Activity = {
+      id: plan.id,
+      resourceId: plan.resourceId,
+      title: plan.title,
+      start: plan.startIso,
+      end: plan.endIso ?? plan.startIso,
+      type: plan.type,
+      remark: plan.remark ?? null,
+      participantResourceIds: [plan.resourceId],
+      attributes: plan.attributes,
+      serviceCategory: resource ? this.resolveServiceCategory(resource) ?? undefined : undefined,
+    };
+    return this.applyActivityTypeConstraints(activity);
+  }
+
+  private activityToPlanActivity(activity: Activity, templateId: string): PlanWeekActivity {
+    return {
+      id: activity.id,
+      templateId,
+      resourceId: activity.resourceId,
+      title: activity.title,
+      startIso: activity.start,
+      endIso: activity.end ?? activity.start,
+      type: activity.type ?? undefined,
+      remark: activity.remark ?? undefined,
+      attributes: activity.attributes,
+    };
+  }
+
+  private handleBaseActivityCreate(
+    event: { resource: Resource; start: Date },
+    definition: ActivityTypeDefinition,
+  ): void {
+    const templateId = this.templateStore.selectedTemplate()?.id;
+    if (!templateId) {
+      return;
+    }
+    const endDate =
+      definition.timeMode === 'duration'
+        ? new Date(event.start.getTime() + definition.defaultDurationMinutes * 60 * 1000)
+        : null;
+    const newActivity: Activity = {
+      id: this.generateActivityId(definition.id),
+      resourceId: event.resource.id,
+      title: this.buildActivityTitle(definition),
+      start: event.start.toISOString(),
+      end: endDate ? endDate.toISOString() : null,
+      type: definition.id,
+      participantResourceIds: [event.resource.id],
+      serviceCategory: this.resolveServiceCategory(event.resource),
+    };
+    if (this.definitionHasField(definition, 'from')) {
+      newActivity.from = '';
+    }
+    if (this.definitionHasField(definition, 'to')) {
+      newActivity.to = '';
+    }
+    if (this.definitionHasField(definition, 'remark')) {
+      newActivity.remark = '';
+    }
+    const normalized = this.applyActivityTypeConstraints(newActivity);
+    this.saveTemplateActivity(normalized);
+    this.selectedActivityState.set({ activity: normalized, resource: event.resource });
+  }
+
+  private handleBaseActivityReposition(event: {
+    activity: Activity;
+    targetResourceId: string;
+    start: Date;
+    end: Date | null;
+  }): void {
+    const updated: Activity = {
+      ...event.activity,
+      resourceId: event.targetResourceId,
+      start: event.start.toISOString(),
+      end: event.end ? event.end.toISOString() : null,
+      participantResourceIds: [event.targetResourceId],
+    };
+    const normalized = this.applyActivityTypeConstraints(updated);
+    this.saveTemplateActivity(normalized);
+    const resource =
+      this.stageResourceSignals.base().find((res) => res.id === event.targetResourceId) ??
+      this.selectedActivityState()?.resource ??
+      null;
+    if (resource) {
+      this.selectedActivityState.set({ activity: normalized, resource });
+    }
+  }
+
+  private saveTemplateActivity(activity: Activity): void {
+    const templateId = this.templateStore.selectedTemplate()?.id;
+    if (!templateId) {
+      return;
+    }
+    const payload = this.activityToPlanActivity(activity, templateId);
+    this.templateStore.saveActivity(templateId, payload);
+  }
+
+  protected toggleBasePlanningPanel(): void {
+    this.isBasePlanningPanelOpen.update((isOpen) => !isOpen);
+  }
+
+  protected closeBasePlanningPanel(): void {
+    this.isBasePlanningPanelOpen.set(false);
   }
 
   private setActiveStage(stage: PlanningStageId, updateUrl: boolean): void {

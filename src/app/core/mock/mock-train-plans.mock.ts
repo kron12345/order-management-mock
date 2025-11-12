@@ -7,7 +7,12 @@ export const MOCK_TRAIN_PLANS: TrainPlan[] = [
     trainNumber: 'ICE 1501',
     pathRequestId: 'PR-DE.DB-2030-1501',
     pathId: 'PATH-DE-2030-ICE-001',
-    caseReferenceId: 'CR-ICE-1501',
+    caseReference: {
+      id: 'CR-ICE-1501',
+      marketProduct: 'regeltrasse',
+      customerReference: 'Projekt Rhein',
+      description: 'Regeltrasse ICE 1501 Berlin–Köln',
+    },
     status: 'offered',
     responsibleRu: 'DB Fernverkehr AG',
     calendar: {

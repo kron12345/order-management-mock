@@ -77,6 +77,30 @@ export const MOCK_SCHEDULE_TEMPLATES: ScheduleTemplate[] = [
         activities: ['0001'],
       },
     ],
+    composition: {
+      base: [
+        {
+          type: 'BR 412 (ICE 4)',
+          count: 1,
+          label: 'Köln-Teil',
+          note: '13-teilig',
+        },
+        {
+          type: 'BR 407 (Velaro D)',
+          count: 1,
+          label: 'Bremen-Teil',
+          note: '8-teilig',
+        },
+      ],
+      changes: [
+        {
+          stopIndex: 3,
+          action: 'detach',
+          vehicles: [{ type: 'BR 407 (Velaro D)', count: 1 }],
+          note: 'Bremen-Flügel fährt als ICE 1501B weiter.',
+        },
+      ],
+    },
   },
   {
     id: 'TPL-REGIO-ZH-BE',
@@ -131,6 +155,29 @@ export const MOCK_SCHEDULE_TEMPLATES: ScheduleTemplate[] = [
         activities: ['0001'],
       },
     ],
+    composition: {
+      base: [
+        {
+          type: 'RABe 511 (KISS)',
+          count: 1,
+          note: 'Stammzug Zürich – Bern',
+        },
+      ],
+      changes: [
+        {
+          stopIndex: 2,
+          action: 'attach',
+          vehicles: [{ type: 'RABe 511 (KISS)', count: 1, label: 'Verstärker' }],
+          note: 'Optionaler Zusatzzug wird in Aarau beigegeben.',
+        },
+        {
+          stopIndex: 3,
+          action: 'detach',
+          vehicles: [{ type: 'RABe 511 (KISS)', count: 1, label: 'Verstärker' }],
+          note: 'Verstärker endet in Bern.',
+        },
+      ],
+    },
   },
   {
     id: 'TPL-S1-BAS-OLT',
@@ -219,6 +266,29 @@ export const MOCK_SCHEDULE_TEMPLATES: ScheduleTemplate[] = [
         activities: ['0001'],
       },
     ],
+    composition: {
+      base: [
+        {
+          type: 'RABe 521',
+          count: 1,
+          note: 'Stammkomposition',
+        },
+      ],
+      changes: [
+        {
+          stopIndex: 2,
+          action: 'attach',
+          vehicles: [{ type: 'RABe 521', count: 1 }],
+          note: 'Verstärkung für Berufsverkehr ab Muttenz.',
+        },
+        {
+          stopIndex: 5,
+          action: 'detach',
+          vehicles: [{ type: 'RABe 521', count: 1 }],
+          note: 'Verstärker endet in Sissach.',
+        },
+      ],
+    },
   },
   {
     id: 'TPL-S1-OLT-BAS',
@@ -307,6 +377,28 @@ export const MOCK_SCHEDULE_TEMPLATES: ScheduleTemplate[] = [
         activities: ['0001'],
       },
     ],
+    composition: {
+      base: [
+        {
+          type: 'RABe 521',
+          count: 1,
+        },
+      ],
+      changes: [
+        {
+          stopIndex: 2,
+          action: 'attach',
+          vehicles: [{ type: 'RABe 521', count: 1 }],
+          note: 'Verstärker kuppelt in Sissach für die Fahrt nach Basel.',
+        },
+        {
+          stopIndex: 6,
+          action: 'detach',
+          vehicles: [{ type: 'RABe 521', count: 1 }],
+          note: 'Verstärkung wird in Basel wieder getrennt.',
+        },
+      ],
+    },
   },
   {
     id: 'TPL-CARGO-RB',
@@ -355,5 +447,37 @@ export const MOCK_SCHEDULE_TEMPLATES: ScheduleTemplate[] = [
         activities: ['9001'],
       },
     ],
+    composition: {
+      base: [
+        {
+          type: 'BR 189',
+          count: 2,
+          note: 'Doppeltraktion',
+        },
+        {
+          type: 'Sggrss Containertragwagen',
+          count: 24,
+          note: '40-ft-High-Cube',
+        },
+        {
+          type: 'Shimmns Stahlcoilwagen',
+          count: 8,
+        },
+      ],
+      changes: [
+        {
+          stopIndex: 2,
+          action: 'detach',
+          vehicles: [{ type: 'Shimmns Stahlcoilwagen', count: 4 }],
+          note: 'Teilentladung in Köln Eifeltor.',
+        },
+        {
+          stopIndex: 2,
+          action: 'attach',
+          vehicles: [{ type: 'Sggrss Containertragwagen', count: 6 }],
+          note: 'Neuer Containerblock Richtung Basel.',
+        },
+      ],
+    },
   },
 ];

@@ -32,6 +32,9 @@
         Planung
         <mat-icon fontIcon="expand_more"></mat-icon>
       </button>
+      <a mat-button routerLink="/fahrplanmanager" [class.active]="section() === 'timetable'">
+        Fahrplanmanager
+      </a>
       <a mat-button routerLink="/master-data" [class.active]="section() === 'master-data'">
         Stammdaten
       </a>
@@ -79,14 +82,6 @@
     </button>
     <button mat-menu-item routerLink="/plans" routerLinkActive="active">
       <mat-icon>archive</mat-icon>Fahrplanarchiv
-    </button>
-    <button
-      mat-menu-item
-      routerLink="/fahrplanmanager"
-      routerLinkActive="active"
-      [routerLinkActiveOptions]="{ exact: true }"
-    >
-      <mat-icon>event</mat-icon>Fahrplanmanager
     </button>
   </mat-menu>
 

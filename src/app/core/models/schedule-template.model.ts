@@ -37,6 +37,25 @@ export interface ScheduleTemplateStop {
   notes?: string;
 }
 
+export interface ScheduleTemplateVehicleUnit {
+  type: string;
+  count: number;
+  label?: string;
+  note?: string;
+}
+
+export interface ScheduleTemplateCompositionChange {
+  stopIndex: number;
+  action: 'attach' | 'detach';
+  vehicles: ScheduleTemplateVehicleUnit[];
+  note?: string;
+}
+
+export interface ScheduleTemplateComposition {
+  base: ScheduleTemplateVehicleUnit[];
+  changes: ScheduleTemplateCompositionChange[];
+}
+
 export interface ScheduleTemplateRecurrence {
   startTime: string; // HH:mm
   endTime: string; // HH:mm
@@ -61,4 +80,5 @@ export interface ScheduleTemplate {
   updatedAt: string; // ISO datetime
   stops: ScheduleTemplateStop[];
   recurrence?: ScheduleTemplateRecurrence;
+  composition?: ScheduleTemplateComposition;
 }

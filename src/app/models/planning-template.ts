@@ -4,24 +4,34 @@ export interface PlanWeekTemplate {
   description?: string;
   /** ISO-Date on which the reference week starts (typically a Monday). */
   baseWeekStartIso: string;
-  /** Optional tag to differentiate multiple variants (z. B. Ferienfahrplan). */
+  /** Optional tag to differentiate multiple Varianten (z. B. Ferienfahrplan). */
   variant?: string;
-  services: PlanWeekServiceDefinition[];
+  /** Zeitliche Aufteilung des Fahrplanjahres in Montag-Sonntag-Intervalle. */
+  slices: PlanWeekSlice[];
   createdAtIso: string;
   updatedAtIso: string;
   version: string;
 }
 
-export interface PlanWeekServiceDefinition {
+export interface PlanWeekSlice {
   id: string;
   templateId: string;
-  label: string;
-  description?: string;
-  /** Resource placeholder such as vehicle-service or personnel-service. */
-  resourceKind: 'vehicle-service' | 'personnel-service';
-  /** Offset in minutes relative to `baseWeekStartIso`. */
-  startOffsetMinutes: number;
-  endOffsetMinutes: number;
+  label?: string;
+  /** Inclusive ISO date (Monday) marking the start of the Zeitraum. */
+  startIso: string;
+  /** Inclusive ISO date (Sunday) marking the end of the Zeitraum. */
+  endIso: string;
+}
+
+export interface PlanWeekActivity {
+  id: string;
+  templateId: string;
+  resourceId: string;
+  title: string;
+  startIso: string;
+  endIso: string;
+  type?: string;
+  remark?: string;
   attributes?: Record<string, unknown>;
 }
 
@@ -54,7 +64,7 @@ export interface WeekInstance {
 export interface ScheduledService {
   id: string;
   instanceId: string;
-  templateServiceId: string;
+  sliceId: string;
   startIso: string;
   endIso: string;
   attributes?: Record<string, unknown>;

@@ -12,7 +12,7 @@ import { filter } from 'rxjs';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { MATERIAL_IMPORTS } from './core/material.imports.imports';
 
-type AppSection = 'manager' | 'planning' | 'master-data' | 'settings';
+type AppSection = 'manager' | 'planning' | 'timetable' | 'master-data' | 'settings';
 
 @Component({
   selector: 'app-root',
@@ -80,6 +80,8 @@ export class AppComponent {
     switch (this.section()) {
       case 'planning':
         return 'Planung';
+      case 'timetable':
+        return 'Fahrplanmanager';
       case 'master-data':
         return 'Stammdaten';
       case 'settings':

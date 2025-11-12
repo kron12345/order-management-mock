@@ -28,6 +28,22 @@
   justify-content: flex-start;
 }
 
+.planning-toolbar__row--base-toggle {
+  justify-content: flex-end;
+  border-top: 1px solid rgba(15, 23, 42, 0.08);
+  padding-top: 6px;
+}
+
+.planning-toolbar__row--base-toggle button {
+  min-width: 220px;
+  justify-content: flex-start;
+}
+
+.planning-toolbar__hint {
+  font-size: 0.8rem;
+  color: rgba(15, 23, 42, 0.6);
+}
+
 .planning-toolbar__info {
   margin-left: 0;
 }
@@ -225,10 +241,6 @@
     0 4px 12px rgba(15, 15, 23, 0.08);
 }
 
-.planning-accordion {
-  margin: 0 16px;
-}
-
 .planning-main__card mat-card-content {
   flex: 1;
   display: flex;
@@ -280,6 +292,64 @@
   box-shadow:
     0 20px 45px rgba(15, 23, 42, 0.22),
     0 6px 18px rgba(15, 23, 42, 0.12);
+}
+
+.planning-base-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  justify-content: flex-end;
+  z-index: 150;
+  pointer-events: none;
+}
+
+.planning-base-overlay__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.32);
+  pointer-events: auto;
+  z-index: 0;
+}
+
+.planning-base-overlay__panel {
+  position: relative;
+  width: min(960px, 75vw);
+  height: 100%;
+  background: #fff;
+  box-shadow:
+    0 30px 60px rgba(15, 23, 42, 0.3),
+    0 12px 30px rgba(15, 23, 42, 0.2);
+  border-radius: 20px 0 0 20px;
+  display: flex;
+  flex-direction: column;
+  pointer-events: auto;
+  z-index: 1;
+}
+
+.planning-base-overlay__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 20px 28px;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+}
+
+.planning-base-overlay__title {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: rgba(15, 23, 42, 0.92);
+}
+
+.planning-base-overlay__subtitle {
+  font-size: 0.85rem;
+  color: rgba(15, 23, 42, 0.6);
+}
+
+.planning-base-overlay__content {
+  flex: 1;
+  overflow: auto;
+  padding: 24px 28px 32px;
 }
 
 .planning-panel {
@@ -676,6 +746,15 @@
 
   .planning-panel {
     border-radius: 14px;
+  }
+
+  .planning-base-overlay__panel {
+    width: 100%;
+    border-radius: 0;
+  }
+
+  .planning-base-overlay__content {
+    padding: 16px;
   }
 }
 

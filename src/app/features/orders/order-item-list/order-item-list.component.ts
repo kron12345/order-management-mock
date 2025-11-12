@@ -344,7 +344,9 @@ export class OrderItemListComponent {
 
   openEditDialog(item: OrderItem, orderId: string) {
     this.dialog.open(OrderItemEditDialogComponent, {
-      width: '640px',
+      width: '95vw',
+      maxWidth: '1200px',
+      maxHeight: '95vh',
       data: {
         orderId,
         item,

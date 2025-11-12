@@ -1,0 +1,496 @@
+<section class="business-template-panel">
+  <header class="panel-hero">
+    <div>
+      <p class="panel-eyebrow">Geschäfte · Vorlagen</p>
+      <h2>Wiederkehrende Aufgaben automatisieren</h2>
+      <p>
+        Erstelle Muster für Bestellfristen, Jahresabstimmungen oder TTT/TTR-Koordination und löse sie
+        manuell oder automatisch aus.
+      </p>
+    </div>
+  </header>
+
+  <div class="panel-grid">
+    <div class="template-list">
+      @for (template of templates(); track template.id) {
+        <mat-card appearance="outlined" class="template-card" [class.template-card--active]="selectedTemplateId() === template.id">
+          <mat-card-header>
+            <div class="template-card__title">
+              <div>
+                <p class="template-card__category">{{ template.category }}</p>
+                <h3>{{ template.title }}</h3>
+              </div>
+              <button mat-icon-button type="button" aria-label="Vorlage auswählen" (click)="quickSelect(template.id)">
+                <mat-icon>check_circle</mat-icon>
+              </button>
+            </div>
+            <p class="template-card__due">
+              <mat-icon>schedule</mat-icon>
+              {{ templateAnchorLabel(template) }}
+            </p>
+          </mat-card-header>
+          <mat-card-content>
+            <p class="template-card__description">{{ template.description }}</p>
+            @if (template.instructions) {
+              <p class="template-card__instructions">{{ template.instructions }}</p>
+            }
+
+            <div class="template-card__meta">
+              <span><mat-icon>person</mat-icon>{{ template.recommendedAssignment.name }}</span>
+              <span><mat-icon>label</mat-icon>{{ template.tags.join(', ') || 'Keine Tags' }}</span>
+            </div>
+
+            @if (template.automationHint) {
+              <div class="template-card__hint">
+                <mat-icon>autorenew</mat-icon>
+                {{ template.automationHint }}
+              </div>
+            }
+
+            <div class="template-card__tags">
+              @for (tag of template.tags; track tag) {
+                <span class="tag-chip" [ngClass]="templateTagColor(tag)">
+                  <mat-icon>sell</mat-icon>
+                  {{ tag }}
+                </span>
+              }
+              @if (!template.tags.length) {
+                <span class="tag-chip tag-chip--empty">Keine Tags</span>
+              }
+            </div>
+
+            @if (template.steps?.length) {
+              <div class="template-steps">
+                <span class="template-steps__label">Workflow</span>
+                <ol>
+                  @for (step of template.steps; track step.id) {
+                    <li>
+                      <div class="template-steps__meta">
+                        <strong>{{ step.title }}</strong>
+                        <span>{{ stepDueLabel(step) }}</span>
+                      </div>
+                      <p>{{ step.description }}</p>
+                      @if (step.checklist?.length) {
+                        <ul>
+                          @for (item of step.checklist; track item) {
+                            <li>{{ item }}</li>
+                          }
+                        </ul>
+                      }
+                    </li>
+                  }
+                </ol>
+              </div>
+            }
+
+            @if (template.parameterHints?.length) {
+              <div class="template-params">
+                <mat-icon>tune</mat-icon>
+                <span>Parameter: {{ template.parameterHints?.join(', ') }}</span>
+              </div>
+            }
+          </mat-card-content>
+          <mat-card-actions>
+            <button mat-stroked-button type="button" (click)="quickSelect(template.id)">
+              <mat-icon>bolt</mat-icon>
+              Geschäft erstellen
+            </button>
+            <button mat-button type="button" (click)="automationForm.patchValue({ templateId: template.id })">
+              <mat-icon>autorenew</mat-icon>
+              Automatisierung
+            </button>
+          </mat-card-actions>
+        </mat-card>
+      } @empty {
+        <mat-card appearance="outlined">
+          <mat-card-content>
+            <h3>Noch keine Vorlagen</h3>
+            <p>Lege rechts eine Vorlage an, um Geschäftsprozesse zu beschleunigen.</p>
+          </mat-card-content>
+        </mat-card>
+      }
+    </div>
+
+    <div class="template-sidebar">
+      <mat-card appearance="outlined">
+        <mat-card-header>
+          <mat-card-title>Workflow & Fristen</mat-card-title>
+          <mat-card-subtitle>Schritte definieren, Zeitstrahl prüfen.</mat-card-subtitle>
+        </mat-card-header>
+        <mat-card-content>
+          <div class="step-presets">
+            <span>Bausteine</span>
+            <div class="step-presets__chips">
+              @for (preset of stepPresets; track preset.label) {
+                <button
+                  mat-stroked-button
+                  type="button"
+                  (click)="addStep(preset)"
+                >
+                  <mat-icon>add</mat-icon>
+                  {{ preset.label }}
+                </button>
+              }
+            </div>
+          </div>
+
+          <div class="step-editor">
+            @for (group of stepsControls(); track group.value.id; let i = $index) {
+              <section class="step-editor__item" [formGroup]="group">
+                <header>
+                  <strong>Schritt {{ i + 1 }}</strong>
+                  <button mat-icon-button type="button" (click)="removeStep(i)" aria-label="Schritt entfernen">
+                    <mat-icon>close</mat-icon>
+                  </button>
+                </header>
+                <mat-form-field appearance="outline">
+                  <mat-label>Titel</mat-label>
+                  <input matInput formControlName="title" />
+                </mat-form-field>
+                <mat-form-field appearance="outline">
+                  <mat-label>Beschreibung</mat-label>
+                  <textarea matInput rows="2" formControlName="description"></textarea>
+                </mat-form-field>
+                <div class="form-row">
+                  <mat-form-field appearance="outline">
+                    <mat-label>Verschiebung (Tage)</mat-label>
+                    <input matInput type="number" formControlName="offsetDays" />
+                  </mat-form-field>
+                  <mat-form-field appearance="outline">
+                    <mat-label>Bezugspunkt</mat-label>
+                    <mat-select formControlName="anchor">
+                      <mat-option value="production_start">Produktion</mat-option>
+                      <mat-option value="order_creation">Auftragserstellung</mat-option>
+                      <mat-option value="go_live">Go-Live</mat-option>
+                    </mat-select>
+                  </mat-form-field>
+                </div>
+                <mat-form-field appearance="outline">
+                  <mat-label>Checkliste (kommagetrennt)</mat-label>
+                  <input matInput formControlName="checklist" />
+                </mat-form-field>
+              </section>
+            }
+            <button mat-stroked-button type="button" (click)="addStep()">
+              <mat-icon>playlist_add</mat-icon>
+              Schritt hinzufügen
+            </button>
+          </div>
+
+          <div class="timeline-preview">
+            <span class="timeline-preview__label">Timeline Vorschau</span>
+            <ol>
+              @for (entry of timelinePreview(); track entry.title) {
+                <li>
+                  <strong>{{ entry.title || 'Unbenannt' }}</strong>
+                  <span>{{ entry.label }}</span>
+                </li>
+              }
+            </ol>
+          </div>
+        </mat-card-content>
+        <mat-divider />
+        <mat-card-content>
+          <div class="automation-storyboard">
+            <span class="automation-storyboard__label">Storyboard</span>
+            @if (!automationRules().length) {
+              <p class="panel-empty">Noch keine Regeln definiert.</p>
+            } @else {
+              <div class="automation-storyboard__flow">
+                @for (rule of automationRules(); track rule.id) {
+                  <div class="automation-node">
+                    <mat-icon>bolt</mat-icon>
+                    <strong>{{ rule.title }}</strong>
+                    <small>{{ rule.trigger }}</small>
+                  </div>
+                  @if (rule.nextTemplateId) {
+                    <mat-icon class="automation-arrow">arrow_forward</mat-icon>
+                    <div class="automation-node automation-node--ghost">
+                      {{ templateById(rule.nextTemplateId)?.title || rule.nextTemplateId }}
+                    </div>
+                  }
+                }
+              </div>
+            }
+          </div>
+        </mat-card-content>
+      </mat-card>
+
+      <mat-card appearance="outlined">
+        <mat-card-header>
+          <mat-card-title>Automatisierungen</mat-card-title>
+          <mat-card-subtitle>Regeln für automatische Geschäftserstellung</mat-card-subtitle>
+        </mat-card-header>
+        <mat-card-content>
+          @for (rule of automationRules(); track rule.id) {
+            <div class="automation-row">
+              <div class="automation-row__body">
+                <strong>{{ rule.title }}</strong>
+                <span>{{ rule.trigger }} · {{ rule.condition }}</span>
+                <small>
+                  Vorlauf: {{ rule.leadTimeDays }} Tage
+                  @if (rule.nextRun) {
+                    · Nächster Lauf: {{ rule.nextRun | date: 'dd.MM.yyyy' }}
+                  }
+                  @if (rule.nextTemplateId) {
+                    · Nächste Vorlage: {{ templateById(rule.nextTemplateId)?.title || rule.nextTemplateId }}
+                  }
+                  @if (rule.lastRunStatus) {
+                    · Status: {{ rule.lastRunStatus }}
+                  }
+                </small>
+              </div>
+              <button
+                mat-icon-button
+                type="button"
+                matTooltip="Testlauf starten"
+                (click)="simulateAutomation(rule)"
+                aria-label="Automation testen"
+              >
+                <mat-icon>science</mat-icon>
+              </button>
+              <mat-slide-toggle
+                color="primary"
+                [checked]="rule.active"
+                (change)="toggleAutomation(rule.id, $event.checked)"
+                aria-label="Automatisierung aktivieren"
+              ></mat-slide-toggle>
+            </div>
+          } @empty {
+            <p class="panel-empty">Noch keine Automatisierungen.</p>
+          }
+        </mat-card-content>
+        <mat-divider />
+        <mat-card-content>
+          <form [formGroup]="automationForm" (ngSubmit)="addAutomationRule()" class="automation-form">
+            <mat-form-field appearance="outline">
+              <mat-label>Vorlage</mat-label>
+              <mat-select formControlName="templateId" required>
+                @for (template of templates(); track template.id) {
+                  <mat-option [value]="template.id">{{ template.title }}</mat-option>
+                }
+              </mat-select>
+            </mat-form-field>
+            <mat-form-field appearance="outline">
+              <mat-label>Trigger</mat-label>
+              <input matInput formControlName="trigger" placeholder="z. B. Tag #jahresbedarf" />
+            </mat-form-field>
+            <mat-form-field appearance="outline">
+              <mat-label>Bedingung</mat-label>
+              <input matInput formControlName="condition" placeholder="z. B. Zeitraum = Fahrplanjahr" />
+            </mat-form-field>
+            <mat-form-field appearance="outline">
+              <mat-label>Vorlauf (Tage)</mat-label>
+              <input matInput type="number" formControlName="leadTimeDays" />
+            </mat-form-field>
+            <mat-form-field appearance="outline">
+              <mat-label>Nächster Lauf</mat-label>
+              <input matInput type="date" formControlName="nextRun" />
+            </mat-form-field>
+            <mat-form-field appearance="outline">
+              <mat-label>Folgevorlage</mat-label>
+              <mat-select formControlName="nextTemplateId">
+                <mat-option value="">Keine</mat-option>
+                @for (template of templates(); track template.id) {
+                  <mat-option [value]="template.id">{{ template.title }}</mat-option>
+                }
+              </mat-select>
+            </mat-form-field>
+            <mat-form-field appearance="outline">
+              <mat-label>Webhook URL</mat-label>
+              <input matInput formControlName="webhookUrl" placeholder="https://example.com/hook" />
+            </mat-form-field>
+            <mat-form-field appearance="outline">
+              <mat-label>Webhook Payload</mat-label>
+              <textarea matInput rows="2" formControlName="webhookPayload"></textarea>
+            </mat-form-field>
+            <mat-slide-toggle formControlName="testMode">Testmodus aktiv</mat-slide-toggle>
+            <button mat-stroked-button type="submit">
+              <mat-icon>add_task</mat-icon>
+              Regel speichern
+            </button>
+          </form>
+        </mat-card-content>
+      </mat-card>
+
+      <mat-card appearance="outlined">
+        <mat-card-header>
+          <mat-card-title>Monitoring & Ketten</mat-card-title>
+          <mat-card-subtitle>Verknüpfte Vorlagen und Ausführungen</mat-card-subtitle>
+        </mat-card-header>
+        <mat-card-content>
+          @if (selectedTemplate()) {
+            <div class="dependency-columns">
+              <div>
+                <strong>Vorgänger</strong>
+                @if (!selectedDependencies().upstream.length) {
+                  <p class="panel-empty">Keine Vorgänger.</p>
+                } @else {
+                  <ul>
+                    @for (dep of selectedDependencies().upstream; track dep.fromTemplateId) {
+                      <li>
+                        {{ templateById(dep.fromTemplateId)?.title || dep.fromTemplateId }}
+                        <small>{{ dep.description }}</small>
+                      </li>
+                    }
+                  </ul>
+                }
+              </div>
+              <div>
+                <strong>Folgen</strong>
+                @if (!selectedDependencies().downstream.length) {
+                  <p class="panel-empty">Keine Folgevorlagen.</p>
+                } @else {
+                  <ul>
+                    @for (dep of selectedDependencies().downstream; track dep.toTemplateId) {
+                      <li>
+                        {{ templateById(dep.toTemplateId)?.title || dep.toTemplateId }}
+                        <small>{{ dep.description }}</small>
+                      </li>
+                    }
+                  </ul>
+                }
+              </div>
+            </div>
+            <div class="execution-log">
+              <strong>Ausführungshistorie</strong>
+              @if (!selectedExecutionLog().length) {
+                <p class="panel-empty">Noch keine Ausführungen.</p>
+              } @else {
+                <ul>
+                  @for (entry of selectedExecutionLog(); track entry.id) {
+                    <li>
+                      <div>
+                        <span class="status-dot" [ngClass]="'status-' + entry.status"></span>
+                        {{ entry.timestamp | date: 'dd.MM.yyyy HH:mm' }}
+                      </div>
+                      <p>{{ entry.message }}</p>
+                    </li>
+                  }
+                </ul>
+              }
+            </div>
+          } @else {
+            <p class="panel-empty">Vorlage auswählen, um Verknüpfungen zu sehen.</p>
+          }
+        </mat-card-content>
+      </mat-card>
+
+      <mat-card appearance="outlined">
+        <mat-card-header>
+          <mat-card-title>Kontext-Empfehlungen</mat-card-title>
+          <mat-card-subtitle>Tags eingeben, um passende Vorlagen zu finden.</mat-card-subtitle>
+        </mat-card-header>
+        <mat-card-content>
+          <mat-form-field appearance="outline">
+            <mat-label>Tags/Attribute</mat-label>
+            <input
+              matInput
+              [formControl]="contextTagsControl"
+              placeholder="#TTT, premium"
+            />
+          </mat-form-field>
+          @if (!recommendationTemplates().length) {
+            <p class="panel-empty">Keine passenden Vorlagen gefunden.</p>
+          } @else {
+            <div class="recommendation-list">
+              @for (template of recommendationTemplates(); track template.id) {
+                <button
+                  mat-stroked-button
+                  type="button"
+                  (click)="quickSelect(template.id)"
+                >
+                  <mat-icon>bolt</mat-icon>
+                  {{ template.title }}
+                </button>
+              }
+            </div>
+          }
+        </mat-card-content>
+      </mat-card>
+
+      <mat-card appearance="outlined">
+        <mat-card-header>
+          <mat-card-title>Neue Vorlage anlegen</mat-card-title>
+          <mat-card-subtitle>Definition für wiederkehrende Geschäftsprozesse</mat-card-subtitle>
+        </mat-card-header>
+        <mat-card-content>
+          <form [formGroup]="templateForm" (ngSubmit)="createTemplate()" class="template-form">
+            <mat-form-field appearance="outline">
+              <mat-label>Titel</mat-label>
+              <input matInput formControlName="title" />
+            </mat-form-field>
+            <mat-form-field appearance="outline">
+              <mat-label>Beschreibung</mat-label>
+              <textarea matInput rows="3" formControlName="description"></textarea>
+            </mat-form-field>
+            <mat-form-field appearance="outline">
+              <mat-label>Hinweise</mat-label>
+              <textarea matInput rows="3" formControlName="instructions"></textarea>
+            </mat-form-field>
+            <div class="form-row">
+              <mat-form-field appearance="outline">
+                <mat-label>Zuständig</mat-label>
+                <input matInput formControlName="assignmentName" placeholder="Team oder Person" />
+              </mat-form-field>
+              <mat-form-field appearance="outline">
+                <mat-label>Typ</mat-label>
+                <mat-select formControlName="assignmentType">
+                  <mat-option value="group">Gruppe</mat-option>
+                  <mat-option value="person">Person</mat-option>
+                </mat-select>
+              </mat-form-field>
+            </div>
+            <div class="form-row">
+              <mat-form-field appearance="outline">
+                <mat-label>Tag</mat-label>
+                <input matInput formControlName="tag" placeholder="#tag" />
+              </mat-form-field>
+              <mat-form-field appearance="outline">
+                <mat-label>Kategorie</mat-label>
+                <mat-select formControlName="category">
+                  <mat-option value="Frist">Frist</mat-option>
+                  <mat-option value="Bestellung">Bestellung</mat-option>
+                  <mat-option value="Kommunikation">Kommunikation</mat-option>
+                  <mat-option value="Custom">Individuell</mat-option>
+                </mat-select>
+              </mat-form-field>
+            </div>
+            <div class="form-row">
+              <mat-form-field appearance="outline">
+                <mat-label>Verschiebung (Tage)</mat-label>
+                <input matInput type="number" formControlName="offsetDays" />
+              </mat-form-field>
+              <mat-form-field appearance="outline">
+                <mat-label>Bezugspunkt</mat-label>
+                <mat-select formControlName="anchor">
+                  <mat-option value="production_start">Produktion</mat-option>
+                  <mat-option value="order_creation">Auftragserstellung</mat-option>
+                  <mat-option value="go_live">Go-Live</mat-option>
+                </mat-select>
+              </mat-form-field>
+            </div>
+            <mat-form-field appearance="outline">
+              <mat-label>Parameter Hinweise (kommagetrennt)</mat-label>
+              <input matInput formControlName="parameterHints" placeholder="region, priority" />
+            </mat-form-field>
+            @if (templateValidationMessages().length) {
+              <div class="validation-summary">
+                <mat-icon>info</mat-icon>
+                <ul>
+                  @for (issue of templateValidationMessages(); track issue) {
+                    <li>{{ issue }}</li>
+                  }
+                </ul>
+              </div>
+            }
+            <button mat-flat-button color="primary" type="submit">
+              <mat-icon>save</mat-icon>
+              Vorlage speichern
+            </button>
+          </form>
+        </mat-card-content>
+      </mat-card>
+    </div>
+  </div>
+</section>

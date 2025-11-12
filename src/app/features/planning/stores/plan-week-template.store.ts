@@ -3,8 +3,10 @@ import { catchError, EMPTY, take, tap } from 'rxjs';
 import {
   PlanWeekRolloutRequest,
   PlanWeekRolloutResponse,
+  PlanWeekSlice,
   PlanWeekTemplate,
   PlanWeekValidity,
+  PlanWeekActivity,
   WeekInstance,
 } from '../../../models/planning-template';
 import { PlanningTemplateApiService } from '../../../core/api/planning-template-api.service';
@@ -12,6 +14,7 @@ import { PlanningTemplateApiService } from '../../../core/api/planning-template-
 interface TemplateStoreState {
   templates: PlanWeekTemplate[];
   validities: Record<string, PlanWeekValidity[]>;
+  activities: Record<string, PlanWeekActivity[]>;
   selectedTemplateId: string | null;
   weekInstances: WeekInstance[];
   loading: boolean;
@@ -21,6 +24,7 @@ interface TemplateStoreState {
 const INITIAL_STATE: TemplateStoreState = {
   templates: [],
   validities: {},
+  activities: {},
   selectedTemplateId: null,
   weekInstances: [],
   loading: false,
@@ -31,6 +35,11 @@ const INITIAL_STATE: TemplateStoreState = {
 export class PlanWeekTemplateStoreService {
   private readonly api = inject(PlanningTemplateApiService);
   private readonly state = signal<TemplateStoreState>({ ...INITIAL_STATE });
+  private templatesLoaded = false;
+
+  constructor() {
+    this.loadTemplates();
+  }
 
   readonly templates = computed(() => this.state().templates);
   readonly selectedTemplate = computed(() => {
@@ -41,17 +50,25 @@ export class PlanWeekTemplateStoreService {
     const { selectedTemplateId, validities } = this.state();
     return selectedTemplateId ? validities[selectedTemplateId] ?? [] : [];
   });
+  readonly selectedActivities = computed(() => {
+    const { selectedTemplateId, activities } = this.state();
+    return selectedTemplateId ? activities[selectedTemplateId] ?? [] : [];
+  });
   readonly weekInstances = computed(() => this.state().weekInstances);
   readonly isLoading = computed(() => this.state().loading);
   readonly error = computed(() => this.state().error);
 
-  loadTemplates(): void {
+  loadTemplates(force = false): void {
+    if (!force && (this.templatesLoaded || this.state().loading)) {
+      return;
+    }
     this.setState({ loading: true, error: null });
     this.api
       .listTemplates()
       .pipe(
         take(1),
         tap((templates) => {
+          this.templatesLoaded = true;
           this.setState({ templates, loading: false });
           if (!this.state().selectedTemplateId && templates.length) {
             this.selectTemplate(templates[0].id);
@@ -60,6 +77,7 @@ export class PlanWeekTemplateStoreService {
         catchError((error) => {
           console.error('[PlanWeekTemplateStore] Failed to load templates', error);
           this.setState({ loading: false, error: 'Vorlagen konnten nicht geladen werden.' });
+          this.templatesLoaded = false;
           return EMPTY;
         }),
       )
@@ -70,6 +88,9 @@ export class PlanWeekTemplateStoreService {
     this.setState({ selectedTemplateId: templateId });
     if (templateId && !this.state().validities[templateId]) {
       this.loadValidities(templateId);
+    }
+    if (templateId && !this.state().activities[templateId]) {
+      this.loadActivities(templateId);
     }
   }
 
@@ -102,9 +123,11 @@ export class PlanWeekTemplateStoreService {
         tap(() => {
           const templates = this.state().templates.filter((entry) => entry.id !== templateId);
           const validities = { ...this.state().validities };
+          const activities = { ...this.state().activities };
           delete validities[templateId];
+          delete activities[templateId];
           const nextSelected = this.state().selectedTemplateId === templateId ? null : this.state().selectedTemplateId;
-          this.setState({ templates, validities, selectedTemplateId: nextSelected, loading: false });
+          this.setState({ templates, validities, activities, selectedTemplateId: nextSelected, loading: false });
         }),
         catchError((error) => {
           console.error('[PlanWeekTemplateStore] Failed to delete template', error);
@@ -171,6 +194,19 @@ export class PlanWeekTemplateStoreService {
       .subscribe();
   }
 
+  updateTemplateSlices(templateId: string, slices: PlanWeekSlice[]): void {
+    const template = this.state().templates.find((entry) => entry.id === templateId);
+    if (!template) {
+      return;
+    }
+    const payload: PlanWeekTemplate = {
+      ...template,
+      slices,
+      updatedAtIso: new Date().toISOString(),
+    };
+    this.saveTemplate(payload);
+  }
+
   rolloutTemplate(payload: PlanWeekRolloutRequest): void {
     this.setState({ loading: true, error: null });
     this.api
@@ -197,6 +233,62 @@ export class PlanWeekTemplateStoreService {
         catchError((error) => {
           console.error('[PlanWeekTemplateStore] Failed to load week instances', error);
           this.setState({ loading: false, error: 'Wochen konnten nicht geladen werden.' });
+          return EMPTY;
+        }),
+      )
+      .subscribe();
+  }
+
+  loadActivities(templateId: string): void {
+    this.api
+      .listActivities(templateId)
+      .pipe(
+        take(1),
+        tap((items) => {
+          this.setState({ activities: { ...this.state().activities, [templateId]: items } });
+        }),
+        catchError((error) => {
+          console.error('[PlanWeekTemplateStore] Failed to load activities', error);
+          return EMPTY;
+        }),
+      )
+      .subscribe();
+  }
+
+  saveActivity(templateId: string, activity: PlanWeekActivity): void {
+    this.api
+      .upsertActivity(templateId, activity)
+      .pipe(
+        take(1),
+        tap((saved) => {
+          const current = this.state().activities[templateId] ?? [];
+          const next = this.upsertById(current, saved);
+          this.setState({ activities: { ...this.state().activities, [templateId]: next } });
+        }),
+        catchError((error) => {
+          console.error('[PlanWeekTemplateStore] Failed to save activity', error);
+          return EMPTY;
+        }),
+      )
+      .subscribe();
+  }
+
+  deleteActivity(templateId: string, activityId: string): void {
+    this.api
+      .deleteActivity(templateId, activityId)
+      .pipe(
+        take(1),
+        tap(() => {
+          const current = this.state().activities[templateId] ?? [];
+          this.setState({
+            activities: {
+              ...this.state().activities,
+              [templateId]: current.filter((entry) => entry.id !== activityId),
+            },
+          });
+        }),
+        catchError((error) => {
+          console.error('[PlanWeekTemplateStore] Failed to delete activity', error);
           return EMPTY;
         }),
       )

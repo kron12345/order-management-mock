@@ -60,6 +60,7 @@ export interface CreateScheduleTemplatePayload {
     days: ScheduleTemplateDay[];
   };
   stops: CreateScheduleTemplateStopPayload[];
+  composition?: ScheduleTemplate['composition'];
 }
 
 @Injectable({ providedIn: 'root' })
@@ -182,17 +183,35 @@ export class ScheduleTemplateService {
       },
       createdAt: now,
       updatedAt: now,
-      recurrence: payload.recurrence
-        ? {
-            ...payload.recurrence,
-            intervalMinutes: Math.max(1, payload.recurrence.intervalMinutes),
-          }
-        : undefined,
+      recurrence: undefined,
       stops,
+      composition: payload.composition,
     };
 
     this._templates.update((templates) => [template, ...templates]);
     return template;
+  }
+
+  updateTemplateFromPayload(templateId: string, payload: CreateScheduleTemplatePayload): void {
+    const stops = payload.stops.map((stop, index) =>
+      this.createStopFromPayload(templateId, index, stop),
+    );
+    this.updateTemplate(templateId, {
+      title: payload.title,
+      description: payload.description,
+      trainNumber: payload.trainNumber,
+      responsibleRu: payload.responsibleRu,
+      category: payload.category,
+      status: payload.status,
+      tags: payload.tags?.length ? Array.from(new Set(payload.tags)) : undefined,
+      validity: {
+        startDate: payload.startDate.toISOString().slice(0, 10),
+        endDate: payload.endDate ? payload.endDate.toISOString().slice(0, 10) : undefined,
+      },
+      recurrence: undefined,
+      stops,
+      composition: payload.composition,
+    });
   }
 
   updateTemplate(
@@ -210,27 +229,6 @@ export class ScheduleTemplateService {
           : template,
       ),
     );
-  }
-
-  recurrencePreview(
-    template: ScheduleTemplate,
-    occurrences = 6,
-  ): string[] | undefined {
-    if (!template.recurrence) {
-      return undefined;
-    }
-    const { startTime, endTime, intervalMinutes } = template.recurrence;
-    const start = this.toMinutes(startTime);
-    const end = this.toMinutes(endTime);
-    if (start === undefined || end === undefined || intervalMinutes <= 0) {
-      return undefined;
-    }
-    const times: string[] = [];
-    for (let current = start; current <= end && times.length < occurrences; ) {
-      times.push(this.fromMinutes(current));
-      current += intervalMinutes;
-    }
-    return times;
   }
 
   stopsWithTimeline(template: ScheduleTemplate) {

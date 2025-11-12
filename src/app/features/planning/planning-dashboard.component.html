@@ -136,6 +136,18 @@
         </button>
       </div>
     </div>
+    <div
+      class="planning-toolbar__row planning-toolbar__row--base-toggle"
+      *ngIf="activeStageId() === 'base'"
+    >
+      <button mat-stroked-button color="primary" (click)="toggleBasePlanningPanel()">
+        <mat-icon fontIcon="view_week"></mat-icon>
+        {{ isBasePlanningPanelOpen() ? 'Basisplanung schließen' : 'Basisplanung öffnen' }}
+      </button>
+      <span class="planning-toolbar__hint">
+        Zeitscheiben bearbeiten, ohne dass der Gantt-Bereich kleiner wird.
+      </span>
+    </div>
   </header>
 
   <mat-menu #selectionAddMenu="matMenu">
@@ -244,16 +256,6 @@
       </mat-card-content>
     </mat-card>
   </section>
-
-  <mat-accordion multi class="planning-accordion">
-    <mat-expansion-panel>
-      <mat-expansion-panel-header>
-        <mat-panel-title>Planwochen / Zeitscheiben (Basisplanung)</mat-panel-title>
-        <mat-panel-description>Vorlagen anlegen, Gültigkeiten pflegen, Rollout starten</mat-panel-description>
-      </mat-expansion-panel-header>
-      <app-plan-week-template></app-plan-week-template>
-    </mat-expansion-panel>
-  </mat-accordion>
 
   <section class="planning-side-panels">
     <mat-card *ngIf="pendingServiceResource() as pending">
@@ -492,4 +494,32 @@
       </div>
     </div>
   </section>
+
+  <div
+    class="planning-base-overlay"
+    *ngIf="isBasePlanningPanelOpen() && activeStageId() === 'base'"
+  >
+    <div class="planning-base-overlay__backdrop" (click)="closeBasePlanningPanel()"></div>
+    <section class="planning-base-overlay__panel">
+      <header class="planning-base-overlay__header">
+        <div>
+          <div class="planning-base-overlay__title">Planwochen & Zeitscheiben</div>
+          <div class="planning-base-overlay__subtitle">
+            Vorlagen pflegen, Gültigkeiten definieren und Rollouts starten.
+          </div>
+        </div>
+        <button
+          mat-icon-button
+          type="button"
+          aria-label="Basisplanung schließen"
+          (click)="closeBasePlanningPanel()"
+        >
+          <mat-icon fontIcon="close"></mat-icon>
+        </button>
+      </header>
+      <div class="planning-base-overlay__content">
+        <app-plan-week-template [timetableYearRange]="basePlanningYearRange()"></app-plan-week-template>
+      </div>
+    </section>
+  </div>
 </section>

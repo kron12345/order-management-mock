@@ -1,6 +1,7 @@
 import { CommonModule } from '@angular/common';
 import { Component, Inject, computed, inject, signal } from '@angular/core';
 import {
+  FormArray,
   FormBuilder,
   FormControl,
   FormGroup,
@@ -14,7 +15,12 @@ import {
 } from '@angular/material/dialog';
 import { MATERIAL_IMPORTS } from '../../../core/material.imports.imports';
 import { OrderItem, OrderItemValiditySegment } from '../../../core/models/order-item.model';
-import { TrainPlan, TrainPlanStop } from '../../../core/models/train-plan.model';
+import {
+  TrainPlan,
+  TrainPlanRouteMetadata,
+  TrainPlanStop,
+  TrainPlanTechnicalData,
+} from '../../../core/models/train-plan.model';
 import {
   PlanModificationStopInput,
   TrainPlanService,
@@ -31,6 +37,13 @@ import {
   PlanAssemblyDialogResult,
 } from '../plan-assembly-dialog/plan-assembly-dialog.component';
 import { AnnualCalendarSelectorComponent } from '../../../shared/annual-calendar-selector/annual-calendar-selector.component';
+import { VehicleComposition } from '../../../models/master-data';
+import { DEMO_MASTER_DATA } from '../../../data/demo-master-data';
+import {
+  TimetableRollingStock,
+  TimetableRollingStockOperation,
+  TimetableRollingStockSegment,
+} from '../../../core/models/timetable.model';
 
 interface PlanModificationDialogData {
   orderId: string;
@@ -53,7 +66,29 @@ interface PlanModificationFormModel {
   validTo: FormControl<string>;
   daysBitmap: FormControl<string>;
   customYear: FormControl<number>;
+  technicalMaxSpeed: FormControl<number | null>;
+  technicalLength: FormControl<number | null>;
+  technicalWeight: FormControl<number | null>;
+  technicalTraction: FormControl<string>;
+  technicalEtcsLevel: FormControl<string>;
+  originBorderPoint: FormControl<string>;
+  destinationBorderPoint: FormControl<string>;
+  borderNotes: FormControl<string>;
 }
+
+type BaseVehicleForm = FormGroup<{
+  vehicleType: FormControl<string>;
+  count: FormControl<number>;
+  note: FormControl<string>;
+}>;
+
+type ChangeEntryForm = FormGroup<{
+  stopIndex: FormControl<number | null>;
+  action: FormControl<'attach' | 'detach'>;
+  vehicleType: FormControl<string>;
+  count: FormControl<number>;
+  note: FormControl<string>;
+}>;
 
 @Component({
   selector: 'app-plan-modification-dialog',
@@ -91,6 +126,13 @@ export class PlanModificationDialogComponent {
   readonly errorMessage = signal<string | null>(null);
   readonly assembledStops = signal<PlanModificationStopInput[] | null>(null);
   readonly customSelectedDates = signal<string[]>([]);
+  readonly baseVehicles = this.fb.array<BaseVehicleForm>([]);
+  readonly changeEntries = this.fb.array<ChangeEntryForm>([]);
+  readonly stopOptions = this.plan.stops
+    .slice()
+    .sort((a, b) => a.sequence - b.sequence)
+    .map((stop) => ({ label: `#${stop.sequence} · ${stop.locationName}`, value: stop.sequence }));
+  readonly compositionPresets: VehicleComposition[] = DEMO_MASTER_DATA.vehicleCompositions;
 
   constructor() {
     const initialTrafficPeriod = this.plan.trafficPeriodId ?? '';
@@ -101,7 +143,10 @@ export class PlanModificationDialogComponent {
         ? this.plan.calendar.daysBitmap
         : '1111111';
 
-    const initialYear = this.deriveInitialCustomYear(initialValidFrom);
+    const initialYear = this.calendarLocked
+      ? this.deriveYearFromLabel(this.item.timetableYearLabel) ??
+        this.deriveInitialCustomYear(initialValidFrom)
+      : this.deriveInitialCustomYear(initialValidFrom);
 
     this.form = this.fb.group({
       title: this.fb.nonNullable.control(this.plan.title, {
@@ -133,6 +178,32 @@ export class PlanModificationDialogComponent {
       }),
       customYear: this.fb.nonNullable.control(initialYear, {
         validators: [Validators.required, Validators.min(1900), Validators.max(2100)],
+      }),
+      technicalMaxSpeed: this.fb.control<number | null>(this.plan.technical.maxSpeed ?? null, {
+        validators: [Validators.min(0), Validators.max(400)],
+      }),
+      technicalLength: this.fb.control<number | null>(this.plan.technical.lengthMeters ?? null, {
+        validators: [Validators.min(0), Validators.max(500)],
+      }),
+      technicalWeight: this.fb.control<number | null>(this.plan.technical.weightTons ?? null, {
+        validators: [Validators.min(0), Validators.max(4000)],
+      }),
+      technicalTraction: this.fb.nonNullable.control(this.plan.technical.traction ?? '', {
+        validators: [Validators.maxLength(60)],
+      }),
+      technicalEtcsLevel: this.fb.nonNullable.control(this.plan.technical.etcsLevel ?? '', {
+        validators: [Validators.maxLength(40)],
+      }),
+      originBorderPoint: this.fb.nonNullable.control(
+        this.plan.routeMetadata?.originBorderPoint ?? '',
+        { validators: [Validators.maxLength(80)] },
+      ),
+      destinationBorderPoint: this.fb.nonNullable.control(
+        this.plan.routeMetadata?.destinationBorderPoint ?? '',
+        { validators: [Validators.maxLength(80)] },
+      ),
+      borderNotes: this.fb.nonNullable.control(this.plan.routeMetadata?.borderNotes ?? '', {
+        validators: [Validators.maxLength(200)],
       }),
     });
 
@@ -168,7 +239,12 @@ export class PlanModificationDialogComponent {
     if (this.calendarLocked) {
       this.form.controls.validityMode.disable({ emitEvent: false });
       this.form.controls.trafficPeriodId.disable({ emitEvent: false });
+      if (initialYear) {
+        this.form.controls.customYear.setValue(initialYear, { emitEvent: false });
+        this.form.controls.customYear.disable({ emitEvent: false });
+      }
     }
+    this.hydrateCompositionFromRollingStock();
   }
 
   trackByPeriodId(_: number, period: { id: string }): string {
@@ -176,6 +252,12 @@ export class PlanModificationDialogComponent {
   }
 
   customYearValue(): number {
+    if (this.calendarLocked) {
+      const lockedYear = this.deriveYearFromLabel(this.item.timetableYearLabel);
+      if (lockedYear) {
+        return lockedYear;
+      }
+    }
     return (
       this.form.controls.customYear.value ??
       this.deriveInitialCustomYear(this.plan.calendar.validFrom)
@@ -183,10 +265,99 @@ export class PlanModificationDialogComponent {
   }
 
   onCustomDatesChange(dates: string[]) {
-    const year = this.customYearValue();
+    const year = this.calendarLocked ? this.customYearValue() : this.customYearValue();
     const filtered = dates.filter((date) => date.startsWith(String(year)));
     this.customSelectedDates.set(filtered);
     this.updateCustomCalendarFields(filtered);
+  }
+
+  get baseVehicleForms(): BaseVehicleForm[] {
+    return this.baseVehicles.controls;
+  }
+
+  get changeEntryForms(): ChangeEntryForm[] {
+    return this.changeEntries.controls;
+  }
+
+  addBaseVehicle(seed?: { vehicleType?: string; count?: number; note?: string }) {
+    this.baseVehicles.push(this.createBaseVehicleGroup(seed));
+  }
+
+  removeBaseVehicle(index: number) {
+    if (index < 0 || index >= this.baseVehicles.length) {
+      return;
+    }
+    this.baseVehicles.removeAt(index);
+  }
+
+  applyCompositionPreset(presetId: string | null) {
+    if (!presetId) {
+      return;
+    }
+    const preset = this.compositionPresets.find((entry) => entry.id === presetId);
+    if (!preset) {
+      return;
+    }
+    this.baseVehicles.clear();
+    preset.entries.forEach((entry) => {
+      this.baseVehicles.push(
+        this.createBaseVehicleGroup({
+          vehicleType: entry.typeId,
+          count: entry.quantity,
+          note: preset.remark ?? '',
+        }),
+      );
+    });
+    this.baseVehicles.markAsDirty();
+  }
+
+  addChangeEntry(seed?: {
+    stopIndex?: number | null;
+    action?: 'attach' | 'detach';
+    vehicleType?: string;
+    count?: number;
+    note?: string;
+  }) {
+    this.changeEntries.push(this.createChangeEntryGroup(seed));
+  }
+
+  removeChangeEntry(index: number) {
+    if (index < 0 || index >= this.changeEntries.length) {
+      return;
+    }
+    this.changeEntries.removeAt(index);
+  }
+
+  calendarPeriodLabel(): string {
+    if (!this.plan.trafficPeriodId) {
+      return 'Kein Referenzkalender';
+    }
+    return (
+      this.trafficPeriodService.getById(this.plan.trafficPeriodId)?.name ??
+      this.plan.trafficPeriodId
+    );
+  }
+
+  calendarRangeLabel(): string {
+    const start = this.plan.calendar.validFrom ?? '—';
+    const end = this.plan.calendar.validTo;
+    if (!end || end === start) {
+      return start;
+    }
+    return `${start} – ${end}`;
+  }
+
+  stopPreviewEntries(): PlanModificationStopInput[] {
+    return this.previewStops();
+  }
+
+  stopPreviewTimeLabel(stop: PlanModificationStopInput): string {
+    const departure = this.formatIsoTime(stop.departureTime);
+    const arrival = this.formatIsoTime(stop.arrivalTime);
+    if (arrival && departure && arrival !== departure) {
+      return `${arrival} / ${departure}`;
+    }
+    return departure ?? arrival ?? '–';
   }
 
   applyTemplate() {
@@ -247,12 +418,18 @@ export class PlanModificationDialogComponent {
         return;
       }
     }
+    if (!this.validateCompositionForms()) {
+      return;
+    }
 
     try {
       const calendar =
         mode === 'trafficPeriod'
           ? this.calendarFromPeriod(value.trafficPeriodId!)
           : this.calendarFromCustomSelection(this.customSelectedDates());
+      const rollingStock = this.buildRollingStockPayload();
+      const technical = this.buildTechnicalPayload(value);
+      const routeMetadata = this.buildRouteMetadataPayload(value);
 
       const newPlan = this.trainPlanService.createPlanModification({
         originalPlanId: this.plan.id,
@@ -264,6 +441,9 @@ export class PlanModificationDialogComponent {
           mode === 'trafficPeriod' ? value.trafficPeriodId || undefined : undefined,
         calendar,
         stops: this.assembledStops() ?? undefined,
+        rollingStock,
+        technical,
+        routeMetadata,
       });
 
       if (this.calendarLocked) {
@@ -320,6 +500,30 @@ export class PlanModificationDialogComponent {
     this.form.controls.trafficPeriodId.updateValueAndValidity({
       emitEvent: false,
     });
+
+    if (this.calendarLocked) {
+      const lockedYear = this.deriveYearFromLabel(this.item.timetableYearLabel);
+      if (lockedYear) {
+        this.form.controls.customYear.setValue(lockedYear, { emitEvent: false });
+        const presetDates = this.customSelectedDates().filter((date) =>
+          date.startsWith(String(lockedYear)),
+        );
+        this.customSelectedDates.set(presetDates);
+        this.updateCustomCalendarFields(presetDates);
+      }
+    }
+  }
+
+  private deriveYearFromLabel(label: string | null | undefined): number | null {
+    if (!label) {
+      return null;
+    }
+    const match = /^(\d{4})/.exec(label);
+    if (match) {
+      const year = Number.parseInt(match[1], 10);
+      return Number.isNaN(year) ? null : year;
+    }
+    return null;
   }
 
   private applyTrafficPeriod(periodId: string) {
@@ -670,6 +874,226 @@ export class PlanModificationDialogComponent {
     return `${stop.locationName} (${time})`;
   }
 
+  private formatIsoTime(value: string | undefined): string | null {
+    if (!value) {
+      return null;
+    }
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) {
+      return null;
+    }
+    return parsed.toISOString().slice(11, 16);
+  }
+
+  private hydrateCompositionFromRollingStock() {
+    const segments = [...(this.plan.rollingStock?.segments ?? [])].sort(
+      (a, b) => (a.position ?? 0) - (b.position ?? 0),
+    );
+    if (!segments.length) {
+      this.addBaseVehicle();
+    } else {
+      segments.forEach((segment) =>
+        this.addBaseVehicle({
+          vehicleType: segment.vehicleTypeId,
+          count: segment.count,
+          note: segment.remarks,
+        }),
+      );
+    }
+    const operations = this.plan.rollingStock?.operations ?? [];
+    operations.forEach((operation) => {
+      const action: 'attach' | 'detach' =
+        operation.type === 'split' ? 'detach' : 'attach';
+      const stopIndex = this.resolveStopSequence(operation.stopId);
+      this.addChangeEntry({
+        action,
+        stopIndex: stopIndex ?? null,
+        vehicleType: operation.remarks ?? '',
+        count: 1,
+        note: operation.remarks ?? '',
+      });
+    });
+  }
+
+  private createBaseVehicleGroup(seed?: {
+    vehicleType?: string;
+    count?: number;
+    note?: string;
+  }): BaseVehicleForm {
+    return this.fb.group({
+      vehicleType: this.fb.nonNullable.control(seed?.vehicleType ?? '', {
+        validators: [Validators.maxLength(80)],
+      }),
+      count: this.fb.nonNullable.control(seed?.count ?? 1, {
+        validators: [Validators.min(1)],
+      }),
+      note: this.fb.nonNullable.control(seed?.note ?? '', {
+        validators: [Validators.maxLength(160)],
+      }),
+    });
+  }
+
+  private createChangeEntryGroup(seed?: {
+    stopIndex?: number | null;
+    action?: 'attach' | 'detach';
+    vehicleType?: string;
+    count?: number;
+    note?: string;
+  }): ChangeEntryForm {
+    return this.fb.group({
+      stopIndex: this.fb.control(seed?.stopIndex ?? null),
+      action: this.fb.nonNullable.control(seed?.action ?? 'attach'),
+      vehicleType: this.fb.nonNullable.control(seed?.vehicleType ?? '', {
+        validators: [Validators.maxLength(80)],
+      }),
+      count: this.fb.nonNullable.control(seed?.count ?? 1, {
+        validators: [Validators.min(1)],
+      }),
+      note: this.fb.nonNullable.control(seed?.note ?? '', {
+        validators: [Validators.maxLength(200)],
+      }),
+    });
+  }
+
+  private validateCompositionForms(): boolean {
+    const baseInvalid = this.baseVehicles.controls.some((group) => {
+      const type = group.controls.vehicleType.value.trim();
+      const count = group.controls.count.value ?? 0;
+      if (!type && (!count || count <= 0)) {
+        return false;
+      }
+      return !type || count <= 0;
+    });
+    if (baseInvalid) {
+      this.baseVehicles.controls.forEach((group) => group.markAllAsTouched());
+      this.errorMessage.set('Bitte Typ und Anzahl für jedes Fahrzeug angeben.');
+      return false;
+    }
+
+    const changeInvalid = this.changeEntries.controls.some((group) => {
+      const stopIndex = group.controls.stopIndex.value;
+      const type = group.controls.vehicleType.value.trim();
+      const count = group.controls.count.value ?? 0;
+      const isEmpty =
+        (stopIndex === null || stopIndex === undefined) && !type && count <= 1;
+      if (isEmpty) {
+        return false;
+      }
+      return stopIndex === null || stopIndex === undefined || !type || count <= 0;
+    });
+    if (changeInvalid) {
+      this.changeEntries.controls.forEach((group) => group.markAllAsTouched());
+      this.errorMessage.set('Bitte Halt, Aktion und Fahrzeuge für Kopplungen angeben.');
+      return false;
+    }
+    return true;
+  }
+
+  private buildRollingStockPayload(): TimetableRollingStock | undefined {
+    const baseVehicles = this.baseVehicles.controls
+      .map((group) => ({
+        type: group.controls.vehicleType.value.trim(),
+        count: group.controls.count.value ?? 0,
+        note: group.controls.note.value.trim(),
+      }))
+      .filter((entry) => entry.type && entry.count > 0);
+
+    type ChangeEntryPayload = {
+      stopId: string;
+      action: 'attach' | 'detach';
+      vehicleType: string;
+      count: number;
+      note: string | undefined;
+    };
+
+    const changeEntries = this.changeEntries.controls
+      .map<ChangeEntryPayload | null>((group) => {
+        const stopIndex = group.controls.stopIndex.value ?? undefined;
+        const type = group.controls.vehicleType.value.trim();
+        const count = group.controls.count.value ?? 0;
+        if (!stopIndex || !type || count <= 0) {
+          return null;
+        }
+        return {
+          stopId: this.resolveStopId(stopIndex),
+          action: group.controls.action.value,
+          vehicleType: type,
+          count,
+          note: group.controls.note.value.trim() || undefined,
+        };
+      })
+      .filter((entry): entry is ChangeEntryPayload => entry !== null);
+
+    if (!baseVehicles.length && !changeEntries.length) {
+      return undefined;
+    }
+
+    const segments: TimetableRollingStockSegment[] = baseVehicles.map((vehicle, index) => ({
+      position: index + 1,
+      vehicleTypeId: vehicle.type,
+      count: vehicle.count,
+      remarks: vehicle.note || undefined,
+    }));
+
+    const operations: TimetableRollingStockOperation[] = changeEntries.map((entry, index) => ({
+      stopId: entry.stopId,
+      type: entry.action === 'attach' ? 'join' : 'split',
+      setIds: [`SET-${index + 1}`],
+      remarks: entry.note ?? `${entry.count}× ${entry.vehicleType}`,
+    }));
+
+    return {
+      segments,
+      operations: operations.length ? operations : undefined,
+    };
+  }
+
+  private buildTechnicalPayload(
+    value: ReturnType<FormGroup<PlanModificationFormModel>['getRawValue']>,
+  ): TrainPlanTechnicalData {
+    return {
+      trainType: this.plan.technical.trainType,
+      maxSpeed: value.technicalMaxSpeed ?? undefined,
+      lengthMeters: value.technicalLength ?? undefined,
+      weightTons: value.technicalWeight ?? undefined,
+      traction: value.technicalTraction?.trim() || this.plan.technical.traction,
+      energyType: this.plan.technical.energyType,
+      brakeType: this.plan.technical.brakeType,
+      etcsLevel: value.technicalEtcsLevel?.trim() || this.plan.technical.etcsLevel,
+    };
+  }
+
+  private buildRouteMetadataPayload(
+    value: ReturnType<FormGroup<PlanModificationFormModel>['getRawValue']>,
+  ): TrainPlanRouteMetadata | undefined {
+    const origin = value.originBorderPoint?.trim() || '';
+    const destination = value.destinationBorderPoint?.trim() || '';
+    const notes = value.borderNotes?.trim() || '';
+    if (!origin && !destination && !notes && !this.plan.routeMetadata) {
+      return undefined;
+    }
+    return {
+      originBorderPoint: origin || undefined,
+      destinationBorderPoint: destination || undefined,
+      borderNotes: notes || undefined,
+    };
+  }
+
+  private resolveStopId(sequence: number | undefined): string {
+    if (!sequence) {
+      return this.plan.stops[0]?.id ?? `${this.plan.id}-STOP-001`;
+    }
+    const match = this.plan.stops.find((stop) => stop.sequence === sequence);
+    return match?.id ?? this.plan.stops[0]?.id ?? `${this.plan.id}-STOP-001`;
+  }
+
+  private resolveStopSequence(stopId: string | undefined): number | undefined {
+    if (!stopId) {
+      return undefined;
+    }
+    return this.plan.stops.find((stop) => stop.id === stopId)?.sequence;
+  }
+
   private previewStops(): PlanModificationStopInput[] {
     if (this.assembledStops()) {
       return this.assembledStops() as PlanModificationStopInput[];
@@ -708,19 +1132,30 @@ export class PlanModificationDialogComponent {
       rangeEnd: segments[segments.length - 1].endDate,
       segments,
     });
-    if (this.item.trafficPeriodId) {
-      this.trafficPeriodService.addVariantRule(this.item.trafficPeriodId, {
-        name: plan.title,
-        dates: normalizedDates,
-        variantType: 'special_day',
-        appliesTo: 'both',
-      });
-    }
+    this.registerSubCalendarVariant(plan, normalizedDates);
     this.orderService.applyPlanModification({
       orderId: this.orderId,
       itemId: result.created.id,
-      plan,
+      plan: {
+        ...plan,
+        trafficPeriodId: this.item.trafficPeriodId ?? plan.trafficPeriodId,
+      },
     });
+  }
+
+  private registerSubCalendarVariant(plan: TrainPlan, dates: string[]): void {
+    if (!this.item.trafficPeriodId || !dates.length) {
+      return;
+    }
+    const periodId = this.item.trafficPeriodId;
+    this.trafficPeriodService.addVariantRule(periodId, {
+      name: `${plan.title} · Unterkalender`,
+      dates,
+      variantType: 'special_day',
+      appliesTo: 'both',
+      reason: `Variante für ${plan.trainNumber}`,
+    });
+    this.trafficPeriodService.addExclusionDates(periodId, dates);
   }
 
   private buildSegmentsFromDates(dates: string[]): OrderItemValiditySegment[] {

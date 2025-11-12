@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { Component, computed, inject, signal } from '@angular/core';
+import { Component, computed, effect, inject, signal } from '@angular/core';
 import {
   FormArray,
   FormBuilder,
@@ -33,8 +33,15 @@ interface InsightContext {
   icon: string;
 }
 
+interface CustomerFilterPreset {
+  id: string;
+  name: string;
+  search: string;
+}
+
 const CUSTOMER_SEARCH_STORAGE_KEY = 'customers.search.v1';
 const CUSTOMER_INSIGHTS_STORAGE_KEY = 'customers.insightsCollapsed.v1';
+const CUSTOMER_PRESETS_STORAGE_KEY = 'customers.presets.v1';
 
 @Component({
   selector: 'app-customer-list',
@@ -94,17 +101,41 @@ export class CustomerListComponent {
   readonly topProjects = computed(() => this.computeTopProjects());
   readonly topAccountsByOrders = computed(() => this.computeTopAccountsByOrders());
   readonly insightContext = computed(() => this.computeInsightContext());
+  private readonly savedPresets = signal<CustomerFilterPreset[]>([]);
+  readonly savedFilterPresets = computed(() => this.savedPresets());
+  private readonly activePresetId = signal<string | null>(null);
+  readonly activePreset = computed(() => this.activePresetId());
 
   constructor() {
+    this.restorePresetsFromStorage();
     const initialSearch = this.loadSearchTerm();
     this.searchControl.setValue(initialSearch, { emitEvent: false });
     this.searchTerm.set(initialSearch);
     this.searchControl.valueChanges
       .pipe(debounceTime(200), distinctUntilChanged(), takeUntilDestroyed())
       .subscribe((value) => {
+        this.clearActivePreset();
         this.searchTerm.set(value);
         this.persistSearchTerm(value);
       });
+
+    effect(() => {
+      this.persistPresets(this.savedPresets());
+    });
+
+    effect(
+      () => {
+        const activeId = this.activePresetId();
+        if (!activeId) {
+          return;
+        }
+        const preset = this.savedPresets().find((entry) => entry.id === activeId);
+        if (!preset || preset.search !== this.searchTerm()) {
+          this.activePresetId.set(null);
+        }
+      },
+      { allowSignalWrites: true },
+    );
   }
 
   readonly form = this.fb.group({
@@ -201,6 +232,67 @@ export class CustomerListComponent {
       return;
     }
     this.searchControl.setValue('');
+  }
+
+  saveCurrentFilterPreset(): void {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    const name = window
+      .prompt('Filteransicht benennen', this.defaultPresetName())
+      ?.trim();
+    if (!name) {
+      return;
+    }
+    const preset: CustomerFilterPreset = {
+      id: this.generatePresetId(),
+      name,
+      search: this.searchControl.value.trim(),
+    };
+    this.savedPresets.update((current) => [...current, preset]);
+    this.activePresetId.set(preset.id);
+  }
+
+  applyFilterPreset(preset: CustomerFilterPreset): void {
+    this.searchControl.setValue(preset.search, { emitEvent: false });
+    this.searchTerm.set(preset.search);
+    this.persistSearchTerm(preset.search);
+    this.activePresetId.set(preset.id);
+  }
+
+  removeFilterPreset(id: string): void {
+    this.savedPresets.update((current) =>
+      current.filter((preset) => preset.id !== id),
+    );
+    if (this.activePresetId() === id) {
+      this.activePresetId.set(null);
+    }
+  }
+
+  duplicateFilterPreset(preset: CustomerFilterPreset): void {
+    const copy: CustomerFilterPreset = {
+      id: this.generatePresetId(),
+      name: `${preset.name} (Kopie)`,
+      search: preset.search,
+    };
+    this.savedPresets.update((current) => [...current, copy]);
+  }
+
+  renameFilterPreset(preset: CustomerFilterPreset): void {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    const nextName = window
+      .prompt('Neuen Namen vergeben', preset.name)
+      ?.trim();
+    if (!nextName || nextName === preset.name) {
+      return;
+    }
+    this.savedPresets.update((current) =>
+      current.map((entry) =>
+        entry.id === preset.id ? { ...entry, name: nextName } : entry,
+      ),
+    );
   }
 
   toggleInsightsCollapsed(): void {
@@ -370,5 +462,58 @@ export class CustomerListComponent {
     } catch {
       // ignore storage issues
     }
+  }
+
+  private restorePresetsFromStorage(): void {
+    if (typeof window === 'undefined' || !window.localStorage) {
+      return;
+    }
+    try {
+      const raw = window.localStorage.getItem(CUSTOMER_PRESETS_STORAGE_KEY);
+      if (!raw) {
+        return;
+      }
+      const parsed = JSON.parse(raw) as Partial<CustomerFilterPreset>[] | undefined;
+      if (!Array.isArray(parsed)) {
+        return;
+      }
+      const normalized = parsed
+        .map((entry) =>
+          entry?.id && entry.name
+            ? { id: entry.id, name: entry.name, search: entry.search ?? '' }
+            : null,
+        )
+        .filter((entry): entry is CustomerFilterPreset => !!entry);
+      this.savedPresets.set(normalized);
+    } catch (error) {
+      console.warn('Kunden-Presets konnten nicht geladen werden', error);
+    }
+  }
+
+  private persistPresets(presets: CustomerFilterPreset[]): void {
+    if (typeof window === 'undefined' || !window.localStorage) {
+      return;
+    }
+    try {
+      window.localStorage.setItem(CUSTOMER_PRESETS_STORAGE_KEY, JSON.stringify(presets));
+    } catch (error) {
+      console.warn('Kunden-Presets konnten nicht gespeichert werden', error);
+    }
+  }
+
+  private clearActivePreset(): void {
+    if (this.activePresetId()) {
+      this.activePresetId.set(null);
+    }
+  }
+
+  private defaultPresetName(): string {
+    return `Ansicht ${this.savedPresets().length + 1}`;
+  }
+
+  private generatePresetId(): string {
+    return `customer-preset-${Date.now().toString(36)}-${Math.random()
+      .toString(36)
+      .slice(2, 7)}`;
   }
 }

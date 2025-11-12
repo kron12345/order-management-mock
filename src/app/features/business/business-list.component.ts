@@ -36,6 +36,7 @@ import {
   BusinessCommandDefinition,
   BusinessCommandPaletteDialogComponent,
 } from './business-command-palette-dialog.component';
+import { BusinessCreateFromTemplateComponent } from './business-create-from-template.component';
 
 interface SortOption {
   value: string;
@@ -119,7 +120,7 @@ const BUSINESS_INSIGHTS_STORAGE_KEY = 'business.insightsCollapsed.v1';
 @Component({
   selector: 'app-business-list',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, ...MATERIAL_IMPORTS],
+  imports: [CommonModule, ReactiveFormsModule, ...MATERIAL_IMPORTS, BusinessCreateFromTemplateComponent],
   templateUrl: './business-list.component.html',
   styleUrl: './business-list.component.scss',
   providers: [DatePipe],

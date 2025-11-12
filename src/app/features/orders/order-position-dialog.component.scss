@@ -42,6 +42,64 @@
   }
 }
 
+.dialog-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.mode-tabs {
+  background: #fff;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 12px;
+  padding: 8px 16px 0;
+}
+
+.tab-panel {
+  padding: 16px 4px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.calendar-section {
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 12px;
+  padding: 16px;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.calendar-section__header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+
+  h3 {
+    margin: 0;
+  }
+
+  p {
+    margin: 4px 0 0 0;
+    color: rgba(0, 0, 0, 0.6);
+  }
+}
+
+.calendar-placeholder {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.9rem;
+  color: rgba(0, 0, 0, 0.65);
+
+  mat-icon {
+    color: #1a73e8;
+  }
+}
+
 .form {
   display: flex;
   flex-direction: column;
@@ -53,6 +111,87 @@
 
 .form--compact {
   max-width: 100%;
+}
+
+.business-section {
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 12px;
+  padding: 16px;
+  background: #fff;
+  gap: 20px;
+}
+
+.business-section__header {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+
+  h3 {
+    margin: 0;
+  }
+
+  p {
+    margin: 4px 0 0 0;
+    color: rgba(0, 0, 0, 0.6);
+    max-width: 520px;
+  }
+}
+
+.business-section__mode {
+  align-self: flex-start;
+}
+
+.business-section__template {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.business-section__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+}
+
+.business-section__note textarea {
+  min-height: 64px;
+}
+
+.business-section__automations {
+  border: 1px dashed rgba(26, 115, 232, 0.35);
+  border-radius: 10px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: rgba(26, 115, 232, 0.05);
+
+  &--disabled {
+    opacity: 0.6;
+  }
+}
+
+.automation-options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.automation-option {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+
+  small {
+    color: rgba(0, 0, 0, 0.6);
+  }
+}
+
+.business-section__automations-hint {
+  margin: 0;
+  font-size: 0.85rem;
+  color: rgba(0, 0, 0, 0.65);
 }
 
 .plan-layout {
@@ -77,6 +216,12 @@
   box-sizing: border-box;
 }
 
+.calendar-hint {
+  margin: 0;
+  font-size: 0.85rem;
+  color: rgba(0, 0, 0, 0.6);
+}
+
 .grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
@@ -90,6 +235,11 @@
 .error {
   margin-top: 12px;
   color: #d93025;
+}
+
+.error--inline {
+  margin: 0;
+  align-self: flex-start;
 }
 
 .import-filters {

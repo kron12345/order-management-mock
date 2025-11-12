@@ -5,10 +5,13 @@ import {
   TrainPlanSourceType,
   TrainPlanStatus,
   TrainPlanStop,
+  TrainPlanTechnicalData,
+  TrainPlanRouteMetadata,
 } from '../models/train-plan.model';
 import { MOCK_TRAIN_PLANS } from '../mock/mock-train-plans.mock';
 import { ScheduleTemplateService, CreateScheduleTemplateStopPayload } from './schedule-template.service';
-import { ScheduleTemplateStop } from '../models/schedule-template.model';
+import { ScheduleTemplate, ScheduleTemplateStop } from '../models/schedule-template.model';
+import type { TimetableRollingStock } from '../models/timetable.model';
 import { TrafficPeriodService } from './traffic-period.service';
 
 export interface TrainPlanFilters {
@@ -59,6 +62,9 @@ export interface CreatePlanModificationPayload {
   trafficPeriodId?: string;
   notes?: string;
   stops?: PlanModificationStopInput[];
+  rollingStock?: TimetableRollingStock;
+  technical?: TrainPlanTechnicalData;
+  routeMetadata?: TrainPlanRouteMetadata;
 }
 
 export interface PlanModificationStopInput {
@@ -217,38 +223,45 @@ export class TrainPlanService {
     const interval = Math.max(1, payload.intervalMinutes);
     const departuresPerDay = Math.max(1, payload.departuresPerDay);
 
+    const calendarRange = {
+      start: dates[0],
+      end: dates[dates.length - 1] ?? dates[0],
+    };
+    const baseDate = dates[0];
     const nowIso = new Date().toISOString();
-    const plans: TrainPlan[] = [];
-    let sequenceIndex = 0;
+    const planOffsets: number[] = [];
 
-    dates.forEach((currentDate) => {
-      let minutesWithinDay = startMinutes;
-      for (let i = 0; i < departuresPerDay; i++) {
-        if (minutesWithinDay >= 24 * 60) {
-          break;
-        }
-
-        const departureDate = this.buildDateTime(currentDate, minutesWithinDay);
-        const trainNumberOverride = this.resolveTrainNumberOverride(
-          payload.trainNumberStart,
-          payload.trainNumberInterval,
-          sequenceIndex,
-        );
-
-        const plan = this.buildPlanFromTemplate(
-          templateEntity,
-          payload.trafficPeriodId,
-          departureDate,
-          sequenceIndex,
-          payload.responsibleRu ?? template.responsibleRu,
-          nowIso,
-          trainNumberOverride,
-        );
-
-        plans.push(plan);
-        sequenceIndex++;
-        minutesWithinDay += interval;
+    let minutesWithinDay = startMinutes;
+    for (let i = 0; i < departuresPerDay; i++) {
+      if (minutesWithinDay >= 24 * 60) {
+        break;
       }
+      planOffsets.push(minutesWithinDay);
+      minutesWithinDay += interval;
+    }
+
+    if (!planOffsets.length) {
+      throw new Error('Keine Fahrpläne konnten erzeugt werden');
+    }
+
+    const plans = planOffsets.map((offsetMinutes, sequenceIndex) => {
+      const departureDate = this.buildDateTime(baseDate, offsetMinutes);
+      const trainNumberOverride = this.resolveTrainNumberOverride(
+        payload.trainNumberStart,
+        payload.trainNumberInterval,
+        sequenceIndex,
+      );
+
+      return this.buildPlanFromTemplate(
+        templateEntity,
+        payload.trafficPeriodId,
+        departureDate,
+        sequenceIndex,
+        payload.responsibleRu ?? template.responsibleRu,
+        nowIso,
+        trainNumberOverride,
+        calendarRange,
+      );
     });
 
     if (!plans.length) {
@@ -295,7 +308,7 @@ export class TrainPlanService {
       trainNumber: payload.trainNumber,
       pathRequestId: `PR-${planId}`,
       pathId: undefined,
-      caseReferenceId: undefined,
+      caseReference: undefined,
       status: 'not_ordered',
       responsibleRu: payload.responsibleRu,
       calendar: {
@@ -384,10 +397,13 @@ export class TrainPlanService {
       trafficPeriodId: payload.trafficPeriodId ?? undefined,
       referencePlanId: original.referencePlanId ?? original.id,
       stops: clonedStops,
+      technical: payload.technical ?? original.technical,
+      routeMetadata: payload.routeMetadata ?? original.routeMetadata,
       createdAt: timestamp,
       updatedAt: timestamp,
       linkedOrderItemId: undefined,
       notes: payload.notes ?? original.notes,
+      rollingStock: payload.rollingStock ?? original.rollingStock,
     } satisfies TrainPlan;
 
     this._plans.update((plans) => [plan, ...plans]);
@@ -434,34 +450,35 @@ export class TrainPlanService {
   }
 
   private buildPlanFromTemplate(
-    template: NonNullable<ReturnType<ScheduleTemplateService['getById']>>,
+    template: ScheduleTemplate,
     trafficPeriodId: string | undefined,
     departureDate: Date,
     sequence: number,
     responsibleRu: string,
     timestamp: string,
     trainNumberOverride?: string,
+    calendarRange?: { start: string; end: string },
   ): TrainPlan {
     const planId = this.generatePlanId();
     const trainNumber =
       trainNumberOverride ?? this.generateTrainNumber(template.trainNumber, sequence);
     const stops = this.buildStops(template.stops, departureDate);
-    const firstStop = stops[0];
-    const lastStop = stops[stops.length - 1];
-    const calendarDate = departureDate.toISOString().slice(0, 10);
+    const rollingStock = this.buildRollingStockFromTemplate(template, stops);
+    const calendarStart = calendarRange?.start ?? departureDate.toISOString().slice(0, 10);
+    const calendarEnd = calendarRange?.end ?? calendarStart;
 
     return {
       id: planId,
-      title: `${template.title} ${calendarDate} ${this.formatTimeLabel(departureDate)}`,
+      title: `${template.title} ${calendarStart} ${this.formatTimeLabel(departureDate)}`,
       trainNumber,
       pathRequestId: `PR-${planId}`,
       pathId: undefined,
-      caseReferenceId: undefined,
+      caseReference: undefined,
       status: 'not_ordered',
       responsibleRu,
       calendar: {
-        validFrom: calendarDate,
-        validTo: calendarDate,
+        validFrom: calendarStart,
+        validTo: calendarEnd,
         daysBitmap: '1111111',
       },
       trafficPeriodId,
@@ -478,7 +495,58 @@ export class TrainPlanService {
       },
       linkedOrderItemId: undefined,
       notes: undefined,
+      rollingStock,
     } satisfies TrainPlan;
+  }
+
+  private buildRollingStockFromTemplate(
+    template: ScheduleTemplate,
+    stops: TrainPlanStop[],
+  ): TimetableRollingStock | undefined {
+    const composition = template.composition;
+    if (!composition?.base?.length) {
+      return undefined;
+    }
+
+    const segments = composition.base.map((unit, index) => ({
+      position: index + 1,
+      vehicleTypeId: unit.type,
+      count: unit.count,
+      setId: `${template.id}-SEG-${index + 1}`,
+      setLabel: unit.label ?? unit.type,
+      remarks: unit.note ?? undefined,
+    }));
+
+    const remarks =
+      composition.changes?.length
+        ? composition.changes
+            .map((change) => this.describeCompositionChange(change, stops))
+            .filter((summary): summary is string => !!summary)
+            .join(' | ')
+        : undefined;
+
+    return {
+      designation: `${template.title} – Fahrzeuge`,
+      remarks,
+      segments,
+    };
+  }
+
+  private describeCompositionChange(
+    change: NonNullable<ScheduleTemplate['composition']>['changes'][number],
+    stops: TrainPlanStop[],
+  ): string | undefined {
+    if (!change.vehicles.length) {
+      return undefined;
+    }
+    const stop = stops.find((entry) => entry.sequence === change.stopIndex);
+    const stopLabel = stop?.locationName ?? `Halt ${change.stopIndex}`;
+    const actionLabel = change.action === 'attach' ? 'Ankuppeln' : 'Abkuppeln';
+    const vehicles = change.vehicles
+      .map((vehicle) => `${vehicle.count}× ${vehicle.type}`)
+      .join(', ');
+    const note = change.note ? ` – ${change.note}` : '';
+    return `${actionLabel}: ${vehicles} @ ${stopLabel}${note}`;
   }
 
   private resolveCalendarDates(

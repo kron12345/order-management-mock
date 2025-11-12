@@ -16,6 +16,7 @@ import { BusinessService } from '../../../core/services/business.service';
 import { FilterBarComponent } from '../../filters/filter-bar/filter-bar.component';
 import { OrderCardComponent } from '../order-card/order-card.component';
 import { OrderCreateDialogComponent } from '../order-create-dialog.component';
+import { OrderTemplateRecommendationComponent } from '../order-template-recommendation.component';
 
 interface OrderSummary {
   order: Order;
@@ -59,7 +60,14 @@ interface CollaborationContext {
   icon: string;
 }
 
+interface OrderFilterPreset {
+  id: string;
+  name: string;
+  filters: OrderFilters;
+}
+
 const INSIGHTS_COLLAPSED_STORAGE_KEY = 'orders.insightsCollapsed.v1';
+const ORDER_PRESETS_STORAGE_KEY = 'orders.presets.v1';
 
 @Component({
   selector: 'app-order-list',
@@ -70,6 +78,7 @@ const INSIGHTS_COLLAPSED_STORAGE_KEY = 'orders.insightsCollapsed.v1';
     ...MATERIAL_IMPORTS,
     FilterBarComponent,
     OrderCardComponent,
+    OrderTemplateRecommendationComponent,
   ],
   templateUrl: './order-list.component.html',
   styleUrl: './order-list.component.scss',
@@ -86,6 +95,7 @@ export class OrderListComponent {
   private readonly viewTransitionFlag = signal(false);
   readonly isViewTransitioning = computed(() => this.viewTransitionFlag());
   readonly skeletonPlaceholders = Array.from({ length: 6 }, (_, index) => index);
+  readonly templatePanelOpen = signal(false);
 
   readonly orders = computed(() => this.filteredOrders());
   readonly filters = computed(() => this.store.filters());
@@ -98,13 +108,19 @@ export class OrderListComponent {
   readonly healthInsight = computed(() => this.computeHealthInsight());
   readonly collaborationContext = computed(() => this.computeCollaborationContext());
   readonly insightsCollapsed = signal(this.loadInsightsCollapsed());
+  private readonly savedPresets = signal<OrderFilterPreset[]>([]);
+  readonly savedFilterPresets = computed(() => this.savedPresets());
+  private readonly activePresetId = signal<string | null>(null);
+  readonly activePreset = computed(() => this.activePresetId());
 
   constructor() {
+    this.restorePresetsFromStorage();
     this.searchControl.setValue(this.store.filters().search, { emitEvent: false });
     this.searchControl.valueChanges
       .pipe(debounceTime(200), distinctUntilChanged())
       .subscribe((value) => {
         this.startViewTransition();
+        this.clearActivePreset();
         this.store.setFilter({ search: value });
       });
 
@@ -136,6 +152,23 @@ export class OrderListComponent {
       window.setTimeout(() => this.scrollToHighlightedItem(target), 0);
     });
 
+    effect(() => {
+      this.persistPresets(this.savedPresets());
+    });
+
+    effect(
+      () => {
+        const activeId = this.activePresetId();
+        if (!activeId) {
+          return;
+        }
+        const preset = this.savedPresets().find((entry) => entry.id === activeId);
+        if (!preset || !this.presetsMatchCurrent(preset)) {
+          this.activePresetId.set(null);
+        }
+      },
+      { allowSignalWrites: true },
+    );
   }
 
   readonly heroMetricList = computed(() => [
@@ -215,15 +248,18 @@ export class OrderListComponent {
   toggleTagFilter(tag: string): void {
     const current = this.store.filters().tag;
     const next = current === tag ? 'all' : tag;
+    this.clearActivePreset();
     this.store.setFilter({ tag: next });
   }
 
   clearTagFilter(): void {
+    this.clearActivePreset();
     this.store.setFilter({ tag: 'all' });
   }
 
   applyTagInsight(tag: string): void {
     this.startViewTransition();
+    this.clearActivePreset();
     this.store.setFilter({ tag });
   }
 
@@ -237,6 +273,7 @@ export class OrderListComponent {
 
   focusUpcoming(): void {
     this.startViewTransition();
+    this.clearActivePreset();
     this.store.setFilter({ timeRange: 'thisWeek' });
   }
 
@@ -445,6 +482,65 @@ export class OrderListComponent {
     this.searchControl.setValue(`${filteredTokens.join(' ')} `);
   }
 
+  saveCurrentFilterPreset(): void {
+    const view = this.document?.defaultView;
+    if (!view) {
+      return;
+    }
+    const name = view.prompt('Filteransicht benennen', this.defaultPresetName())?.trim();
+    if (!name) {
+      return;
+    }
+    const preset: OrderFilterPreset = {
+      id: this.generatePresetId(),
+      name,
+      filters: this.currentFiltersSnapshot(),
+    };
+    this.savedPresets.update((current) => [...current, preset]);
+    this.activePresetId.set(preset.id);
+  }
+
+  applyFilterPreset(preset: OrderFilterPreset): void {
+    this.startViewTransition();
+    this.searchControl.setValue(preset.filters.search, { emitEvent: false });
+    this.store.setFilter({ ...preset.filters });
+    this.activePresetId.set(preset.id);
+  }
+
+  removeFilterPreset(id: string): void {
+    this.savedPresets.update((current) =>
+      current.filter((preset) => preset.id !== id),
+    );
+    if (this.activePresetId() === id) {
+      this.activePresetId.set(null);
+    }
+  }
+
+  duplicateFilterPreset(preset: OrderFilterPreset): void {
+    const copy: OrderFilterPreset = {
+      id: this.generatePresetId(),
+      name: `${preset.name} (Kopie)`,
+      filters: this.normalizeFilters(preset.filters),
+    };
+    this.savedPresets.update((current) => [...current, copy]);
+  }
+
+  renameFilterPreset(preset: OrderFilterPreset): void {
+    const view = this.document?.defaultView;
+    if (!view) {
+      return;
+    }
+    const nextName = view.prompt('Neuen Namen vergeben', preset.name)?.trim();
+    if (!nextName || nextName === preset.name) {
+      return;
+    }
+    this.savedPresets.update((current) =>
+      current.map((entry) =>
+        entry.id === preset.id ? { ...entry, name: nextName } : entry,
+      ),
+    );
+  }
+
   private computeCollaborationContext(): CollaborationContext {
     const filters = this.filters();
     const metrics = this.heroMetrics();
@@ -519,6 +615,97 @@ export class OrderListComponent {
     }
   }
 
+  private currentFiltersSnapshot(): OrderFilters {
+    const snapshot: Partial<OrderFilters> = { ...this.filters() };
+    snapshot.search = this.searchControl.value;
+    return this.normalizeFilters(snapshot);
+  }
+
+  private normalizeFilters(filters?: Partial<OrderFilters>): OrderFilters {
+    return {
+      search: filters?.search ?? '',
+      tag: filters?.tag ?? 'all',
+      timeRange: filters?.timeRange ?? 'all',
+      trainStatus: filters?.trainStatus ?? 'all',
+      businessStatus: filters?.businessStatus ?? 'all',
+      trainNumber: filters?.trainNumber ?? '',
+      timetableYearLabel: filters?.timetableYearLabel ?? 'all',
+      linkedBusinessId: filters?.linkedBusinessId ?? null,
+    };
+  }
+
+  private filtersEqual(a: OrderFilters, b: OrderFilters): boolean {
+    return (
+      a.search === b.search &&
+      a.tag === b.tag &&
+      a.timeRange === b.timeRange &&
+      a.trainStatus === b.trainStatus &&
+      a.businessStatus === b.businessStatus &&
+      a.trainNumber === b.trainNumber &&
+      a.timetableYearLabel === b.timetableYearLabel &&
+      (a.linkedBusinessId ?? null) === (b.linkedBusinessId ?? null)
+    );
+  }
+
+  private presetsMatchCurrent(preset: OrderFilterPreset): boolean {
+    return this.filtersEqual(preset.filters, this.filters());
+  }
+
+  private restorePresetsFromStorage(): void {
+    try {
+      const storage = this.document?.defaultView?.localStorage;
+      if (!storage) {
+        return;
+      }
+      const raw = storage.getItem(ORDER_PRESETS_STORAGE_KEY);
+      if (!raw) {
+        return;
+      }
+      const parsed = JSON.parse(raw) as Partial<OrderFilterPreset>[] | undefined;
+      if (!Array.isArray(parsed)) {
+        return;
+      }
+      const normalized = parsed
+        .map((entry) => {
+          if (!entry?.id || !entry.name) {
+            return null;
+          }
+          return {
+            id: entry.id,
+            name: entry.name,
+            filters: this.normalizeFilters(entry.filters as Partial<OrderFilters> | undefined),
+          };
+        })
+        .filter((entry): entry is OrderFilterPreset => !!entry);
+      this.savedPresets.set(normalized);
+    } catch (error) {
+      console.warn('Auftrags-Presets konnten nicht geladen werden', error);
+    }
+  }
+
+  private persistPresets(presets: OrderFilterPreset[]): void {
+    try {
+      const storage = this.document?.defaultView?.localStorage;
+      storage?.setItem(ORDER_PRESETS_STORAGE_KEY, JSON.stringify(presets));
+    } catch (error) {
+      console.warn('Auftrags-Presets konnten nicht gespeichert werden', error);
+    }
+  }
+
+  private clearActivePreset(): void {
+    if (this.activePresetId()) {
+      this.activePresetId.set(null);
+    }
+  }
+
+  private defaultPresetName(): string {
+    return `Ansicht ${this.savedPresets().length + 1}`;
+  }
+
+  private generatePresetId(): string {
+    return `order-preset-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+  }
+
   private friendlyBusinessStatus(status: BusinessStatus): string {
     switch (status) {
       case 'neu':
@@ -583,6 +770,14 @@ export class OrderListComponent {
   private startViewTransition(): void {
     this.viewTransitionFlag.set(true);
     window.setTimeout(() => this.viewTransitionFlag.set(false), 320);
+  }
+
+  toggleTemplatePanel(force?: boolean): void {
+    if (typeof force === 'boolean') {
+      this.templatePanelOpen.set(force);
+      return;
+    }
+    this.templatePanelOpen.update((open) => !open);
   }
 
   @HostListener('window:keydown', ['$event'])

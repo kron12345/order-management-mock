@@ -20,10 +20,16 @@
     </mat-card-content>
   </mat-card>
 
-  <mat-card class="plan-week-template__detail" *ngIf="selectedTemplate() as template; else emptyTemplate">
+  <mat-card class="plan-week-template__detail">
     <mat-card-header>
-      <mat-card-title>Vorlage bearbeiten</mat-card-title>
-      <button mat-icon-button color="warn" (click)="deleteSelectedTemplate()" matTooltip="Vorlage löschen">
+      <mat-card-title>{{ hasTemplateSelection() ? 'Vorlage bearbeiten' : 'Neue Vorlage' }}</mat-card-title>
+      <button
+        mat-icon-button
+        color="warn"
+        (click)="deleteSelectedTemplate()"
+        matTooltip="Vorlage löschen"
+        [disabled]="!hasTemplateSelection()"
+      >
         <mat-icon fontIcon="delete"></mat-icon>
       </button>
     </mat-card-header>
@@ -39,7 +45,19 @@
         </mat-form-field>
         <mat-form-field appearance="outline">
           <mat-label>Referenzwoche (Start, ISO)</mat-label>
-          <input matInput type="date" formControlName="baseWeekStartIso" />
+          <input
+            matInput
+            type="date"
+            formControlName="baseWeekStartIso"
+            [attr.min]="yearRangeStart || null"
+            [attr.max]="yearRangeEnd || null"
+          />
+          <mat-error *ngIf="templateForm.get('baseWeekStartIso')?.hasError('notMonday')">
+            Bitte einen Montag wählen.
+          </mat-error>
+          <mat-error *ngIf="templateForm.get('baseWeekStartIso')?.hasError('outOfRange')">
+            Datum muss im aktuellen Fahrplanjahr liegen.
+          </mat-error>
         </mat-form-field>
         <mat-form-field appearance="outline">
           <mat-label>Variante</mat-label>
@@ -50,6 +68,126 @@
           <button mat-flat-button color="primary" type="submit">Speichern</button>
         </div>
       </form>
+
+      <section class="plan-week-slices">
+        <header>
+          <h3>Zeiträume</h3>
+          <button mat-stroked-button type="button" (click)="newSlice()" [disabled]="!hasTemplateSelection()">
+            <mat-icon fontIcon="add"></mat-icon>
+            Neu
+          </button>
+        </header>
+
+        <ng-container *ngIf="hasTemplateSelection(); else sliceGuard">
+          <div class="plan-week-slices__list" *ngIf="slices().length > 0; else emptySlices">
+            <table mat-table [dataSource]="slices()" class="mat-elevation-z1">
+              <ng-container matColumnDef="label">
+                <th mat-header-cell *matHeaderCellDef>Bezeichnung</th>
+                <td mat-cell *matCellDef="let slice">
+                  <div class="plan-week-slices__label">
+                    <strong>{{ slice.label || '—' }}</strong>
+                  </div>
+                </td>
+              </ng-container>
+
+              <ng-container matColumnDef="range">
+                <th mat-header-cell *matHeaderCellDef>Zeitraum</th>
+                <td mat-cell *matCellDef="let slice">{{ formatSliceRange(slice) }}</td>
+              </ng-container>
+
+              <ng-container matColumnDef="actions">
+                <th mat-header-cell *matHeaderCellDef></th>
+                <td mat-cell *matCellDef="let slice">
+                  <button mat-icon-button type="button" matTooltip="Zeitraum bearbeiten" (click)="editSlice(slice)">
+                    <mat-icon fontIcon="edit"></mat-icon>
+                  </button>
+                  <button
+                    mat-icon-button
+                    type="button"
+                    color="warn"
+                    matTooltip="Zeitraum löschen"
+                    (click)="deleteSlice(slice)"
+                  >
+                    <mat-icon fontIcon="delete"></mat-icon>
+                  </button>
+                </td>
+              </ng-container>
+
+              <tr mat-header-row *matHeaderRowDef="['label', 'range', 'actions']"></tr>
+              <tr mat-row *matRowDef="let row; columns: ['label', 'range', 'actions']" [class.is-active]="sliceForm.get('id')?.value === row.id"></tr>
+            </table>
+          </div>
+
+          <ng-template #emptySlices>
+            <div class="plan-week-slices__empty">
+              <mat-icon fontIcon="view_week"></mat-icon>
+              <p>Noch keine Zeiträume vorhanden.</p>
+              <small>Lege den ersten Zeitraum an, um das Fahrplanjahr zu strukturieren.</small>
+            </div>
+          </ng-template>
+
+          <form [formGroup]="sliceForm" (ngSubmit)="submitSlice()" class="plan-week-slices__form">
+            <div class="plan-week-slices__grid">
+              <mat-form-field appearance="outline">
+                <mat-label>Bezeichnung</mat-label>
+                <input matInput formControlName="label" placeholder="z. B. Winterphase" />
+              </mat-form-field>
+              <button
+                mat-stroked-button
+                type="button"
+                class="plan-week-slices__auto"
+                (click)="applySuggestedSlice()"
+                [disabled]="!suggestedSlice()"
+              >
+                Automatisch befüllen
+              </button>
+            </div>
+
+            <div class="plan-week-slices__dates">
+              <mat-form-field appearance="outline">
+                <mat-label>Start (Montag)</mat-label>
+                <input
+                  matInput
+                  type="date"
+                  formControlName="startIso"
+                  [attr.min]="yearRangeStart || null"
+                  [attr.max]="yearRangeEnd || null"
+                />
+              </mat-form-field>
+              <mat-form-field appearance="outline">
+                <mat-label>Ende (Sonntag)</mat-label>
+                <input
+                  matInput
+                  type="date"
+                  formControlName="endIso"
+                  [attr.min]="yearRangeStart || null"
+                  [attr.max]="yearRangeEnd || null"
+                />
+              </mat-form-field>
+            </div>
+            <div class="plan-week-slices__range-error" *ngIf="sliceForm.errors?.['range']">
+              Ende muss nach dem Start liegen.
+            </div>
+            <div class="plan-week-slices__range-error" *ngIf="sliceForm.errors?.['outOfRange']">
+              Zeiträume müssen innerhalb des gewählten Fahrplanjahres liegen.
+            </div>
+
+            <div class="plan-week-slices__actions">
+              <button mat-stroked-button type="button" (click)="newSlice()">Abbrechen</button>
+              <button mat-flat-button color="primary" type="submit">
+                {{ sliceForm.get('id')?.value ? 'Zeitraum aktualisieren' : 'Zeitraum hinzufügen' }}
+              </button>
+            </div>
+          </form>
+        </ng-container>
+
+        <ng-template #sliceGuard>
+          <div class="plan-week-slices__placeholder">
+            <mat-icon fontIcon="info"></mat-icon>
+            <p>Bitte zuerst eine Vorlage auswählen oder speichern, um Zeiträume anzulegen.</p>
+          </div>
+        </ng-template>
+      </section>
 
       <section class="plan-week-validities">
         <header>
@@ -63,7 +201,7 @@
           <ng-container matColumnDef="range">
             <th mat-header-cell *matHeaderCellDef>Zeitraum</th>
             <td mat-cell *matCellDef="let validity" (click)="handleValiditySelect(validity)">
-              {{ validity.validFromIso }} – {{ validity.validToIso }}
+              {{ formatDate(validity.validFromIso) }} – {{ formatDate(validity.validToIso) }}
             </td>
           </ng-container>
           <ng-container matColumnDef="status">
@@ -85,11 +223,23 @@
         <form [formGroup]="validityForm" (ngSubmit)="submitValidity()" class="plan-week-validities__form">
           <mat-form-field appearance="outline">
             <mat-label>Gültig ab</mat-label>
-            <input matInput type="date" formControlName="validFromIso" />
+            <input
+              matInput
+              type="date"
+              formControlName="validFromIso"
+              [attr.min]="yearRangeStart || null"
+              [attr.max]="yearRangeEnd || null"
+            />
           </mat-form-field>
           <mat-form-field appearance="outline">
             <mat-label>Gültig bis</mat-label>
-            <input matInput type="date" formControlName="validToIso" />
+            <input
+              matInput
+              type="date"
+              formControlName="validToIso"
+              [attr.min]="yearRangeStart || null"
+              [attr.max]="yearRangeEnd || null"
+            />
           </mat-form-field>
           <mat-button-toggle-group formControlName="status" appearance="legacy">
             <mat-button-toggle value="draft">Entwurf</mat-button-toggle>
@@ -104,12 +254,4 @@
       </section>
     </mat-card-content>
   </mat-card>
-
-  <ng-template #emptyTemplate>
-    <mat-card class="plan-week-template__detail">
-      <mat-card-content>
-        <p>Bitte eine Planwoche auswählen oder neu anlegen.</p>
-      </mat-card-content>
-    </mat-card>
-  </ng-template>
 </section>

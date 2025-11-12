@@ -1,3 +1,5 @@
+import type { TimetableRollingStock } from './timetable.model';
+
 export type TrainPlanStatus =
   | 'not_ordered'
   | 'requested'
@@ -37,6 +39,9 @@ export interface TrainPlanStop {
   activities: string[];
   platform?: string;
   notes?: string;
+  holdReason?: string;
+  responsibleRu?: string;
+  vehicleInfo?: string;
 }
 
 export interface TrainPlanTechnicalData {
@@ -45,6 +50,31 @@ export interface TrainPlanTechnicalData {
   weightTons?: number;
   lengthMeters?: number;
   traction?: string;
+  energyType?: string;
+  brakeType?: string;
+  etcsLevel?: string;
+}
+
+export interface TrainPlanRouteMetadata {
+  originBorderPoint?: string;
+  destinationBorderPoint?: string;
+  borderNotes?: string;
+}
+
+export interface TrainPlanCaseReference {
+  id: string;
+  marketProduct: 'regeltrasse' | 'rahmenvertrag' | 'sondertrasse' | 'anderes';
+  customerReference?: string;
+  contractNumber?: string;
+  description?: string;
+}
+
+export interface TrainPlanParticipant {
+  role: 'lead' | 'assisting';
+  ricsCode: string;
+  name: string;
+  contactEmail?: string;
+  contactPhone?: string;
 }
 
 export interface TrainPlan {
@@ -53,17 +83,20 @@ export interface TrainPlan {
   trainNumber: string;
   pathRequestId: string;
   pathId?: string;
-  caseReferenceId?: string;
+  caseReference?: TrainPlanCaseReference;
   status: TrainPlanStatus;
   responsibleRu: string;
+  participants?: TrainPlanParticipant[];
   calendar: TrainPlanCalendar;
   trafficPeriodId?: string;
   referencePlanId?: string;
   stops: TrainPlanStop[];
   technical: TrainPlanTechnicalData;
+  routeMetadata?: TrainPlanRouteMetadata;
   createdAt: string; // ISO datetime
   updatedAt: string; // ISO datetime
   source: TrainPlanSource;
   linkedOrderItemId?: string;
   notes?: string;
+  rollingStock?: TimetableRollingStock;
 }

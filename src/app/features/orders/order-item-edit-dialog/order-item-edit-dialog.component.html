@@ -72,22 +72,53 @@
           <mat-expansion-panel-header>
             <mat-panel-title>Verkehrstage & Varianten</mat-panel-title>
           </mat-expansion-panel-header>
-          <div class="calendar-summary">
-            @if (calendarSegments().length) {
+          @if (canEditCalendar) {
+            <app-reference-calendar-inline-form
+              [yearControl]="calendarYearControl"
+              [datesControl]="calendarDatesControl"
+              [excludedDatesControl]="calendarExclusionsControl"
+              title="Referenzkalender bearbeiten"
+              description="Markiere alle Verkehrstage der Serie oder entferne Tage direkt aus dem Archivkalender."
+            ></app-reference-calendar-inline-form>
+            <p class="calendar-editor-note">
+              Änderungen werden direkt im Referenzkalender gespeichert.
+            </p>
+            <div class="calendar-summary" *ngIf="calendarPreviewDates().length; else calendarEmpty">
               <mat-chip-set>
-                @for (segment of calendarSegments(); track segment.startDate + segment.endDate) {
-                  <mat-chip appearance="outlined">
-                    {{ segment.startDate }}
-                    @if (segment.startDate !== segment.endDate) {
-                      – {{ segment.endDate }}
-                    }
+                @for (date of calendarPreviewHead(); track date) {
+                  <mat-chip appearance="outlined">{{ date }}</mat-chip>
+                }
+                @if (calendarPreviewOverflow() > 0) {
+                  <mat-chip appearance="outlined" class="muted-chip">
+                    +{{ calendarPreviewOverflow() }} weitere
                   </mat-chip>
                 }
               </mat-chip-set>
-            } @else {
-              <p>Keine expliziten Segmente hinterlegt.</p>
-            }
-          </div>
+            </div>
+            <ng-template #calendarEmpty>
+              <p class="calendar-hint">Keine Verkehrstage ausgewählt.</p>
+            </ng-template>
+          } @else {
+            <p class="calendar-lock-hint">
+              Kalender wird in dieser Phase über „Fahrplan bearbeiten“ gepflegt (Unterkalender).
+            </p>
+            <div class="calendar-summary">
+              @if (calendarPreviewDates().length) {
+                <mat-chip-set>
+                  @for (date of calendarPreviewHead(); track date) {
+                    <mat-chip appearance="outlined">{{ date }}</mat-chip>
+                  }
+                  @if (calendarPreviewOverflow() > 0) {
+                    <mat-chip appearance="outlined" class="muted-chip">
+                      +{{ calendarPreviewOverflow() }} weitere
+                    </mat-chip>
+                  }
+                </mat-chip-set>
+              } @else {
+                <p>Keine Verkehrstage hinterlegt.</p>
+              }
+            </div>
+          }
         </mat-expansion-panel>
 
         <mat-expansion-panel>

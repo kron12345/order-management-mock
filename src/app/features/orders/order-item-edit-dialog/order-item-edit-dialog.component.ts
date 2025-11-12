@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { Component, computed, signal } from '@angular/core';
+import { Component, OnInit, computed, signal } from '@angular/core';
 import {
   FormBuilder,
   FormControl,
@@ -16,7 +16,8 @@ import {
   OrderService,
   SplitOrderItemPayload,
 } from '../../../core/services/order.service';
-import { TrafficPeriodService } from '../../../core/services/traffic-period.service';
+import { TrafficPeriodService, TrafficPeriodCreatePayload } from '../../../core/services/traffic-period.service';
+import { TimetableYearService } from '../../../core/services/timetable-year.service';
 import { TrainPlanService } from '../../../core/services/train-plan.service';
 import { TrainPlan } from '../../../core/models/train-plan.model';
 import { ScheduleTemplateService } from '../../../core/services/schedule-template.service';
@@ -26,6 +27,8 @@ import { OrderItemGeneralFieldsComponent } from '../shared/order-item-general-fi
 import { OrderItemServiceFieldsComponent } from '../shared/order-item-service-fields/order-item-service-fields.component';
 import { OrderItemRangeFieldsComponent } from '../shared/order-item-range-fields/order-item-range-fields.component';
 import { TimetablePhase } from '../../../core/models/timetable.model';
+import { TrafficPeriod } from '../../../core/models/traffic-period.model';
+import { ReferenceCalendarInlineFormComponent } from '../reference-calendar-inline-form/reference-calendar-inline-form.component';
 
 interface OrderItemEditDialogData {
   orderId: string;
@@ -58,11 +61,12 @@ interface OrderItemEditFormModel {
     OrderItemGeneralFieldsComponent,
     OrderItemServiceFieldsComponent,
     OrderItemRangeFieldsComponent,
+    ReferenceCalendarInlineFormComponent,
   ],
   templateUrl: './order-item-edit-dialog.component.html',
   styleUrl: './order-item-edit-dialog.component.scss',
 })
-export class OrderItemEditDialogComponent {
+export class OrderItemEditDialogComponent implements OnInit {
   private readonly dialogRef =
     inject<MatDialogRef<OrderItemEditDialogComponent>>(MatDialogRef);
   private readonly data = inject<OrderItemEditDialogData>(MAT_DIALOG_DATA);
@@ -72,6 +76,7 @@ export class OrderItemEditDialogComponent {
   private readonly templateService = inject(ScheduleTemplateService);
   private readonly dialog = inject(MatDialog);
   private readonly fb = inject(FormBuilder);
+  private readonly timetableYearService = inject(TimetableYearService);
 
   readonly form: FormGroup<OrderItemEditFormModel>;
   readonly errorMessage = signal<string | null>(null);
@@ -88,6 +93,8 @@ export class OrderItemEditDialogComponent {
   readonly orderId = this.data.orderId;
   readonly isServiceItem = this.item.type === 'Leistung';
   readonly isPlanItem = this.item.type === 'Fahrplan';
+  private readonly requiresPlanVersion = this.computeRequiresPlanVersion();
+  readonly canEditCalendar = this.isPlanItem && !this.requiresPlanVersion;
   readonly phaseMap: Record<TimetablePhase, string> = {
     bedarf: 'Bedarf',
     path_request: 'Trassenanmeldung',
@@ -106,7 +113,7 @@ export class OrderItemEditDialogComponent {
       '—',
   );
   readonly planLocked = computed(
-    () => this.isPlanItem && this.shouldCreateVersion(),
+    () => this.isPlanItem && this.requiresPlanVersion,
   );
   readonly serviceFieldsConfig = {
     startControl: 'startDateTime',
@@ -116,6 +123,11 @@ export class OrderItemEditDialogComponent {
     toControl: 'toLocation',
     trafficPeriodControl: 'trafficPeriodId',
   } as const;
+  readonly calendarYearControl = new FormControl<string>('', { nonNullable: true });
+  readonly calendarDatesControl = this.fb.nonNullable.control<string[]>([]);
+  readonly calendarExclusionsControl = this.fb.nonNullable.control<string[]>([]);
+  private currentCalendarPeriodId: string | undefined = this.item.trafficPeriodId ?? undefined;
+  private planMutated = false;
 
   constructor() {
     const defaultValidity = this.determineDefaultValidity();
@@ -180,14 +192,20 @@ export class OrderItemEditDialogComponent {
       this.form.controls.startDateTime.disable();
       this.form.controls.endDateTime.disable();
     }
-    if (!this.isPlanItem) {
+    if (this.isPlanItem) {
       this.form.controls.linkedTrainPlanId.disable();
       this.form.controls.linkedTemplateId.disable();
+      if (this.shouldCreateVersion()) {
+        this.form.controls.rangeStart.disable();
+        this.form.controls.rangeEnd.disable();
+        this.form.controls.trafficPeriodId.disable();
+      }
     }
+  }
+
+  ngOnInit(): void {
     if (this.isPlanItem) {
-      this.form.controls.rangeStart.disable();
-      this.form.controls.rangeEnd.disable();
-      this.form.controls.trafficPeriodId.disable();
+      this.initializeCalendarEditor();
     }
   }
 
@@ -219,6 +237,7 @@ export class OrderItemEditDialogComponent {
         if (!result?.updatedPlanId) {
           return;
         }
+        this.planMutated = true;
         this.syncItemState();
       });
   }
@@ -250,6 +269,20 @@ export class OrderItemEditDialogComponent {
       return;
     }
 
+    const calendarEditorWasDirty = this.canEditCalendar && this.calendarEditorDirty();
+    if (calendarEditorWasDirty) {
+      try {
+        this.persistCalendarEditorChanges();
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : 'Referenzkalender konnte nicht aktualisiert werden.';
+        this.errorMessage.set(message);
+        return;
+      }
+    }
+
     const value = this.form.getRawValue();
     if (this.isServiceItem) {
       const startIso = this.toIsoDateTime(value.startDateTime);
@@ -265,17 +298,23 @@ export class OrderItemEditDialogComponent {
     }
 
     const updates = this.buildUpdates(value);
+    const hasUpdates = !!updates && Object.keys(updates).length > 0;
 
     if (this.isPlanItem && !this.shouldCreateVersion()) {
-      if (!updates || Object.keys(updates).length === 0) {
+      if (!hasUpdates && !calendarEditorWasDirty && !this.planMutated) {
         this.errorMessage.set('Es wurden keine Änderungen vorgenommen.');
+        return;
+      }
+      if (!hasUpdates && !calendarEditorWasDirty && this.planMutated) {
+        this.dialogRef.close({ updated: this.item });
         return;
       }
       try {
         const updated = this.orderService.updateOrderItemInPlace({
           orderId: this.orderId,
           itemId: this.item.id,
-          updates,
+          updates: hasUpdates ? updates : undefined,
+          forceSyncTimetable: calendarEditorWasDirty,
         });
         this.dialogRef.close({ updated });
       } catch (error) {
@@ -387,6 +426,15 @@ export class OrderItemEditDialogComponent {
 
   calendarSegments(): OrderItemValiditySegment[] {
     return this.item.validity?.length ? this.item.validity : [];
+  }
+
+  calendarPreviewHead(): string[] {
+    return this.calendarPreviewDates().slice(0, 6);
+  }
+
+  calendarPreviewOverflow(): number {
+    const total = this.calendarPreviewDates().length;
+    return total > 6 ? total - 6 : 0;
   }
 
   planRouteLabel(plan: TrainPlan | undefined): string {
@@ -524,11 +572,162 @@ export class OrderItemEditDialogComponent {
     return false;
   }
 
-  private shouldCreateVersion(): boolean {
+  calendarPreviewDates(): string[] {
+    return this.calendarDatesControl.value ?? [];
+  }
+
+  private initializeCalendarEditor(): void {
+    const period = this.currentCalendarPeriodId
+      ? this.trafficPeriodService.getById(this.currentCalendarPeriodId)
+      : undefined;
+    const defaultYear =
+      period?.timetableYearLabel ??
+      this.item.timetableYearLabel ??
+      this.timetableYearService.defaultYearBounds().label;
+    this.calendarYearControl.setValue(defaultYear, { emitEvent: false });
+
+    if (period) {
+      const includeDates = this.extractDatesFromPeriod(period);
+      const excludeDates = this.normalizeDates(
+        period.rules.flatMap((rule) => rule.excludesDates ?? []),
+      );
+      this.calendarDatesControl.setValue(includeDates, { emitEvent: false });
+      this.calendarExclusionsControl.setValue(excludeDates, { emitEvent: false });
+    } else {
+      const plan = this.currentPlan();
+      if (plan?.calendar.validFrom) {
+        const dates = this.buildDateRange(
+          plan.calendar.validFrom,
+          plan.calendar.validTo ?? plan.calendar.validFrom,
+        );
+        this.calendarDatesControl.setValue(dates, { emitEvent: false });
+      }
+    }
+  }
+
+  private extractDatesFromPeriod(period: TrafficPeriod): string[] {
+    const dates = period.rules.flatMap((rule) => rule.includesDates ?? []);
+    return this.normalizeDates(dates);
+  }
+
+  private buildDateRange(start: string, end: string): string[] {
+    const startDate = new Date(start);
+    const endDate = new Date(end);
+    if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
+      return [];
+    }
+    const result: string[] = [];
+    const cursor = new Date(startDate);
+    while (cursor.getTime() <= endDate.getTime()) {
+      result.push(cursor.toISOString().slice(0, 10));
+      cursor.setDate(cursor.getDate() + 1);
+    }
+    return result;
+  }
+
+  private normalizeDates(
+    dates: readonly string[] | null | undefined,
+  ): string[] {
+    if (!dates?.length) {
+      return [];
+    }
+    return Array.from(
+      new Set(
+        dates
+          .map((date) => date?.slice(0, 10))
+          .filter((date): date is string => !!date),
+      ),
+    ).sort();
+  }
+
+  private groupDatesByYear(dates: readonly string[]): Map<number, string[]> {
+    const map = new Map<number, string[]>();
+    dates.forEach((date) => {
+      const year = Number.parseInt(date.slice(0, 4), 10);
+      if (!map.has(year)) {
+        map.set(year, []);
+      }
+      map.get(year)!.push(date);
+    });
+    return map;
+  }
+
+  private calendarEditorDirty(): boolean {
+    return (
+      this.calendarYearControl.dirty ||
+      this.calendarDatesControl.dirty ||
+      this.calendarExclusionsControl.dirty
+    );
+  }
+
+  private persistCalendarEditorChanges(): string | undefined {
+    if (!this.canEditCalendar || !this.calendarEditorDirty()) {
+      return undefined;
+    }
+    const includeDates = this.normalizeDates(this.calendarDatesControl.value);
+    if (!includeDates.length) {
+      throw new Error('Bitte mindestens einen Verkehrstag auswählen.');
+    }
+    const yearLabel = this.calendarYearControl.value?.trim();
+    const yearBounds = yearLabel
+      ? this.timetableYearService.getYearByLabel(yearLabel)
+      : this.timetableYearService.defaultYearBounds();
+    const excludeDates = this.normalizeDates(this.calendarExclusionsControl.value);
+    const groupedInclude = this.groupDatesByYear(includeDates);
+    const groupedExclude = this.groupDatesByYear(excludeDates);
+    const sortedYears = Array.from(groupedInclude.keys()).sort((a, b) => a - b);
+    const calendarName =
+      this.currentCalendarPeriodId
+        ? this.trafficPeriodService.getById(this.currentCalendarPeriodId)?.name ??
+          (this.item.name ?? 'Serie')
+        : this.item.name ?? 'Serie';
+    const periodType =
+      this.currentCalendarPeriodId
+        ? this.trafficPeriodService.getById(this.currentCalendarPeriodId)?.type ?? 'standard'
+        : 'standard';
+    const rules = sortedYears.map((year, index) => ({
+      name: `${calendarName} ${year}`,
+      year,
+      selectedDates: this.normalizeDates(groupedInclude.get(year)),
+      excludedDates: this.normalizeDates(groupedExclude.get(year)),
+      variantType: 'special_day' as const,
+      appliesTo: 'both' as const,
+      variantNumber: (index + 1).toString().padStart(2, '0'),
+      primary: index === 0,
+    }));
+    const payload: TrafficPeriodCreatePayload = {
+      name: calendarName,
+      type: periodType,
+      description: this.item.name ?? undefined,
+      responsible: this.item.responsible ?? undefined,
+      year: yearBounds.startYear,
+      timetableYearLabel: yearBounds.label,
+      rules,
+    };
+    let periodId = this.currentCalendarPeriodId;
+    if (periodId) {
+      this.trafficPeriodService.updatePeriod(periodId, payload);
+    } else {
+      periodId = this.trafficPeriodService.createPeriod(payload);
+      this.currentCalendarPeriodId = periodId;
+    }
+    this.calendarYearControl.markAsPristine();
+    this.calendarDatesControl.markAsPristine();
+    this.calendarExclusionsControl.markAsPristine();
+    this.form.controls.trafficPeriodId.setValue(periodId, { emitEvent: false });
+    this.form.controls.trafficPeriodId.markAsDirty();
+    return periodId;
+  }
+
+  private computeRequiresPlanVersion(): boolean {
     if (!this.isPlanItem) {
       return true;
     }
     const phase = this.item.timetablePhase ?? 'bedarf';
     return phase !== 'bedarf';
+  }
+
+  private shouldCreateVersion(): boolean {
+    return this.requiresPlanVersion;
   }
 }

@@ -190,19 +190,86 @@
       </div>
 
       <div class="filter-shelf__row filter-shelf__row--secondary">
-        <div class="filter-pills">
-          @if (searchControl.value.trim()) {
-            <button type="button" class="filter-pill" (click)="clearSearch()">
-              <mat-icon>search</mat-icon>
-              <span>Suche</span>
-              <strong>"{{ searchControl.value.trim() }}"</strong>
-              <mat-icon>close</mat-icon>
+        <div class="filter-shelf__active">
+          <div class="filter-shelf__active-header">
+            <div class="filter-shelf__active-title">
+              <span>Aktive Filter</span>
+              <span class="filter-count">
+                <mat-icon>list_alt</mat-icon>
+                {{ filteredCustomers().length }} Ergebnisse
+              </span>
+            </div>
+            <button type="button" class="filter-save" (click)="saveCurrentFilterPreset()">
+              <mat-icon>bookmark_add</mat-icon>
+              Speichern
             </button>
-          } @else {
-            <span class="filter-pill filter-pill--empty">
-              <mat-icon>radio_button_unchecked</mat-icon>
-              Keine Filter aktiv
-            </span>
+          </div>
+
+          <div class="filter-pills">
+            @if (searchControl.value.trim()) {
+              <button type="button" class="filter-pill" (click)="clearSearch()">
+                <mat-icon>search</mat-icon>
+                <span>Suche</span>
+                <strong>"{{ searchControl.value.trim() }}"</strong>
+                <mat-icon>close</mat-icon>
+              </button>
+            } @else {
+              <span class="filter-pill filter-pill--empty">
+                <mat-icon>radio_button_unchecked</mat-icon>
+                Keine Filter aktiv
+              </span>
+            }
+          </div>
+
+          @if (savedFilterPresets().length) {
+            <div class="saved-presets">
+              <span>Gespeicherte Ansichten</span>
+              <div class="saved-presets__list">
+                @for (preset of savedFilterPresets(); track preset.id) {
+                  <div
+                    class="preset-chip"
+                    [class.preset-chip--active]="activePreset() === preset.id"
+                  >
+                    <button type="button" class="preset-pill" (click)="applyFilterPreset(preset)">
+                      <mat-icon>layers</mat-icon>
+                      <span>{{ preset.name }}</span>
+                      @if (activePreset() === preset.id) {
+                        <span class="preset-active">
+                          <mat-icon>star</mat-icon>
+                          Aktiv
+                        </span>
+                      }
+                    </button>
+                    <button
+                      type="button"
+                      class="preset-action"
+                      matTooltip="Duplizieren"
+                      (click)="duplicateFilterPreset(preset)"
+                      aria-label="Filteransicht duplizieren"
+                    >
+                      <mat-icon>content_copy</mat-icon>
+                    </button>
+                    <button
+                      type="button"
+                      class="preset-action"
+                      matTooltip="Umbenennen"
+                      (click)="renameFilterPreset(preset)"
+                      aria-label="Filteransicht umbenennen"
+                    >
+                      <mat-icon>edit</mat-icon>
+                    </button>
+                    <button
+                      type="button"
+                      class="preset-remove"
+                      (click)="removeFilterPreset(preset.id)"
+                      aria-label="Filteransicht entfernen"
+                    >
+                      <mat-icon>close</mat-icon>
+                    </button>
+                  </div>
+                }
+              </div>
+            </div>
           }
         </div>
       </div>

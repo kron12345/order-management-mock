@@ -22,6 +22,7 @@ import { MatCheckboxModule } from '@angular/material/checkbox';
 import { MatSlideToggleModule } from '@angular/material/slide-toggle';
 import { MatTabsModule } from '@angular/material/tabs';
 import { MatAutocompleteModule } from '@angular/material/autocomplete';
+import { MatSnackBarModule } from '@angular/material/snack-bar';
 
 export const MATERIAL_IMPORTS = [
   MatToolbarModule,
@@ -48,4 +49,5 @@ export const MATERIAL_IMPORTS = [
   MatSlideToggleModule,
   MatTabsModule,
   MatAutocompleteModule,
+  MatSnackBarModule,
 ];

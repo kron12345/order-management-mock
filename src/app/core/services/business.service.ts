@@ -145,7 +145,7 @@ export class BusinessService {
     this.persistSort(sort);
   }
 
-  createBusiness(payload: CreateBusinessPayload) {
+  createBusiness(payload: CreateBusinessPayload): Business {
     const id = this.generateBusinessId();
     const linkedIds = payload.linkedOrderItemIds ?? [];
     const newBusiness: Business = {
@@ -165,6 +165,7 @@ export class BusinessService {
     linkedIds.forEach((itemId) =>
       this.orderService.linkBusinessToItem(id, itemId),
     );
+    return newBusiness;
   }
 
   updateBusiness(businessId: string, patch: Partial<Omit<Business, 'id'>>) {

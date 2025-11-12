@@ -1,10 +1,30 @@
-<div class="templates-page">
-  <header class="templates-header">
-    <div>
-      <h1>Vorlagen</h1>
-      <p>Erstelle und verwalte Fahrplanvorlagen als Grundlage für neue Aufträge.</p>
-    </div>
-  </header>
+<div class="templates-shell manager-shell">
+  <nav class="templates-nav">
+    <a
+      mat-stroked-button
+      routerLink="/templates"
+      routerLinkActive="templates-nav__link--active"
+      [routerLinkActiveOptions]="{ exact: true }"
+    >
+      Übersicht
+    </a>
+    <a
+      mat-stroked-button
+      routerLink="/templates/schedules"
+      routerLinkActive="templates-nav__link--active"
+    >
+      Fahrplanvorlagen
+    </a>
+    <a
+      mat-stroked-button
+      routerLink="/templates/business"
+      routerLinkActive="templates-nav__link--active"
+    >
+      Geschäftsvorlagen
+    </a>
+  </nav>
 
-  <app-schedule-template-list [highlightId]="templateHighlight()" />
+  <section class="templates-content">
+    <router-outlet />
+  </section>
 </div>

@@ -2,6 +2,9 @@ import { Routes } from '@angular/router';
 import { OrderListComponent } from './features/orders/order-list/order-list.component';
 import { BusinessListComponent } from './features/business/business-list.component';
 import { TemplatesPageComponent } from './features/templates/templates-page.component';
+import { TemplatesLandingComponent } from './features/templates/templates-landing.component';
+import { ScheduleTemplateHubComponent } from './features/templates/schedule-template-hub.component';
+import { BusinessTemplateHubComponent } from './features/templates/business-template-hub.component';
 import { MasterDataLandingComponent } from './features/master-data/master-data-landing.component';
 import { CustomAttributeSettingsComponent } from './features/settings/custom-attribute-settings.component';
 import { TimetableManagerComponent } from './features/timetable-manager/timetable-manager.component';
@@ -30,6 +33,20 @@ export const routes: Routes = [
   {
     path: 'templates',
     component: TemplatesPageComponent,
+    children: [
+      {
+        path: '',
+        component: TemplatesLandingComponent,
+      },
+      {
+        path: 'schedules',
+        component: ScheduleTemplateHubComponent,
+      },
+      {
+        path: 'business',
+        component: BusinessTemplateHubComponent,
+      },
+    ],
     title: 'Vorlagen',
     data: { section: 'manager' },
   },
@@ -37,7 +54,7 @@ export const routes: Routes = [
     path: 'fahrplanmanager',
     component: TimetableManagerComponent,
     title: 'Fahrplanmanager',
-    data: { section: 'manager' },
+    data: { section: 'timetable' },
   },
   {
     path: 'plans',

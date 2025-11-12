@@ -9,6 +9,7 @@ import {
   WeekInstance,
   PlanWeekRolloutRequest,
   PlanWeekRolloutResponse,
+  PlanWeekActivity,
 } from '../../models/planning-template';
 
 interface ListResponse<T> {
@@ -65,6 +66,31 @@ export class PlanningTemplateApiService {
 
   rolloutTemplate(payload: PlanWeekRolloutRequest): Observable<PlanWeekRolloutResponse> {
     return this.http.post<PlanWeekRolloutResponse>(this.url('/planning/base/templates:rollout'), payload);
+  }
+
+  listActivities(templateId: string): Observable<PlanWeekActivity[]> {
+    return this.http
+      .get<ListResponse<PlanWeekActivity>>(
+        this.url(`/planning/base/templates/${encodeURIComponent(templateId)}/activities`),
+      )
+      .pipe(map((response) => response?.items ?? []));
+  }
+
+  upsertActivity(templateId: string, activity: PlanWeekActivity): Observable<PlanWeekActivity> {
+    return this.http.put<PlanWeekActivity>(
+      this.url(
+        `/planning/base/templates/${encodeURIComponent(templateId)}/activities/${encodeURIComponent(activity.id)}`,
+      ),
+      activity,
+    );
+  }
+
+  deleteActivity(templateId: string, activityId: string): Observable<void> {
+    return this.http.delete<void>(
+      this.url(
+        `/planning/base/templates/${encodeURIComponent(templateId)}/activities/${encodeURIComponent(activityId)}`,
+      ),
+    );
   }
 
   // Betriebsplanung / Week instances

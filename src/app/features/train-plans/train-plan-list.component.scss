@@ -337,6 +337,132 @@ mat-chip.status-canceled {
   font-style: italic;
 }
 
+.rolling-stock {
+  margin-top: 24px;
+  padding: 16px;
+  border-radius: 12px;
+  background: rgba(26, 115, 232, 0.04);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.rolling-stock__header {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+
+  mat-icon {
+    color: #1a73e8;
+  }
+
+  h4 {
+    margin: 0;
+  }
+
+  p {
+    margin: 4px 0 0 0;
+    color: rgba(0, 0, 0, 0.65);
+  }
+}
+
+.rolling-stock__designation {
+  display: inline-block;
+  margin-top: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.06);
+  font-size: 0.8rem;
+}
+
+.rolling-stock__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+
+  .label {
+    display: block;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: rgba(0, 0, 0, 0.5);
+    margin-bottom: 2px;
+  }
+}
+
+.rolling-stock__segments {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+
+  .label {
+    font-size: 0.75rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: rgba(0, 0, 0, 0.5);
+  }
+
+  mat-chip-set {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+
+    mat-chip {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 2px;
+
+      small {
+        font-size: 0.7rem;
+        color: rgba(0, 0, 0, 0.6);
+      }
+    }
+  }
+}
+
+.rolling-stock__operations {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+
+  .label {
+    font-size: 0.75rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: rgba(0, 0, 0, 0.5);
+  }
+
+  ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  li {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.9rem;
+
+    mat-icon {
+      font-size: 18px;
+      width: 18px;
+      height: 18px;
+      color: #1a73e8;
+    }
+  }
+}
+
+.rolling-stock__notes {
+  margin: 0;
+  font-size: 0.9rem;
+  color: rgba(0, 0, 0, 0.75);
+}
+
 .link-info {
   display: inline-flex;
   align-items: center;

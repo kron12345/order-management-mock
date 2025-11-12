@@ -21,7 +21,11 @@ import {
 } from '../../core/models/schedule-template.model';
 import { OrderService } from '../../core/services/order.service';
 import { MatDialog } from '@angular/material/dialog';
-import { ScheduleTemplateCreateDialogComponent } from './schedule-template-create-dialog.component';
+import {
+  ScheduleTemplateCreateDialogComponent,
+  ScheduleTemplateCreateDialogData,
+  ScheduleTemplateDialogResult,
+} from './schedule-template-create-dialog.component';
 import { MatSelect, MatSelectChange } from '@angular/material/select';
 
 interface SortOption {
@@ -112,6 +116,7 @@ export class ScheduleTemplateListComponent {
     this.highlightTemplateId.set(value);
     window.setTimeout(() => this.scrollToHighlightedTemplate(), 0);
   }
+  @Input() showHeader = true;
 
   constructor() {
     this.searchControl.setValue(this.filters().search, { emitEvent: false });
@@ -135,19 +140,33 @@ export class ScheduleTemplateListComponent {
   }
 
   openCreateDialog() {
-    const dialogRef = this.dialog.open(ScheduleTemplateCreateDialogComponent, {
+    this.openTemplateDialog();
+  }
+
+  openEditDialog(template: ScheduleTemplate) {
+    this.openTemplateDialog(template);
+  }
+
+  private openTemplateDialog(template?: ScheduleTemplate) {
+    const dialogRef = this.dialog.open<
+      ScheduleTemplateCreateDialogComponent,
+      ScheduleTemplateCreateDialogData,
+      ScheduleTemplateDialogResult | undefined
+    >(ScheduleTemplateCreateDialogComponent, {
       width: '95vw',
       maxWidth: '1200px',
       maxHeight: '95vh',
-      data: {
-        defaultStartTime: '04:00',
-        defaultEndTime: '23:00',
-      },
+      data: template ? { template } : undefined,
     });
 
-    dialogRef.afterClosed().subscribe((payload) => {
-      if (payload) {
-        this.templateService.createTemplate(payload);
+    dialogRef.afterClosed().subscribe((result) => {
+      if (!result) {
+        return;
+      }
+      if (result.mode === 'edit') {
+        this.templateService.updateTemplateFromPayload(result.templateId, result.payload);
+      } else {
+        this.templateService.createTemplate(result.payload);
       }
     });
   }
@@ -176,10 +195,6 @@ export class ScheduleTemplateListComponent {
     this.templateService.setSort({ field, direction });
   }
 
-  preview(template: ScheduleTemplate): string[] | undefined {
-    return this.templateService.recurrencePreview(template);
-  }
-
   stops(template: ScheduleTemplate) {
     return this.templateService.stopsWithTimeline(template);
   }
@@ -198,6 +213,11 @@ export class ScheduleTemplateListComponent {
     return this.orderItems().filter(
       (entry) => entry.item.linkedTemplateId === templateId,
     );
+  }
+
+  stopName(template: ScheduleTemplate, index: number): string {
+    const stop = template.stops.find((entry) => entry.sequence === index);
+    return stop ? stop.locationName : `Halt #${index}`;
   }
 
   setStatus(templateId: string, status: ScheduleTemplateStatus) {

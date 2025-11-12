@@ -1,4 +1,4 @@
-import { Component, computed, signal } from '@angular/core';
+import { Component, EventEmitter, Output, computed, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { MATERIAL_IMPORTS } from '../../../core/material.imports.imports';
 import { OrderService, OrderFilters } from '../../../core/services/order.service';
@@ -14,6 +14,7 @@ import { BusinessService } from '../../../core/services/business.service';
   styleUrl: './filter-bar.component.scss',
 })
 export class FilterBarComponent {
+  @Output() savePreset = new EventEmitter<void>();
   search = signal('');
   tag = signal<'all' | string>('all');
   trainNumber = signal('');
@@ -94,6 +95,10 @@ export class FilterBarComponent {
       timetableYearLabel: 'all',
       linkedBusinessId: null,
     });
+  }
+
+  onSavePreset() {
+    this.savePreset.emit();
   }
 
   onTimeRangeChange(value: OrderFilters['timeRange']) {

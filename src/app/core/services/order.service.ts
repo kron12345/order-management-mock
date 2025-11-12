@@ -28,6 +28,13 @@ import {
 import { TrafficPeriodService } from './traffic-period.service';
 import { TrafficPeriod, TrafficPeriodVariantType } from '../models/traffic-period.model';
 import { TimetableYearService } from './timetable-year.service';
+import {
+  TimetableHubService,
+  TimetableHubSectionKey,
+  TimetableHubStopSummary,
+  TimetableHubTechnicalSummary,
+  TimetableHubRouteMetadata,
+} from './timetable-hub.service';
 
 export interface OrderFilters {
   search: string;
@@ -231,6 +238,7 @@ export class OrderService {
     private readonly timetableService: TimetableService,
     private readonly trafficPeriodService: TrafficPeriodService,
     private readonly timetableYearService: TimetableYearService,
+    private readonly timetableHubService: TimetableHubService,
   ) {
     this._orders.set(
       this._orders().map((order) => this.initializeOrder(order)),
@@ -390,12 +398,30 @@ export class OrderService {
 
   addPlanOrderItems(payload: CreatePlanOrderItemsPayload) {
     const { orderId, namePrefix, responsible, timetableYearLabel, ...planConfig } = payload;
-    const plans = this.trainPlanService.createPlansFromTemplate(planConfig);
+    const normalizedCalendarDates = this.normalizeCalendarDates(planConfig.calendarDates ?? []);
+    const effectiveCalendarDates = normalizedCalendarDates.length ? normalizedCalendarDates : undefined;
+
+    let planTrafficPeriodId = planConfig.trafficPeriodId;
+    if (!planTrafficPeriodId && effectiveCalendarDates?.length) {
+      planTrafficPeriodId = this.createTrafficPeriodForPlanDates(
+        orderId,
+        namePrefix,
+        effectiveCalendarDates,
+        timetableYearLabel,
+        planConfig.responsibleRu ?? responsible,
+      );
+    }
+
+    const plans = this.trainPlanService.createPlansFromTemplate({
+      ...planConfig,
+      calendarDates: effectiveCalendarDates ?? planConfig.calendarDates,
+      trafficPeriodId: planTrafficPeriodId,
+    });
     if (!plans.length) {
       return [];
     }
     const enrichedPlans =
-      planConfig.trafficPeriodId && planConfig.trafficPeriodId.length
+      planTrafficPeriodId && planTrafficPeriodId.length
         ? plans
         : plans.map((plan) =>
             this.ensurePlanHasTrafficPeriod(plan, namePrefix ?? plan.title),
@@ -582,6 +608,13 @@ export class OrderService {
     );
 
     this.trainPlanService.linkOrderItem(plan.id, itemId);
+    const updatedOrder = this.getOrderById(orderId);
+    const updatedItem =
+      updatedOrder?.items.find((entry) => entry.id === itemId) ?? null;
+    if (updatedItem) {
+      const section = this.resolveHubSectionForItem(updatedItem);
+      this.publishPlanToHub(plan, updatedItem, section);
+    }
   }
 
   splitOrderItem(
@@ -718,33 +751,45 @@ export class OrderService {
     orderId: string;
     itemId: string;
     updates?: Partial<OrderItemUpdateData>;
+    forceSyncTimetable?: boolean;
   }): OrderItem {
-    const { orderId, itemId, updates } = params;
+    const { orderId, itemId, updates, forceSyncTimetable } = params;
     const order = this.getOrderById(orderId);
     const current = order?.items.find((entry) => entry.id === itemId);
     if (!current) {
       throw new Error(`Auftragsposition ${itemId} wurde im Auftrag ${orderId} nicht gefunden.`);
     }
-    if (!updates || Object.keys(updates).length === 0) {
+    const hasUpdates = !!(updates && Object.keys(updates).length);
+    if (!hasUpdates && !forceSyncTimetable) {
       return current;
     }
 
-    const { linkedTrainPlanId, ...rest } = updates;
-    if (Object.keys(rest).length) {
-      this.updateItem(itemId, (item) => this.applyUpdatesToItem(item, rest));
+    let updatedItem = current;
+    if (hasUpdates && updates) {
+      const { linkedTrainPlanId, ...rest } = updates;
+      if (Object.keys(rest).length) {
+        this.updateItem(itemId, (item) => this.applyUpdatesToItem(item, rest));
+      }
+
+      updatedItem =
+        this.getOrderById(orderId)?.items.find((entry) => entry.id === itemId) ?? current;
+
+      if (
+        linkedTrainPlanId &&
+        linkedTrainPlanId.trim().length &&
+        linkedTrainPlanId !== updatedItem.linkedTrainPlanId
+      ) {
+        this.linkTrainPlanToItem(linkedTrainPlanId, itemId);
+        updatedItem =
+          this.getOrderById(orderId)?.items.find((entry) => entry.id === itemId) ?? updatedItem;
+      }
     }
 
-    let updatedItem =
-      this.getOrderById(orderId)?.items.find((entry) => entry.id === itemId) ?? current;
-
     if (
-      linkedTrainPlanId &&
-      linkedTrainPlanId.trim().length &&
-      linkedTrainPlanId !== updatedItem.linkedTrainPlanId
+      updatedItem.type === 'Fahrplan' &&
+      (forceSyncTimetable || hasUpdates)
     ) {
-      this.linkTrainPlanToItem(linkedTrainPlanId, itemId);
-      updatedItem =
-        this.getOrderById(orderId)?.items.find((entry) => entry.id === itemId) ?? updatedItem;
+      this.syncTimetableCalendarArtifacts(updatedItem.generatedTimetableRefId);
     }
 
     return this.ensureItemDefaults(updatedItem);
@@ -785,6 +830,7 @@ export class OrderService {
       trafficPeriodId: basePlan.trafficPeriodId ?? undefined,
       calendar,
       stops,
+      rollingStock: basePlan.rollingStock,
     });
 
     this.linkTrainPlanToItem(plan.id, child.id);
@@ -1857,6 +1903,22 @@ export class OrderService {
     return Array.from(new Set(tags.map((tag) => tag.trim()).filter(Boolean)));
   }
 
+  private normalizeCalendarDates(dates: string[]): string[] {
+    if (!dates?.length) {
+      return [];
+    }
+    return Array.from(
+      new Set(
+        dates
+          .map((date) => date?.slice(0, 10))
+          .filter(
+            (date): date is string =>
+              !!date && /^\d{4}-\d{2}-\d{2}$/.test(date),
+          ),
+      ),
+    ).sort((a, b) => a.localeCompare(b));
+  }
+
   private extractPlanStart(plan: { stops: TrainPlan['stops'] }): string | undefined {
     const sorted = [...plan.stops].sort((a, b) => a.sequence - b.sequence);
     for (const stop of sorted) {
@@ -1923,6 +1985,75 @@ export class OrderService {
     return updated;
   }
 
+  private createTrafficPeriodForPlanDates(
+    orderId: string,
+    namePrefix: string | undefined,
+    dates: string[],
+    timetableYearLabel?: string,
+    responsible?: string,
+  ): string {
+    const normalizedDates = this.normalizeCalendarDates(dates);
+    if (!normalizedDates.length) {
+      throw new Error('Referenzkalender enthält keine aktiven Tage.');
+    }
+
+    const groupedByYear = normalizedDates.reduce<Map<number, string[]>>(
+      (acc: Map<number, string[]>, date: string) => {
+        const year = Number.parseInt(date.slice(0, 4), 10);
+        const list = acc.get(year);
+        if (list) {
+          list.push(date);
+        } else {
+          acc.set(year, [date]);
+        }
+        return acc;
+      },
+      new Map<number, string[]>(),
+    );
+
+    const sortedYears = Array.from(groupedByYear.keys()).sort(
+      (a: number, b: number) => a - b,
+    );
+    const baseYear =
+      sortedYears[0] ?? Number.parseInt(normalizedDates[0].slice(0, 4), 10);
+    const calendarName = this.buildPlanCalendarName(orderId, namePrefix);
+    const normalizedYearLabel = this.normalizeTimetableYearLabel(timetableYearLabel);
+
+    const rules = sortedYears.map((year, index) => ({
+      name: `${calendarName} ${year}`,
+      year,
+      selectedDates: groupedByYear.get(year) ?? [],
+      variantType: 'special_day' as const,
+      variantNumber: (index + 1).toString().padStart(2, '0'),
+      appliesTo: 'both' as const,
+      primary: index === 0,
+    }));
+
+    const periodId = this.trafficPeriodService.createPeriod({
+      name: calendarName,
+      type: 'standard',
+      description: 'Automatisch erzeugter Referenzkalender aus Serienfahrplan',
+      responsible,
+      year: baseYear,
+      timetableYearLabel: normalizedYearLabel,
+      rules,
+    });
+
+    if (!periodId) {
+      throw new Error('Referenzkalender konnte nicht angelegt werden.');
+    }
+    return periodId;
+  }
+
+  private buildPlanCalendarName(orderId: string, namePrefix?: string): string {
+    const order = this.getOrderById(orderId);
+    const orderLabel = order?.name ?? orderId;
+    if (namePrefix?.trim()) {
+      return `${namePrefix.trim()} · ${orderLabel}`;
+    }
+    return `Serie ${orderLabel}`;
+  }
+
   private ensurePlanHasTrafficPeriod(plan: TrainPlan, baseName: string): TrainPlan {
     const calendarDate =
       plan.calendar?.validFrom ?? plan.calendar?.validTo ?? new Date().toISOString().slice(0, 10);
@@ -1940,6 +2071,7 @@ export class OrderService {
     const refTrainId = this.generateTimetableRefId(plan);
     const existing = this.timetableService.getByRefTrainId(refTrainId);
     if (existing) {
+      this.publishPlanToHub(plan, item, 'commercial');
       return existing;
     }
     const stops = this.toTimetableStops(plan.stops);
@@ -1969,10 +2101,13 @@ export class OrderService {
       stops,
       linkedOrderItemId: item.id,
       notes: `Automatisch erstellt aus Auftragsposition ${item.id}`,
+      rollingStock: plan.rollingStock,
     } as const;
 
     try {
-      return this.timetableService.createTimetable(payload);
+      const created = this.timetableService.createTimetable(payload);
+      this.publishPlanToHub(plan, item, 'commercial');
+      return created;
     } catch (error) {
       console.error('Timetable creation failed', error);
       return null;
@@ -2206,6 +2341,152 @@ export class OrderService {
     const hours = date.getHours().toString().padStart(2, '0');
     const minutes = date.getMinutes().toString().padStart(2, '0');
     return `${hours}:${minutes}`;
+  }
+
+  private publishPlanToHub(
+    plan: TrainPlan,
+    item: OrderItem,
+    section: TimetableHubSectionKey,
+  ): void {
+    const calendarDays = this.collectPlanCalendarDays(plan);
+    if (!calendarDays.length) {
+      return;
+    }
+    const timetableYearLabel =
+      item.timetableYearLabel ??
+      this.getItemTimetableYear(item) ??
+      this.timetableYearService.getYearBounds(
+        plan.calendar?.validFrom ?? calendarDays[0],
+      ).label;
+    const stops = this.planStopsToSummaries(plan);
+    this.timetableHubService.registerPlanUpdate({
+      refTrainId: this.generateTimetableRefId(plan),
+      trainNumber: plan.trainNumber,
+      title: plan.title,
+      timetableYearLabel,
+      calendarDays,
+      section,
+      stops,
+      notes: plan.notes,
+      vehicles: plan.rollingStock,
+      technical: this.toHubTechnicalSummary(plan.technical),
+      routeMetadata: this.toHubRouteMetadata(plan.routeMetadata),
+    });
+  }
+
+  private collectPlanCalendarDays(plan: TrainPlan): string[] {
+    const validFrom =
+      plan.calendar?.validFrom ?? this.extractPlanStart(plan)?.slice(0, 10);
+    if (!validFrom) {
+      return [];
+    }
+    const validTo = plan.calendar?.validTo ?? validFrom;
+    const daysBitmap = plan.calendar?.daysBitmap ?? '1111111';
+    return this.expandPlanCalendarDays(validFrom, validTo, daysBitmap);
+  }
+
+  private expandPlanCalendarDays(validFrom: string, validTo: string, bitmap: string): string[] {
+    const start = new Date(validFrom);
+    const end = new Date(validTo);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+      return [];
+    }
+    const normalized = bitmap.padEnd(7, '1').slice(0, 7);
+    const result: string[] = [];
+    const cursor = new Date(start);
+    while (cursor <= end && result.length <= 1096) {
+      const weekday = cursor.getDay() === 0 ? 6 : cursor.getDay() - 1;
+      if (normalized[weekday] === '1') {
+        result.push(cursor.toISOString().slice(0, 10));
+      }
+      cursor.setDate(cursor.getDate() + 1);
+    }
+    return result;
+  }
+
+  private planStopsToSummaries(plan: TrainPlan): TimetableHubStopSummary[] {
+    let lastHoldReason = plan.stops[0]?.holdReason?.trim() || 'Planhalt';
+    let lastResponsible = plan.responsibleRu ?? 'TTT';
+    let lastVehicleInfo = plan.rollingStock?.designation ?? 'n/a';
+    return plan.stops.map((stop) => {
+      const holdReason = stop.holdReason?.trim() || lastHoldReason;
+      const responsible = stop.responsibleRu?.trim() || lastResponsible;
+      const vehicleInfo = stop.vehicleInfo?.trim() || lastVehicleInfo;
+      lastHoldReason = holdReason;
+      lastResponsible = responsible;
+      lastVehicleInfo = vehicleInfo;
+      return {
+        sequence: stop.sequence ?? 0,
+        locationName: stop.locationName ?? stop.locationCode ?? 'Unbekannt',
+        type: stop.type,
+        arrivalTime: stop.arrivalTime,
+        departureTime: stop.departureTime,
+        holdReason,
+        responsibleRu: responsible,
+        vehicleInfo,
+      };
+    });
+  }
+
+  private toHubTechnicalSummary(
+    technical?: TrainPlan['technical'],
+  ): TimetableHubTechnicalSummary | undefined {
+    if (!technical) {
+      return undefined;
+    }
+    const summary: TimetableHubTechnicalSummary = {
+      trainType: technical.trainType,
+      maxSpeed: technical.maxSpeed,
+      lengthMeters: technical.lengthMeters,
+      weightTons: technical.weightTons,
+      traction: technical.traction,
+      energyType: technical.energyType,
+      brakeType: technical.brakeType,
+      etcsLevel: technical.etcsLevel,
+    };
+    const hasValue = Object.values(summary).some((value) => {
+      if (typeof value === 'number') {
+        return !Number.isNaN(value);
+      }
+      return Boolean(value && value.toString().trim().length);
+    });
+    return hasValue ? summary : undefined;
+  }
+
+  private toHubRouteMetadata(
+    metadata?: TrainPlan['routeMetadata'],
+  ): TimetableHubRouteMetadata | undefined {
+    if (!metadata) {
+      return undefined;
+    }
+    const normalized: TimetableHubRouteMetadata = {
+      originBorderPoint: metadata.originBorderPoint?.trim() || undefined,
+      destinationBorderPoint: metadata.destinationBorderPoint?.trim() || undefined,
+      borderNotes: metadata.borderNotes?.trim() || undefined,
+    };
+    if (
+      !normalized.originBorderPoint &&
+      !normalized.destinationBorderPoint &&
+      !normalized.borderNotes
+    ) {
+      return undefined;
+    }
+    return normalized;
+  }
+
+  private resolveHubSectionForItem(item: OrderItem): TimetableHubSectionKey {
+    if (item.parentItemId) {
+      return 'operational';
+    }
+    const phase = item.timetablePhase ?? 'bedarf';
+    switch (phase) {
+      case 'operational':
+        return 'operational';
+      case 'archived':
+        return 'actual';
+      default:
+        return 'commercial';
+    }
   }
 
   private generateTimetableRefId(plan: TrainPlan): string {

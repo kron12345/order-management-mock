@@ -26,15 +26,18 @@ import {
   PlanAssemblyDialogResult,
 } from '../orders/plan-assembly-dialog/plan-assembly-dialog.component';
 import {
+  ScheduleTemplate,
   ScheduleTemplateCategory,
-  ScheduleTemplateDay,
   ScheduleTemplateStatus,
 } from '../../core/models/schedule-template.model';
 
 export interface ScheduleTemplateCreateDialogData {
-  defaultStartTime?: string;
-  defaultEndTime?: string;
+  template?: ScheduleTemplate;
 }
+
+export type ScheduleTemplateDialogResult =
+  | { mode: 'create'; payload: CreateScheduleTemplatePayload }
+  | { mode: 'edit'; templateId: string; payload: CreateScheduleTemplatePayload };
 
 type StopFormValue = {
   type: 'origin' | 'intermediate' | 'destination';
@@ -51,6 +54,20 @@ type StopFormValue = {
   platformWish: string | null;
   notes: string | null;
 };
+
+type VehicleFormGroup = FormGroup<{
+  vehicleType: FormControl<string>;
+  count: FormControl<number>;
+  note: FormControl<string | null>;
+}>;
+
+type ChangeEntryFormGroup = FormGroup<{
+  stopIndex: FormControl<number | null>;
+  action: FormControl<'attach' | 'detach'>;
+  vehicleType: FormControl<string>;
+  count: FormControl<number>;
+  note: FormControl<string | null>;
+}>;
 
 type StopFormGroup = FormGroup<{
   type: FormControl<'origin' | 'intermediate' | 'destination'>;
@@ -79,7 +96,7 @@ export class ScheduleTemplateCreateDialogComponent {
   private readonly dialogRef = inject<
     MatDialogRef<
       ScheduleTemplateCreateDialogComponent,
-      CreateScheduleTemplatePayload | undefined
+      ScheduleTemplateDialogResult | undefined
     >
   >(MatDialogRef);
   private readonly data =
@@ -88,6 +105,8 @@ export class ScheduleTemplateCreateDialogComponent {
     }) ?? {};
   private readonly fb = inject(FormBuilder);
   private readonly dialog = inject(MatDialog);
+  private readonly template = this.data.template ?? null;
+  readonly isEditMode = Boolean(this.template);
 
   readonly categoryOptions: ScheduleTemplateCategory[] = [
     'S-Bahn',
@@ -103,16 +122,6 @@ export class ScheduleTemplateCreateDialogComponent {
     'archived',
   ];
 
-  readonly dayOptions: { value: ScheduleTemplateDay; label: string }[] = [
-    { value: 'Mo', label: 'Mo' },
-    { value: 'Di', label: 'Di' },
-    { value: 'Mi', label: 'Mi' },
-    { value: 'Do', label: 'Do' },
-    { value: 'Fr', label: 'Fr' },
-    { value: 'Sa', label: 'Sa' },
-    { value: 'So', label: 'So' },
-  ];
-
   readonly form = this.fb.group({
     title: this.fb.nonNullable.control('', Validators.required),
     description: [''],
@@ -123,35 +132,31 @@ export class ScheduleTemplateCreateDialogComponent {
     startDate: this.fb.nonNullable.control(new Date(), Validators.required),
     endDate: new FormControl<Date | null>(null),
     tags: [''],
-    recurrenceEnabled: this.fb.nonNullable.control(true),
-    recurrenceStart: this.fb.nonNullable.control(
-      this.data.defaultStartTime ?? '04:00',
-      Validators.required,
-    ),
-    recurrenceEnd: this.fb.nonNullable.control(
-      this.data.defaultEndTime ?? '23:00',
-      Validators.required,
-    ),
-    recurrenceInterval: this.fb.nonNullable.control(30, [
-      Validators.required,
-      Validators.min(1),
-      Validators.max(720),
-    ]),
-    recurrenceDays: this.fb.nonNullable.control<ScheduleTemplateDay[]>([
-      'Mo',
-      'Di',
-      'Mi',
-      'Do',
-      'Fr',
-    ]),
     stops: this.fb.array<StopFormGroup>([
       this.createStopGroup('origin'),
       this.createStopGroup('destination'),
     ]),
+    baseVehicles: this.fb.array<VehicleFormGroup>([]),
+    changeEntries: this.fb.array<ChangeEntryFormGroup>([]),
   });
 
   get stops(): FormArray<StopFormGroup> {
     return this.form.controls.stops;
+  }
+
+  get baseVehicles(): FormArray<VehicleFormGroup> {
+    return this.form.controls.baseVehicles as FormArray<VehicleFormGroup>;
+  }
+
+  get changeEntries(): FormArray<ChangeEntryFormGroup> {
+    return this.form.controls.changeEntries as FormArray<ChangeEntryFormGroup>;
+  }
+
+  get stopOptions() {
+    return this.stops.controls.map((stop, index) => ({
+      index: index + 1,
+      label: stop.controls.locationName.value || `Halt ${index + 1}`,
+    }));
   }
 
   openPlanAssembly() {
@@ -321,24 +326,38 @@ export class ScheduleTemplateCreateDialogComponent {
     return null;
   }
 
-  toggleRecurrenceDay(day: ScheduleTemplateDay) {
-    if (!this.form.controls.recurrenceEnabled.value) {
-      return;
-    }
-    const current = new Set(this.form.controls.recurrenceDays.value);
-    if (current.has(day)) {
-      current.delete(day);
-    } else {
-      current.add(day);
-    }
-    const ordered = this.dayOptions
-      .map((option) => option.value)
-      .filter((value) => current.has(value));
-    this.form.controls.recurrenceDays.setValue(ordered);
-  }
-
   cancel() {
     this.dialogRef.close();
+  }
+
+  addBaseVehicle() {
+    this.baseVehicles.push(
+      this.fb.group({
+        vehicleType: this.fb.nonNullable.control('', Validators.required),
+        count: this.fb.nonNullable.control(1, [Validators.required, Validators.min(1)]),
+        note: this.fb.control<string | null>(null),
+      }),
+    );
+  }
+
+  removeBaseVehicle(index: number) {
+    this.baseVehicles.removeAt(index);
+  }
+
+  addChangeEntry() {
+    this.changeEntries.push(
+      this.fb.group({
+        stopIndex: this.fb.control<number | null>(null, Validators.required),
+        action: this.fb.nonNullable.control<'attach' | 'detach'>('attach'),
+        vehicleType: this.fb.nonNullable.control('', Validators.required),
+        count: this.fb.nonNullable.control(1, [Validators.required, Validators.min(1)]),
+        note: this.fb.control<string | null>(null),
+      }),
+    );
+  }
+
+  removeChangeEntry(index: number) {
+    this.changeEntries.removeAt(index);
   }
 
   save() {
@@ -349,6 +368,41 @@ export class ScheduleTemplateCreateDialogComponent {
     }
 
     const value = this.form.getRawValue();
+    const baseVehicles = this.baseVehicles.controls
+      .map((group) => ({
+        type: group.value.vehicleType?.trim() ?? '',
+        count: Number(group.value.count) || 0,
+        note: group.value.note?.trim() || undefined,
+      }))
+      .filter((entry) => entry.type && entry.count > 0);
+
+    const changeEntries = this.changeEntries.controls
+      .map((group) => ({
+        stopIndex: group.value.stopIndex ?? 0,
+        action: group.value.action ?? 'attach',
+        vehicles: [
+          {
+            type: group.value.vehicleType?.trim() ?? '',
+            count: Number(group.value.count) || 0,
+            note: group.value.note?.trim() || undefined,
+          },
+        ],
+        note: group.value.note?.trim() || undefined,
+      }))
+      .filter(
+        (entry) =>
+          entry.stopIndex > 0 &&
+          entry.vehicles.every((vehicle) => vehicle.type && vehicle.count > 0),
+      );
+
+    const composition =
+      baseVehicles.length || changeEntries.length
+        ? {
+            base: baseVehicles,
+            changes: changeEntries,
+          }
+        : undefined;
+
     const payload: CreateScheduleTemplatePayload = {
       title: value.title,
       description: value.description ?? undefined,
@@ -359,20 +413,17 @@ export class ScheduleTemplateCreateDialogComponent {
       startDate: value.startDate,
       endDate: value.endDate ?? undefined,
       tags: this.parseTags(value.tags),
-      recurrence: value.recurrenceEnabled
-        ? {
-            startTime: value.recurrenceStart,
-            endTime: value.recurrenceEnd,
-            intervalMinutes: value.recurrenceInterval,
-            days: value.recurrenceDays,
-          }
-        : undefined,
+      recurrence: undefined,
       stops: this.stops.controls.map((stop, index) =>
         this.mapStopValue(stop.getRawValue() as StopFormValue, index),
       ),
+      composition,
     };
 
-    this.dialogRef.close(payload);
+    const result: ScheduleTemplateDialogResult = this.template
+      ? { mode: 'edit', templateId: this.template.id, payload }
+      : { mode: 'create', payload };
+    this.dialogRef.close(result);
   }
 
   private parseTags(value: string | null | undefined): string[] | undefined {
@@ -428,5 +479,83 @@ export class ScheduleTemplateCreateDialogComponent {
       platformWish: new FormControl<string | null>(null),
       notes: new FormControl<string | null>(null),
     });
+  }
+
+  private hydrateFormFromTemplate(template: ScheduleTemplate) {
+    this.form.patchValue({
+      title: template.title,
+      description: template.description ?? '',
+      trainNumber: template.trainNumber,
+      responsibleRu: template.responsibleRu,
+      status: template.status,
+      category: template.category,
+      startDate: new Date(template.validity.startDate),
+      endDate: template.validity.endDate ? new Date(template.validity.endDate) : null,
+      tags: template.tags?.join(', ') ?? '',
+    });
+
+    this.stops.clear();
+    template.stops
+      .slice()
+      .sort((a, b) => a.sequence - b.sequence)
+      .forEach((stop) => {
+        const group = this.createStopGroup(stop.type);
+        group.patchValue({
+          type: stop.type,
+          locationName: stop.locationName,
+          locationCode: stop.locationCode,
+          countryCode: stop.countryCode ?? null,
+          arrivalEarliest: stop.arrival?.earliest ?? null,
+          arrivalLatest: stop.arrival?.latest ?? null,
+          departureEarliest: stop.departure?.earliest ?? null,
+          departureLatest: stop.departure?.latest ?? null,
+          offsetDays: stop.offsetDays ?? null,
+          dwellMinutes: stop.dwellMinutes ?? null,
+          activities: stop.activities?.length ? stop.activities : ['0001'],
+          platformWish: stop.platformWish ?? null,
+          notes: stop.notes ?? null,
+        });
+        this.stops.push(group);
+      });
+
+    this.baseVehicles.clear();
+    template.composition?.base?.forEach((vehicle) => {
+      this.baseVehicles.push(
+        this.fb.group({
+          vehicleType: this.fb.nonNullable.control(vehicle.type, Validators.required),
+          count: this.fb.nonNullable.control(vehicle.count, [
+            Validators.required,
+            Validators.min(1),
+          ]),
+          note: this.fb.control(vehicle.note ?? null),
+        }),
+      );
+    });
+
+    this.changeEntries.clear();
+    template.composition?.changes?.forEach((change) =>
+      change.vehicles.forEach((vehicle) => {
+        this.changeEntries.push(
+          this.fb.group({
+            stopIndex: this.fb.control(change.stopIndex, Validators.required),
+            action: this.fb.nonNullable.control(change.action),
+            vehicleType: this.fb.nonNullable.control(vehicle.type, Validators.required),
+            count: this.fb.nonNullable.control(vehicle.count, [
+              Validators.required,
+              Validators.min(1),
+            ]),
+            note: this.fb.control(change.note ?? vehicle.note ?? null),
+          }),
+        );
+      }),
+    );
+  }
+
+  constructor() {
+    if (this.template) {
+      this.hydrateFormFromTemplate(this.template);
+    } else {
+      this.addBaseVehicle();
+    }
   }
 }

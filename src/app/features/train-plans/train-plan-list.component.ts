@@ -14,6 +14,12 @@ import {
   TrainPlanStatus,
 } from '../../core/models/train-plan.model';
 import {
+  TimetableRollingStock,
+  TimetableRollingStockSegment,
+  TimetableRollingStockSegmentRole,
+  TimetableRollingStockOperation,
+} from '../../core/models/timetable.model';
+import {
   OrderItemOption,
   OrderService,
 } from '../../core/services/order.service';
@@ -93,6 +99,31 @@ export class TrainPlanListComponent {
     { value: 'status:asc', label: 'Status' },
     { value: 'title:asc', label: 'Titel' },
   ];
+
+  private readonly segmentRoleLabels: Record<TimetableRollingStockSegmentRole, string> = {
+    leading: 'Führend',
+    intermediate: 'Zwischenteil',
+    trailing: 'Schiebend',
+    powercar: 'Triebkopf',
+  };
+
+  private readonly rollingStockOperationLabels: Record<
+    TimetableRollingStockOperation['type'],
+    string
+  > = {
+    split: 'Flügeln',
+    join: 'Vereinigen',
+    reconfigure: 'Rekonfiguration',
+  };
+
+  private readonly rollingStockOperationIcons: Record<
+    TimetableRollingStockOperation['type'],
+    string
+  > = {
+    split: 'call_split',
+    join: 'call_merge',
+    reconfigure: 'settings',
+  };
 
   constructor() {
     this.searchControl.setValue(this.filters().search, { emitEvent: false });
@@ -198,6 +229,94 @@ export class TrainPlanListComponent {
 
   trackByStopId(_: number, stop: TrainPlan['stops'][number]) {
     return stop.id;
+  }
+
+  trackByRollingStockSegment(
+    _: number,
+    segment: TimetableRollingStockSegment,
+  ) {
+    return `${segment.position}-${segment.vehicleTypeId}`;
+  }
+
+  trackByRollingStockOperation(
+    _: number,
+    operation: TimetableRollingStockOperation,
+  ) {
+    return `${operation.stopId}-${operation.type}-${operation.setIds?.join('-') ?? ''}`;
+  }
+
+  rollingStockSummary(rolling: TimetableRollingStock): string {
+    const total =
+      rolling.segments?.reduce((sum, segment) => sum + (segment.count ?? 0), 0) ?? 0;
+    const totalLabel =
+      total > 0 ? `${total} ${total === 1 ? 'Einheit' : 'Einheiten'}` : 'Komposition';
+    const types = Array.from(new Set(rolling.segments?.map((segment) => segment.vehicleTypeId) ?? []));
+    const typeLabel = types.length ? types.join(', ') : 'ohne Typangabe';
+    return `${totalLabel} · ${typeLabel}`;
+  }
+
+  rollingStockSegmentLabel(segment: TimetableRollingStockSegment): string {
+    const parts = [`${segment.count ?? 1} × ${segment.vehicleTypeId}`];
+    if (segment.setLabel) {
+      parts.push(segment.setLabel);
+    } else if (segment.setId) {
+      parts.push(segment.setId);
+    }
+    return parts.join(' · ');
+  }
+
+  rollingStockSegmentMeta(segment: TimetableRollingStockSegment): string | null {
+    const parts: string[] = [];
+    const roleLabel = this.segmentRoleLabel(segment.role);
+    if (roleLabel) {
+      parts.push(roleLabel);
+    }
+    if (segment.destination) {
+      parts.push(segment.destination);
+    }
+    return parts.length ? parts.join(' · ') : null;
+  }
+
+  private segmentRoleLabel(role?: TimetableRollingStockSegmentRole | null): string {
+    if (!role) {
+      return '';
+    }
+    return this.segmentRoleLabels[role] ?? role;
+  }
+
+  rollingStockOperationSummary(
+    plan: TrainPlan,
+    operation: TimetableRollingStockOperation,
+  ): string {
+    const stopLabel = this.planStopName(plan, operation.stopId);
+    const sets = operation.setIds?.length ? operation.setIds.join(', ') : undefined;
+    const base = `${this.rollingStockOperationLabel(operation.type)} @ ${stopLabel}`;
+    const setLabel = sets ? ` · ${sets}` : '';
+    const remarks = operation.remarks ? ` – ${operation.remarks}` : '';
+    return `${base}${setLabel}${remarks}`;
+  }
+
+  rollingStockOperationLabel(type: TimetableRollingStockOperation['type']): string {
+    return this.rollingStockOperationLabels[type] ?? type;
+  }
+
+  rollingStockOperationIcon(type: TimetableRollingStockOperation['type']): string {
+    return this.rollingStockOperationIcons[type] ?? 'train';
+  }
+
+  formatList(values: string[] | undefined | null): string {
+    if (!values?.length) {
+      return '—';
+    }
+    return values.join(', ');
+  }
+
+  private planStopName(plan: TrainPlan, stopId: string): string {
+    const match = plan.stops.find((stop) => stop.id === stopId);
+    if (!match) {
+      return stopId;
+    }
+    return `${match.locationName} (#${match.sequence})`;
   }
 
   private scrollToHighlightedPlan() {

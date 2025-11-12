@@ -1,19 +1,21 @@
 <div class="template-page">
-  <header class="page-header">
-    <div class="page-header__titles">
-      <h1>Fahrplanvorlagen</h1>
-      <p>
-        Erstelle und pflege TTT-konforme Fahrpläne, die du später in Serie
-        ausrollen kannst.
-      </p>
-    </div>
-    <div class="page-header__actions">
-      <button mat-flat-button color="primary" (click)="openCreateDialog()">
-        <mat-icon>add</mat-icon>
-        Vorlage anlegen
-      </button>
-    </div>
-  </header>
+  @if (showHeader) {
+    <header class="page-header">
+      <div class="page-header__titles">
+        <h1>Fahrplanvorlagen</h1>
+        <p>
+          Erstelle und pflege TTT-konforme Fahrpläne, die du später in Serie
+          ausrollen kannst.
+        </p>
+      </div>
+      <div class="page-header__actions">
+        <button mat-flat-button color="primary" (click)="openCreateDialog()">
+          <mat-icon>add</mat-icon>
+          Vorlage anlegen
+        </button>
+      </div>
+    </header>
+  }
 
   <section class="filters">
     <mat-form-field appearance="outline" class="filters__search">
@@ -133,6 +135,53 @@
           </mat-card-header>
 
           <mat-card-content>
+            @if (template.composition) {
+              <div class="composition">
+                <div class="composition__title">
+                  <mat-icon>train</mat-icon>
+                  Komposition
+                </div>
+                @if (template.composition.base && template.composition.base.length) {
+                  <div class="composition__base">
+                    <strong>Grundaufstellung</strong>
+                    <div class="composition__chips">
+                      @for (vehicle of template.composition.base; track vehicle.type + vehicle.note) {
+                        <mat-chip>
+                          {{ vehicle.count }} × {{ vehicle.type }}
+                          @if (vehicle.note) {
+                            <small>{{ vehicle.note }}</small>
+                          }
+                        </mat-chip>
+                      }
+                    </div>
+                  </div>
+                }
+                @if (template.composition.changes && template.composition.changes.length) {
+                  <div class="composition__changes">
+                    <strong>Änderungen an Halten</strong>
+                    <ul>
+                      @for (change of template.composition.changes; track change.stopIndex + change.action) {
+                        <li>
+                          <span class="change-stop">
+                            {{ stopName(template, change.stopIndex) }} ·
+                            {{ change.action === 'attach' ? 'Ankuppeln' : 'Abkuppeln' }}
+                          </span>
+                          <span class="change-vehicles">
+                            @for (vehicle of change.vehicles; track vehicle.type + vehicle.note) {
+                              {{ vehicle.count }} × {{ vehicle.type }}
+                            }
+                          </span>
+                          @if (change.note) {
+                            <small>{{ change.note }}</small>
+                          }
+                        </li>
+                      }
+                    </ul>
+                  </div>
+                }
+              </div>
+            }
+
             <div class="meta">
               <div>
                 <mat-icon>event</mat-icon>
@@ -164,38 +213,6 @@
             @if (template.description) {
               <p class="description">{{ template.description }}</p>
             }
-
-            <div class="recurrence">
-              <div class="recurrence__title">
-                <mat-icon>repeat</mat-icon>
-                Rollout
-              </div>
-              @if (template.recurrence) {
-                <div class="recurrence__body">
-                  <span>
-                    {{ template.recurrence.startTime }} – {{ template.recurrence.endTime }}
-                    alle {{ template.recurrence.intervalMinutes }} Minuten
-                  </span>
-                  <span>
-                    Tage:
-                    {{ template.recurrence.days.join(', ') }}
-                  </span>
-                  @if (preview(template)?.length) {
-                    <div class="recurrence__preview">
-                      @for (time of preview(template)!; track time) {
-                        <mat-chip>{{ time }}</mat-chip>
-                      }
-                      <span>…</span>
-                    </div>
-                  }
-                </div>
-              } @else {
-                <div class="recurrence__body disabled">
-                  <mat-icon>pause_circle</mat-icon>
-                  Serienplanung deaktiviert
-                </div>
-              }
-            </div>
 
             <div class="timeline">
               @for (stop of stops(template); track stop.id) {
@@ -304,6 +321,13 @@
                   }
                 </mat-chip-set>
               }
+            </div>
+
+            <div class="template-card__footer">
+              <button mat-stroked-button type="button" (click)="openEditDialog(template)">
+                <mat-icon>edit</mat-icon>
+                Bearbeiten
+              </button>
             </div>
           </mat-card-content>
         </mat-card>
