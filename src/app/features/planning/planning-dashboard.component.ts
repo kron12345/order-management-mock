@@ -63,6 +63,11 @@ interface StageRuntimeState {
   activeBoardId: string;
 }
 
+interface PendingActivityState {
+  stage: PlanningStageId;
+  activity: Activity;
+}
+
 const STAGE_RESOURCE_GROUPS: Record<PlanningStageId, StageResourceGroupConfig[]> = {
   base: [
     {
@@ -245,6 +250,7 @@ export class PlanningDashboardComponent {
   private readonly stageYearSelectionState = signal<Record<PlanningStageId, Set<string>>>(
     this.createEmptyYearSelection(),
   );
+  private readonly pendingActivitySignal = signal<PendingActivityState | null>(null);
 
   protected readonly activityForm = this.fb.group({
     start: [''],
@@ -283,6 +289,20 @@ export class PlanningDashboardComponent {
         this.ensureStageInitialized(stage, snapshot);
       }
     });
+
+    effect(
+      () => {
+        const pending = this.pendingActivitySignal();
+        const activeStage = this.activeStageSignal();
+        if (pending && pending.stage !== activeStage) {
+          if (this.selectedActivityState()?.activity.id === pending.activity.id) {
+            this.selectedActivityState.set(null);
+          }
+          this.pendingActivitySignal.set(null);
+        }
+      },
+      { allowSignalWrites: true },
+    );
 
     this.activityForm.controls.type.valueChanges.pipe(takeUntilDestroyed()).subscribe((value) => {
       this.activityFormTypeSignal.set(value ?? '');
@@ -569,6 +589,18 @@ export class PlanningDashboardComponent {
     ),
   );
 
+  protected readonly pendingActivity = computed<Activity | null>(() =>
+    this.pendingActivityForStage(this.activeStageSignal()),
+  );
+
+  protected readonly isSelectedActivityPending = computed(() => {
+    const selection = this.selectedActivityState();
+    if (!selection) {
+      return false;
+    }
+    return this.isPendingSelection(selection.activity.id);
+  });
+
   protected readonly selectedBoardIndex = computed(() => {
     const stage = this.activeStageSignal();
     const state = this.stageStateSignal()[stage];
@@ -683,6 +715,9 @@ export class PlanningDashboardComponent {
 
   protected handleActivityCreate(event: { resource: Resource; start: Date }): void {
     const stage = this.activeStageSignal();
+    if (stage === 'base' && !this.templateStore.selectedTemplate()?.id) {
+      return;
+    }
     const definition = this.resolveActivityTypeForResource(
       event.resource,
       this.activityCreationToolSignal(),
@@ -690,39 +725,15 @@ export class PlanningDashboardComponent {
     if (!definition) {
       return;
     }
-    if (stage === 'base') {
-      this.handleBaseActivityCreate(event, definition);
-      return;
-    }
-    const endDate =
-      definition.timeMode === 'duration'
-        ? new Date(event.start.getTime() + definition.defaultDurationMinutes * 60 * 1000)
-        : null;
-    const newActivity: Activity = {
-      id: this.generateActivityId(definition.id),
-      resourceId: event.resource.id,
-      title: this.buildActivityTitle(definition),
-      start: event.start.toISOString(),
-      end: endDate ? endDate.toISOString() : null,
-      type: definition.id,
-      participantResourceIds: [event.resource.id],
-      serviceCategory: this.resolveServiceCategory(event.resource),
-    };
-    if (this.definitionHasField(definition, 'from')) {
-      newActivity.from = '';
-    }
-    if (this.definitionHasField(definition, 'to')) {
-      newActivity.to = '';
-    }
-    if (this.definitionHasField(definition, 'remark')) {
-      newActivity.remark = '';
-    }
-    const normalized = this.applyActivityTypeConstraints(newActivity);
-    this.updateStageActivities(stage, (activities) => [...activities, normalized]);
-    this.selectedActivityState.set({ activity: normalized, resource: event.resource });
+    const draft = this.createActivityDraft(event, definition);
+    const normalized = this.applyActivityTypeConstraints(draft);
+    this.startPendingActivity(stage, event.resource, normalized);
   }
 
   protected handleActivityEdit(event: { resource: Resource; activity: Activity }): void {
+    if (!this.isPendingSelection(event.activity.id)) {
+      this.pendingActivitySignal.set(null);
+    }
     this.selectedActivityState.set({
       resource: event.resource,
       activity: this.applyActivityTypeConstraints(event.activity),
@@ -760,6 +771,10 @@ export class PlanningDashboardComponent {
     start: Date;
     end: Date | null;
   }): void {
+    if (this.isPendingSelection(event.activity.id)) {
+      this.updatePendingActivityPosition(event);
+      return;
+    }
     const stage = this.activeStageSignal();
     if (stage === 'base') {
       this.handleBaseActivityReposition(event);
@@ -808,6 +823,10 @@ export class PlanningDashboardComponent {
   }
 
   protected clearSelectedActivity(): void {
+    const selection = this.selectedActivityState();
+    if (selection && this.isPendingSelection(selection.activity.id)) {
+      this.pendingActivitySignal.set(null);
+    }
     this.selectedActivityState.set(null);
   }
 
@@ -816,6 +835,10 @@ export class PlanningDashboardComponent {
     if (!selection || this.activityForm.invalid) {
       return;
     }
+    const stage = this.activeStageSignal();
+    const pending = this.pendingActivitySignal();
+    const isPendingDraft =
+      pending && pending.stage === stage && pending.activity.id === selection.activity.id;
     const value = this.activityForm.getRawValue();
     const startDate = value.start ? this.fromLocalDateTime(value.start) : null;
     if (!startDate) {
@@ -853,7 +876,17 @@ export class PlanningDashboardComponent {
       }
     }
     const normalized = this.applyActivityTypeConstraints(updated);
-    if (this.activeStageSignal() === 'base') {
+    if (isPendingDraft) {
+      if (stage === 'base') {
+        this.saveTemplateActivity(normalized);
+      } else {
+        this.updateStageActivities(stage, (activities) => [...activities, normalized]);
+      }
+      this.pendingActivitySignal.set(null);
+      this.selectedActivityState.set({ activity: normalized, resource: selection.resource });
+      return;
+    }
+    if (stage === 'base') {
       this.saveTemplateActivity(normalized);
       this.selectedActivityState.set({ activity: normalized, resource: selection.resource });
       return;
@@ -864,6 +897,11 @@ export class PlanningDashboardComponent {
   protected deleteSelectedActivity(): void {
     const selection = this.selectedActivityState();
     if (!selection) {
+      return;
+    }
+    if (this.isPendingSelection(selection.activity.id)) {
+      this.pendingActivitySignal.set(null);
+      this.selectedActivityState.set(null);
       return;
     }
     const stage = this.activeStageSignal();
@@ -995,10 +1033,12 @@ export class PlanningDashboardComponent {
 
   protected shiftSelectedActivityBy(deltaMinutes: number): void {
     const selected = this.selectedActivities();
-    if (selected.length !== 1) {
+    const target =
+      selected.length === 1 ? selected[0] : this.selectedActivityState();
+    if (!target) {
       return;
     }
-    const { activity } = selected[0];
+    const { activity } = target;
     const deltaMs = deltaMinutes * 60 * 1000;
     const start = new Date(activity.start).getTime() + deltaMs;
     const definition = this.findActivityType(activity.type ?? null);
@@ -1011,7 +1051,12 @@ export class PlanningDashboardComponent {
       start: new Date(start).toISOString(),
       end: end ? new Date(end).toISOString() : null,
     };
-    this.replaceActivity(this.applyActivityTypeConstraints(updated));
+    const normalized = this.applyActivityTypeConstraints(updated);
+    if (this.isPendingSelection(activity.id)) {
+      this.commitPendingActivityUpdate(normalized);
+      return;
+    }
+    this.replaceActivity(normalized);
   }
 
   protected addParticipantsToActiveBoard(): void {
@@ -1073,6 +1118,66 @@ export class PlanningDashboardComponent {
     } else {
       this.selectedActivityState.set(null);
     }
+  }
+
+  private startPendingActivity(stage: PlanningStageId, resource: Resource, activity: Activity): void {
+    this.pendingActivitySignal.set({ stage, activity });
+    this.selectedActivityState.set({ activity, resource });
+    this.selectedActivityIdsSignal.set(new Set());
+  }
+
+  private isPendingSelection(activityId: string | null | undefined): boolean {
+    if (!activityId) {
+      return false;
+    }
+    const pending = this.pendingActivitySignal();
+    if (!pending) {
+      return false;
+    }
+    return pending.stage === this.activeStageSignal() && pending.activity.id === activityId;
+  }
+
+  private commitPendingActivityUpdate(activity: Activity): void {
+    const pending = this.pendingActivitySignal();
+    if (!pending) {
+      return;
+    }
+    this.pendingActivitySignal.set({ stage: pending.stage, activity });
+    const stage = this.activeStageSignal();
+    const resource =
+      this.stageResourceSignals[stage]().find((entry) => entry.id === activity.resourceId) ??
+      this.selectedActivityState()?.resource ??
+      null;
+    if (resource) {
+      this.selectedActivityState.set({ activity, resource });
+    } else {
+      this.selectedActivityState.set(null);
+    }
+  }
+
+
+  private pendingActivityForStage(stage: PlanningStageId): Activity | null {
+    const pending = this.pendingActivitySignal();
+    if (!pending || pending.stage !== stage) {
+      return null;
+    }
+    return pending.activity;
+  }
+
+  private updatePendingActivityPosition(event: {
+    activity: Activity;
+    targetResourceId: string;
+    start: Date;
+    end: Date | null;
+  }): void {
+    const updated: Activity = {
+      ...event.activity,
+      resourceId: event.targetResourceId,
+      start: event.start.toISOString(),
+      end: event.end ? event.end.toISOString() : null,
+      participantResourceIds: [event.targetResourceId],
+    };
+    this.commitPendingActivityUpdate(this.applyActivityTypeConstraints(updated));
   }
 
   private generateActivityId(prefix: string): string {
@@ -1367,6 +1472,14 @@ export class PlanningDashboardComponent {
     return this.normalizedStageActivitySignals[stage]().filter((activity) =>
       resourceSet.has(activity.resourceId),
     );
+  }
+
+  protected boardPendingActivity(board: PlanningBoard): Activity | null {
+    const pending = this.pendingActivity();
+    if (!pending) {
+      return null;
+    }
+    return board.resourceIds.includes(pending.resourceId) ? pending : null;
   }
 
   protected isActiveBoard(boardId: string): boolean {
@@ -1736,14 +1849,32 @@ export class PlanningDashboardComponent {
   private computeBaseTimelineRange(): PlanningTimelineRange {
     const template = this.templateStore.selectedTemplate();
     const fallback = this.baseTimelineFallback();
-    const startCandidate = template?.baseWeekStartIso
-      ? new Date(`${template.baseWeekStartIso}T00:00:00Z`)
-      : new Date(fallback.start);
-    const start = Number.isFinite(startCandidate.getTime()) ? startCandidate : new Date(fallback.start);
+    const parsed = template?.baseWeekStartIso ? this.parseTemplateDate(template.baseWeekStartIso) : null;
+    const start = parsed ?? new Date(fallback.start);
     const end = new Date(start.getTime());
     end.setUTCDate(end.getUTCDate() + 7);
     end.setUTCHours(end.getUTCHours() + 20);
     return { start, end };
+  }
+
+  private parseTemplateDate(value: string | null | undefined): Date | null {
+    if (!value) {
+      return null;
+    }
+    if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+      const date = new Date(`${value}T00:00:00Z`);
+      return Number.isFinite(date.getTime()) ? date : null;
+    }
+    if (/^\d{2}\.\d{2}\.\d{4}$/.test(value)) {
+      const [day, month, year] = value.split('.').map((part) => Number.parseInt(part, 10));
+      if (Number.isNaN(day) || Number.isNaN(month) || Number.isNaN(year)) {
+        return null;
+      }
+      const date = new Date(Date.UTC(year, month - 1, day));
+      return Number.isFinite(date.getTime()) ? date : null;
+    }
+    const fallback = new Date(value);
+    return Number.isFinite(fallback.getTime()) ? fallback : null;
   }
 
   private computeStageYearRange(
@@ -1866,7 +1997,8 @@ export class PlanningDashboardComponent {
       return [];
     }
     const resources = this.stageResourceSignals.base();
-    return this.normalizeActivityList(plans.map((item) => this.planActivityToActivity(item, resources)));
+    const normalized = this.normalizeActivityList(plans.map((item) => this.planActivityToActivity(item, resources)));
+    return this.annotateBaseServiceMetadata(normalized, resources);
   }
 
   private planActivityToActivity(plan: PlanWeekActivity, resources: Resource[]): Activity {
@@ -1900,19 +2032,128 @@ export class PlanningDashboardComponent {
     };
   }
 
-  private handleBaseActivityCreate(
+  private annotateBaseServiceMetadata(activities: Activity[], resources: Resource[]): Activity[] {
+    if (!activities.length) {
+      return activities;
+    }
+    const resourceMap = new Map(resources.map((resource) => [resource.id, resource]));
+    const clones = activities.map((activity) => ({ ...activity }));
+    const resourceBuckets = new Map<string, Activity[]>();
+
+    clones.forEach((activity) => {
+      if (!resourceBuckets.has(activity.resourceId)) {
+        resourceBuckets.set(activity.resourceId, []);
+      }
+      resourceBuckets.get(activity.resourceId)!.push(activity);
+    });
+
+    resourceBuckets.forEach((list, resourceId) => {
+      const resource = resourceMap.get(resourceId) ?? null;
+      list.sort((a, b) => {
+        const aTime = this.tryParseIso(a.start)?.getTime() ?? 0;
+        const bTime = this.tryParseIso(b.start)?.getTime() ?? 0;
+        return aTime - bTime;
+      });
+
+      let currentService: {
+        id: string;
+        category: 'personnel-service' | 'vehicle-service' | undefined;
+        templateId: string | null;
+      } | null = null;
+
+      list.forEach((activity) => {
+        const startDate = this.tryParseIso(activity.start);
+        if (!startDate) {
+          this.clearServiceMetadata(activity, resource);
+          return;
+        }
+
+        if (this.isServiceStartActivity(activity)) {
+          const serviceDate = this.toIsoDate(startDate);
+          const serviceId = this.buildServiceId(activity.resourceId, serviceDate);
+          const category = resource ? this.resolveServiceCategory(resource) : activity.serviceCategory ?? undefined;
+          const templateId = resource?.id ?? activity.serviceTemplateId ?? null;
+          currentService = { id: serviceId, category, templateId };
+          this.assignServiceMetadata(activity, currentService, 'start');
+          return;
+        }
+
+        if (currentService) {
+          const role = this.isServiceEndActivity(activity) ? 'end' : 'segment';
+          this.assignServiceMetadata(activity, currentService, role);
+          if (role === 'end') {
+            currentService = null;
+          }
+        } else {
+          this.clearServiceMetadata(activity, resource);
+          if (this.isServiceEndActivity(activity)) {
+            activity.serviceRole = 'end';
+          }
+        }
+      });
+    });
+
+    return clones;
+  }
+
+  private isServiceStartActivity(activity: Activity): boolean {
+    return (activity.type ?? '') === 'service-start' || activity.serviceRole === 'start';
+  }
+
+  private isServiceEndActivity(activity: Activity): boolean {
+    return (activity.type ?? '') === 'service-end' || activity.serviceRole === 'end';
+  }
+
+  private assignServiceMetadata(
+    activity: Activity,
+    descriptor: {
+      id: string;
+      category: 'personnel-service' | 'vehicle-service' | undefined;
+      templateId: string | null;
+    },
+    role: ServiceRole,
+  ): void {
+    activity.serviceId = descriptor.id;
+    activity.serviceRole = role;
+    activity.serviceCategory = descriptor.category;
+    activity.serviceTemplateId = descriptor.templateId;
+  }
+
+  private clearServiceMetadata(activity: Activity, resource: Resource | null = null): void {
+    activity.serviceId = undefined;
+    if (!this.isServiceStartActivity(activity) && !this.isServiceEndActivity(activity)) {
+      activity.serviceRole = null;
+    }
+    if (resource) {
+      activity.serviceCategory = this.resolveServiceCategory(resource);
+      activity.serviceTemplateId = resource.id;
+    } else {
+      activity.serviceCategory = activity.serviceCategory ?? undefined;
+      activity.serviceTemplateId = activity.serviceTemplateId ?? null;
+    }
+  }
+
+  private buildServiceId(resourceId: string, serviceDate: string): string {
+    return `service:${resourceId}:${serviceDate}`;
+  }
+
+  private tryParseIso(value: string | null | undefined): Date | null {
+    if (!value) {
+      return null;
+    }
+    const date = new Date(value);
+    return Number.isFinite(date.getTime()) ? date : null;
+  }
+
+  private createActivityDraft(
     event: { resource: Resource; start: Date },
     definition: ActivityTypeDefinition,
-  ): void {
-    const templateId = this.templateStore.selectedTemplate()?.id;
-    if (!templateId) {
-      return;
-    }
+  ): Activity {
     const endDate =
       definition.timeMode === 'duration'
         ? new Date(event.start.getTime() + definition.defaultDurationMinutes * 60 * 1000)
         : null;
-    const newActivity: Activity = {
+    const draft: Activity = {
       id: this.generateActivityId(definition.id),
       resourceId: event.resource.id,
       title: this.buildActivityTitle(definition),
@@ -1923,17 +2164,15 @@ export class PlanningDashboardComponent {
       serviceCategory: this.resolveServiceCategory(event.resource),
     };
     if (this.definitionHasField(definition, 'from')) {
-      newActivity.from = '';
+      draft.from = '';
     }
     if (this.definitionHasField(definition, 'to')) {
-      newActivity.to = '';
+      draft.to = '';
     }
     if (this.definitionHasField(definition, 'remark')) {
-      newActivity.remark = '';
+      draft.remark = '';
     }
-    const normalized = this.applyActivityTypeConstraints(newActivity);
-    this.saveTemplateActivity(normalized);
-    this.selectedActivityState.set({ activity: normalized, resource: event.resource });
+    return draft;
   }
 
   private handleBaseActivityReposition(event: {
@@ -1955,7 +2194,8 @@ export class PlanningDashboardComponent {
       this.stageResourceSignals.base().find((res) => res.id === event.targetResourceId) ??
       this.selectedActivityState()?.resource ??
       null;
-    if (resource) {
+    const currentSelection = this.selectedActivityState();
+    if (resource && currentSelection?.activity.id === event.activity.id) {
       this.selectedActivityState.set({ activity: normalized, resource });
     }
   }

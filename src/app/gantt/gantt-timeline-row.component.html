@@ -43,6 +43,7 @@
           [displayMode]="viewMode"
           [displayTitle]="bar.label ?? ''"
           [showRouteDetails]="bar.showRoute ?? false"
+          [dragDisabled]="bar.dragDisabled ?? false"
           [dragData]="{ activity: bar.activity, resourceId, initialLeft: bar.left, width: bar.width }"
           (activitySelected)="activitySelected.emit($event)"
           (toggleSelection)="activityToggleSelection.emit($event)"

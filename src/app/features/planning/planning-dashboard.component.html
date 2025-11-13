@@ -230,7 +230,10 @@
                 <app-gantt
                   [resources]="boardResources(board)"
                   [activities]="boardActivities(board)"
+                  [pendingActivity]="boardPendingActivity(board)"
                   [timelineRange]="timelineRange()"
+                  [minTimelineDays]="activeStageId() === 'base' ? 8 : 30"
+                  [snapTimelineToMidnight]="activeStageId() !== 'base'"
                   [resourceViewModes]="resourceViewModes()"
                   [selectedActivityIds]="selectedActivityIdsArray()"
                   [activityTypeInfo]="activityTypeInfoMap()"
@@ -357,9 +360,12 @@
     <div class="planning-panel planning-panel--form" *ngIf="selectedActivity() as selected" cdkDrag>
       <div class="planning-panel__header" cdkDragHandle>
         <div>
-          <div class="planning-panel__title">Aktivität bearbeiten</div>
+          <div class="planning-panel__title">
+            {{ isSelectedActivityPending() ? 'Aktivität anlegen' : 'Aktivität bearbeiten' }}
+          </div>
           <div class="planning-panel__subtitle">
             {{ activityTypeLabel(selected.activity.type) }}
+            <span class="planning-panel__badge" *ngIf="isSelectedActivityPending()">Entwurf</span>
           </div>
         </div>
         <button mat-icon-button type="button" (click)="clearSelectedActivity()" aria-label="Panel schließen">
@@ -477,7 +483,9 @@
         </div>
 
         <div class="planning-panel__actions">
-          <button mat-button type="button" (click)="clearSelectedActivity()">Abbrechen</button>
+          <button mat-button type="button" (click)="clearSelectedActivity()">
+            {{ isSelectedActivityPending() ? 'Verwerfen' : 'Abbrechen' }}
+          </button>
           <button mat-button color="warn" type="button" (click)="deleteSelectedActivity()">
             Löschen
           </button>
@@ -488,7 +496,7 @@
             [disabled]="activityForm.pristine || activityForm.invalid"
             (click)="saveSelectedActivityEdits()"
           >
-            Speichern
+            {{ isSelectedActivityPending() ? 'Anlegen' : 'Speichern' }}
           </button>
         </div>
       </div>

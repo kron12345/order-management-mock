@@ -21,6 +21,7 @@ export class GanttActivityComponent {
   @Input() displayMode: 'block' | 'detail' = 'detail';
   @Input() displayTitle: string | null = null;
   @Input() showRouteDetails = false;
+  @Input() dragDisabled = false;
   @Input({ required: true }) dragData!: GanttActivityDragData;
   @Output() activitySelected = new EventEmitter<Activity>();
   @Output() toggleSelection = new EventEmitter<Activity>();

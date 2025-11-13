@@ -10,6 +10,7 @@ Ein Angular-18-Mock, der einen vollständigen Ressourcen- und Aktivitäts-Gantt 
 - [Frontend-Entwicklung](#frontend-entwicklung)
 - [Backend-Anbindung (NestJS)](#backend-anbindung-nestjs)
 - [Aktueller Funktionsumfang](#aktueller-funktionsumfang)
+- [Auftragsmanagement & Automatismen](#auftragsmanagement--automatismen)
 - [Masterdatenbereich](#masterdatenbereich)
 - [OpenAPI & Datenmodell](#openapi--datenmodell)
 - [Tests & bekannte Einschränkungen](#tests--bekannte-einschränkungen)
@@ -118,6 +119,38 @@ Bereiche:
 Die Komponenten unter `src/app/planning/components/**` sind modular aufgebaut und lassen sich leicht auf weitere Domänen übertragen. Mockdaten stehen in `src/app/shared/planning-mocks.ts` bereit und können per Store geladen oder ersetzt werden.
 
 **Neu:** Personal, Personaldienste, Fahrzeuge und Fahrzeugdienste werden jetzt direkt über das Planning-Backend (`/planning/stages/base/resources`) verwaltet. Zusätzlich lassen sich alle Dienst-/Fahrzeugpools, Fahrzeugtypen und Fahrzeugkompositionen via `/planning/master-data/*` CRUD-Endpunkten pflegen. Sobald Sie im Stammdaten-UI speichern, landen die Änderungen per REST auf `http://localhost:3000/api/v1` (oder der konfigurierten Basis-URL) und stehen unmittelbar in der Planungsansicht zur Verfügung. Ein laufendes Backend ist daher Voraussetzung für persistente Stammdaten. Alle dynamischen Zusatzfelder werden dabei in generischen `attributes`-Objekten gespeichert – das gilt ebenso für Activities – sodass das Backend keine Schema-Updates mehr benötigt.
+
+## Auftragsmanagement & Automatismen
+
+Der Bereich „Aufträge“ deckt die komplette TTR/TTT-Pipeline ab – von KPIs bis zu automatischen Geschäften.
+
+### Pipeline, KPI & Insights
+
+- Hero-Metriken zeigen Aufträge, Positionen, kurzfristige Starts, Auffälligkeiten sowie Rolling-Planning-, Short-Term- und Ad-hoc-Buckets. Ein Klick setzt sofort den passenden Filter (z. B. `ttrPhase = rolling_planning`).
+- Wird irgendein Filter aktiv, klappen alle Auftragskarten automatisch auf und zeigen die betroffenen Positionen.
+- Team-Insights (Beliebte Tags, Top-Verantwortliche, Kontextkarte) basieren stets auf den aktuell gefilterten Treffern und lassen sich mit einem Klick anwenden.
+
+### Filter, Suche & Presets
+
+- Kombinierte Filterleiste inkl. Pills für Tags, TTR-Phase, Fahrplanfenster, Timeline-Referenz, Status, Business-Verknüpfung, etc.
+- Suchfeld akzeptiert Kürzel wie `tag:` oder `resp:` und schlägt passende Werte live vor.
+- Filtersets können als Presets gespeichert, dupliziert, umbenannt oder entfernt werden. Beim manuellen Anpassen deaktiviert sich die aktive Ansicht automatisch.
+
+### Order Cards & Positionen
+
+- Positions-Tags werden beim Anlegen/Bearbeiten gepflegt und stehen als Filtergrundlage, in Insights und in der Automationslogik zur Verfügung.
+- Cards zeigen Business-/Phasen-Health, ermöglichen Bulk-Linking sowie Statuswechsel und aktualisieren sich live beim Filtern.
+
+### Geschäfts-Automation
+
+- Template-Hub enthält alle Standard-TTR-Phasen und beliebig viele Custom-Phasen (eigene Fenster, Timeline-Referenzen, Zuständigkeiten, Tags).
+- Condition-Builder je Phase: `Tag enthält/enthält nicht`, `Positionsart ist/ist nicht`, `Bestellphase (TTT) ist/ist nicht`, `TTR-Phase ist/ist nicht`.
+- Automationen bündeln Positionen pro Phase in gemeinsamen Geschäften (Bucket-Tags) und loggen jeden Lauf mit Status/Meldung.
+- Eigene Phasen lassen sich kompletterstellen (Business-Vorlage + Automationsregeln) oder löschen; alle Einstellungen werden persistiert.
+
+### Mock-Daten
+
+- `src/app/core/mock/mock-orders.mock.ts` enthält aktualisierte Aufträge inkl. „ORD-TTR-DEMO“, der jede TTR-Phase bedient. So lassen sich sämtliche Automationen ohne Backend testen.
 
 ### Echtzeit-Synchronisation
 

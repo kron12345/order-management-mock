@@ -195,9 +195,13 @@ export class GanttComponent implements AfterViewInit {
     'vehicle-service',
   ]);
   private readonly activitiesSignal = signal<PreparedActivity[]>([]);
+  private readonly pendingActivitySignal = signal<PreparedActivity | null>(null);
   private readonly filterTerm = signal('');
   private readonly cursorTimeSignal = signal<Date | null>(null);
   private readonly viewportReady = signal(false);
+  private minTimelineDaysValue = 1;
+  private snapTimelineToMidnightValue = true;
+  private timelineRangeInput: { start: Date; end: Date } | null = null;
   private readonly expandedGroups = signal<Set<string>>(new Set());
   private readonly selectedActivityIdsSignal = signal<Set<string>>(new Set());
   private readonly activeTouchPointers = new Map<number, { x: number; y: number }>();
@@ -302,26 +306,105 @@ export class GanttComponent implements AfterViewInit {
   @Input({ required: true })
   set timelineRange(value: { start: Date; end: Date }) {
     if (!value) {
+      this.timelineRangeInput = null;
       return;
     }
-    let normalizedStart = startOfDay(value.start);
-    const normalizedEndBase = startOfDay(value.end);
-    let normalizedEnd =
-      normalizedEndBase.getTime() <= normalizedStart.getTime()
-        ? addDays(normalizedStart, 1)
-        : addDays(normalizedEndBase, 1);
+    this.timelineRangeInput = {
+      start: new Date(value.start),
+      end: new Date(value.end),
+    };
+    this.applyTimelineRange();
+  }
+
+  @Input()
+  set minTimelineDays(value: number | null | undefined) {
+    const parsed = Number.isFinite(value as number) ? Math.max(1, Math.floor((value as number) ?? 1)) : 1;
+    if (parsed === this.minTimelineDaysValue) {
+      return;
+    }
+    this.minTimelineDaysValue = parsed;
+    this.applyTimelineRange();
+  }
+
+  @Input()
+  set snapTimelineToMidnight(value: boolean | '') {
+    const next = value !== false;
+    if (next === this.snapTimelineToMidnightValue) {
+      return;
+    }
+    this.snapTimelineToMidnightValue = next;
+    this.applyTimelineRange();
+  }
+
+  @Input()
+  set pendingActivity(value: Activity | null) {
+    if (!value) {
+      this.pendingActivitySignal.set(null);
+      return;
+    }
+    const start = new Date(value.start);
+    const end = value.end ? new Date(value.end) : new Date(value.start);
+    if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime())) {
+      this.pendingActivitySignal.set(null);
+      return;
+    }
+    const prepared: PreparedActivity = {
+      ...value,
+      start: value.start,
+      end: value.end ?? null,
+      startMs: start.getTime(),
+      endMs: end.getTime(),
+    };
+    this.pendingActivitySignal.set(prepared);
+  }
+
+  private applyTimelineRange(): void {
+    if (!this.timelineRangeInput) {
+      return;
+    }
+    let normalizedStart = this.snapTimelineToMidnightValue
+      ? startOfDay(this.timelineRangeInput.start)
+      : new Date(this.timelineRangeInput.start);
+    let normalizedEndBase = this.snapTimelineToMidnightValue
+      ? startOfDay(this.timelineRangeInput.end)
+      : new Date(this.timelineRangeInput.end);
+    if (!Number.isFinite(normalizedStart.getTime())) {
+      normalizedStart = new Date();
+    }
+    if (!Number.isFinite(normalizedEndBase.getTime())) {
+      normalizedEndBase = addDays(normalizedStart, Math.max(1, this.minTimelineDaysValue));
+    }
+    let normalizedEnd: Date;
+    if (normalizedEndBase.getTime() <= normalizedStart.getTime()) {
+      normalizedEnd = new Date(normalizedStart.getTime() + MS_IN_DAY);
+    } else {
+      normalizedEnd = new Date(normalizedEndBase.getTime());
+    }
+    if (this.snapTimelineToMidnightValue) {
+      normalizedEnd = new Date(normalizedEnd.getTime() + MS_IN_DAY);
+    }
+    const minRangeMs = Math.max(1, this.minTimelineDaysValue) * MS_IN_DAY;
+    if (normalizedEnd.getTime() - normalizedStart.getTime() < minRangeMs) {
+      normalizedEnd = new Date(normalizedStart.getTime() + minRangeMs);
+    }
     const nextRange = {
       start: normalizedStart.getTime(),
       end: normalizedEnd.getTime(),
     };
-    if (this.lastTimelineRange && this.lastTimelineRange.start === nextRange.start && this.lastTimelineRange.end === nextRange.end) {
+    if (
+      this.lastTimelineRange &&
+      this.lastTimelineRange.start === nextRange.start &&
+      this.lastTimelineRange.end === nextRange.end
+    ) {
       return;
     }
     this.lastTimelineRange = nextRange;
+    const startDate = new Date(nextRange.start);
+    const endDate = new Date(nextRange.end);
     if (this.viewportInitialized) {
-      this.resetViewport(normalizedStart, normalizedEnd);
+      this.resetViewport(startDate, endDate);
     } else {
-      this.initializeViewport(normalizedStart, normalizedEnd);
+      this.initializeViewport(startDate, endDate);
     }
   }
 
@@ -364,6 +447,16 @@ export class GanttComponent implements AfterViewInit {
         map.set(activity.resourceId, [activity]);
       }
     });
+    const allowedResourceIds = new Set(this.resourcesSignal().map((resource) => resource.id));
+    const pending = this.pendingActivitySignal();
+    if (pending && allowedResourceIds.has(pending.resourceId)) {
+      const pendingList = map.get(pending.resourceId);
+      if (pendingList) {
+        pendingList.push(pending);
+      } else {
+        map.set(pending.resourceId, [pending]);
+      }
+    }
     map.forEach((list) => list.sort((a, b) => a.startMs - b.startMs));
     return map;
   });
@@ -809,6 +902,7 @@ export class GanttComponent implements AfterViewInit {
       this.setDragFeedback('invalid', 'Zeitachse nicht bereit.');
       return;
     }
+    this.suppressNextTimelineClick = true;
     this.blockActivityEdit(event.source.data.activity.id);
     const activity = event.source.data.activity;
     const sourceCell = this.findTimelineCellForElement(event.source.element.nativeElement);
@@ -1033,7 +1127,7 @@ export class GanttComponent implements AfterViewInit {
     this.viewport = createTimeViewport({
       timelineStart: start,
       timelineEnd: end,
-      initialRangeMs: ZOOM_RANGE_MS['week'],
+      initialRangeMs: this.computeInitialRange(start, end, ZOOM_RANGE_MS['week']),
       initialCenter: start,
     });
     this.viewportInitialized = true;
@@ -1049,11 +1143,21 @@ export class GanttComponent implements AfterViewInit {
     this.viewport = createTimeViewport({
       timelineStart: start,
       timelineEnd: end,
-      initialRangeMs: previousRange,
+      initialRangeMs: this.computeInitialRange(start, end, previousRange),
       initialCenter: this.clampCenter(previousCenter, start, end),
     });
     this.syncTimeScaleToViewport();
     this.viewportReady.set(true);
+  }
+
+  private computeInitialRange(start: Date, end: Date, requested: number): number {
+    const duration = Math.max(1, end.getTime() - start.getTime());
+    const shortTimelineThreshold = 12 * MS_IN_DAY;
+    if (duration > shortTimelineThreshold) {
+      return requested;
+    }
+    const desired = Math.min(duration, 5 * MS_IN_DAY);
+    return Math.max(requested, desired);
   }
 
   private setupScrollSyncEffects() {
@@ -1263,6 +1367,8 @@ export class GanttComponent implements AfterViewInit {
       return map;
     }
 
+    const pending = this.pendingActivitySignal();
+    const pendingId = pending?.id ?? null;
     const start = this.viewport.viewStart();
     const end = this.viewport.viewEnd();
     const startMs = start.getTime();
@@ -1292,18 +1398,24 @@ export class GanttComponent implements AfterViewInit {
           const maxLeft = Math.max(0, contentWidth - barWidth);
           barLeft = Math.min(Math.max(0, barLeft), maxLeft);
         }
+        const classes = this.resolveBarClasses(activity);
+        if (isMilestone) {
+          classes.push('gantt-activity--milestone');
+        }
+        const isPending = pendingId === activity.id;
+        if (isPending) {
+          classes.push('gantt-activity--ghost', 'gantt-activity--pending');
+        }
         bars.push({
           activity,
           left: barLeft,
           width: barWidth,
-          classes: this.resolveBarClasses(activity),
+          classes,
+          dragDisabled: isPending,
           selected: selectedIds.has(activity.id),
           label: displayInfo.label,
           showRoute: !isMilestone && displayInfo.showRoute && !!(activity.from || activity.to),
         });
-        if (isMilestone) {
-          bars[bars.length - 1].classes?.push('gantt-activity--milestone');
-        }
         const serviceId = activity.serviceId;
         if (!serviceId) {
           continue;

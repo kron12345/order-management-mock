@@ -12,6 +12,7 @@ export interface GanttBar {
   selected?: boolean;
   label?: string;
   showRoute?: boolean;
+  dragDisabled?: boolean;
 }
 
 export interface GanttBackgroundSegment {

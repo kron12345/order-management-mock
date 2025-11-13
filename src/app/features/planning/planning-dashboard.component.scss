@@ -392,6 +392,20 @@
   color: rgba(15, 23, 42, 0.6);
 }
 
+.planning-panel__badge {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 8px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  background: rgba(25, 118, 210, 0.12);
+  color: #0d47a1;
+  font-weight: 600;
+}
+
 .planning-panel__body {
   padding: 16px 18px 18px;
   display: flex;
