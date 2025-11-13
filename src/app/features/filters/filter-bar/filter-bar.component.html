@@ -23,16 +23,6 @@
   </mat-form-field>
 
   <mat-form-field appearance="outline">
-    <mat-label>Tag</mat-label>
-    <input
-      matInput
-      placeholder="z. B. S-Bahn"
-      [value]="tag() === 'all' ? '' : tag()"
-      (input)="onTagInput($event)"
-    />
-  </mat-form-field>
-
-  <mat-form-field appearance="outline">
     <mat-label>Zugnummer</mat-label>
     <input
       matInput
@@ -40,6 +30,72 @@
       [ngModel]="trainNumber()"
       (ngModelChange)="onTrainNumberChange($event)"
     />
+  </mat-form-field>
+
+  <mat-form-field appearance="outline" class="fp-range-field">
+    <mat-label>Fahrplan-Fenster</mat-label>
+    <mat-date-range-input [rangePicker]="fpRangePicker">
+      <input
+        matStartDate
+        placeholder="Von"
+        [value]="fpRangeStartDate()"
+        (dateChange)="onFpRangeStartChange($event)"
+      />
+      <input
+        matEndDate
+        placeholder="Bis"
+        [value]="fpRangeEndDate()"
+        (dateChange)="onFpRangeEndChange($event)"
+      />
+    </mat-date-range-input>
+    <mat-hint>Bezug: {{ activeTimelineReference().label }}</mat-hint>
+    <mat-datepicker-toggle matIconSuffix [for]="fpRangePicker"></mat-datepicker-toggle>
+    @if (fpRangeStart() || fpRangeEnd()) {
+      <button
+        mat-icon-button
+        matSuffix
+        type="button"
+        aria-label="Zeitraum löschen"
+        (click)="clearFpRange()"
+      >
+        <mat-icon>close</mat-icon>
+      </button>
+    }
+    <mat-date-range-picker #fpRangePicker></mat-date-range-picker>
+  </mat-form-field>
+
+  <mat-form-field appearance="outline">
+    <mat-label>Stichtag</mat-label>
+    <mat-select
+      [value]="timelineReference()"
+      (valueChange)="onTimelineReferenceChange($event)"
+    >
+      @for (option of timelineReferenceOptions; track option.value) {
+        <mat-option [value]="option.value">
+          <div class="option-with-caption">
+            <span>{{ option.label }}</span>
+            <small>{{ option.caption }}</small>
+          </div>
+        </mat-option>
+      }
+    </mat-select>
+  </mat-form-field>
+
+  <mat-form-field appearance="outline">
+    <mat-label>TTR-Phase</mat-label>
+    <mat-select
+      [value]="ttrPhase()"
+      (valueChange)="onTtrPhaseChange($event)"
+    >
+      @for (option of ttrPhaseOptions; track option.value) {
+        <mat-option [value]="option.value">
+          <div class="option-with-caption">
+            <span>{{ option.label }}</span>
+            <small>{{ option.window }}</small>
+          </div>
+        </mat-option>
+      }
+    </mat-select>
   </mat-form-field>
 
   <mat-form-field appearance="outline">

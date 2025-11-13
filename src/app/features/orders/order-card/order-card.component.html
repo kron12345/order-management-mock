@@ -1,5 +1,5 @@
 <mat-card appearance="outlined" class="order-card">
-  <div class="order-header" (click)="expanded.set(!expanded())" tabindex="0">
+  <div class="order-header" (click)="toggleExpanded()" tabindex="0">
     <div class="left">
       <div class="title">
         <span class="id-pill">
@@ -150,15 +150,16 @@
           }
         </div>
       }
-      @if (
-        timetablePhaseSummaries().length ||
-        businessStatusSummaries().length ||
-        variantSummaries().length
-      ) {
-        <div class="status-aggregates">
-          @if (timetablePhaseSummaries().length) {
-            <div class="status-group status-group--phase">
-              <span class="group-label">
+          @if (
+            timetablePhaseSummaries().length ||
+            businessStatusSummaries().length ||
+            variantSummaries().length ||
+            ttrPhaseSummaries().length
+          ) {
+            <div class="status-aggregates">
+              @if (timetablePhaseSummaries().length) {
+                <div class="status-group status-group--phase">
+                  <span class="group-label">
                 <mat-icon inline>timeline</mat-icon>
                 Phasen
               </span>
@@ -180,14 +181,43 @@
                     {{ summary.label }} · {{ summary.count }}
                   </mat-chip>
                 }
-              </mat-chip-set>
-            </div>
-          }
-          @if (businessStatusSummaries().length) {
-            <div class="status-group status-group--business">
-              <span class="group-label">
-                <mat-icon inline>work</mat-icon>
-                Geschäfte
+                  </mat-chip-set>
+                </div>
+              }
+              @if (ttrPhaseSummaries().length) {
+                <div class="status-group status-group--ttr">
+                  <span class="group-label">
+                    <mat-icon inline>schedule</mat-icon>
+                    TTR Phasen
+                  </span>
+                  <mat-chip-set aria-label="TTR-Phase pro Position">
+                    <mat-chip
+                      class="status-chip status-chip--ttr"
+                      [class.status-chip--active]="isTtrPhaseActive('all')"
+                      (click)="clearTtrPhaseFilter($event)"
+                    >
+                      Alle
+                    </mat-chip>
+                    @for (summary of ttrPhaseSummaries(); track summary.key) {
+                      <mat-chip
+                        class="status-chip status-chip--ttr"
+                        [ngClass]="ttrPhaseChipClasses(summary.value)"
+                        [class.status-chip--active]="isTtrPhaseActive(summary.value)"
+                        (click)="toggleTtrPhaseFilter(summary.value, $event)"
+                        matTooltip="{{ ttrPhaseTooltip(summary.value) }}"
+                        matTooltipShowDelay="250"
+                      >
+                        {{ summary.label }} · {{ summary.count }}
+                      </mat-chip>
+                    }
+                  </mat-chip-set>
+                </div>
+              }
+              @if (businessStatusSummaries().length) {
+                <div class="status-group status-group--business">
+                  <span class="group-label">
+                    <mat-icon inline>work</mat-icon>
+                    Geschäfte
               </span>
               <mat-chip-set aria-label="Status der Geschäfte">
                 <mat-chip

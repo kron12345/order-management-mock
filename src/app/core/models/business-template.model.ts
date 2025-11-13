@@ -1,5 +1,15 @@
 import { BusinessAssignment } from './business.model';
 
+export type AutomationConditionField = 'itemTag' | 'itemType' | 'ttrPhase' | 'timetablePhase';
+export type AutomationConditionOperator = 'includes' | 'excludes' | 'equals' | 'notEquals';
+
+export interface AutomationCondition {
+  id: string;
+  field: AutomationConditionField;
+  operator: AutomationConditionOperator;
+  value: string;
+}
+
 export type BusinessTemplateDueAnchor = 'order_creation' | 'production_start' | 'go_live';
 
 export interface BusinessTemplateDueRule {

@@ -310,15 +310,6 @@ export class GanttComponent implements AfterViewInit {
       normalizedEndBase.getTime() <= normalizedStart.getTime()
         ? addDays(normalizedStart, 1)
         : addDays(normalizedEndBase, 1);
-    const minTimelineDays = 30;
-    const minTimelineRangeMs = minTimelineDays * MS_IN_DAY;
-    const currentRangeMs = normalizedEnd.getTime() - normalizedStart.getTime();
-    if (currentRangeMs < minTimelineRangeMs) {
-      const deficit = minTimelineRangeMs - currentRangeMs;
-      const halfDeficit = deficit / 2;
-      normalizedStart = new Date(normalizedStart.getTime() - halfDeficit);
-      normalizedEnd = new Date(normalizedEnd.getTime() + halfDeficit);
-    }
     const nextRange = {
       start: normalizedStart.getTime(),
       end: normalizedEnd.getTime(),
@@ -333,6 +324,7 @@ export class GanttComponent implements AfterViewInit {
       this.initializeViewport(normalizedStart, normalizedEnd);
     }
   }
+
 
   readonly filteredResources = computed(() => {
     const term = this.filterTerm().trim().toLowerCase();

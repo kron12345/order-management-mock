@@ -19,6 +19,7 @@ import { MatDialog } from '@angular/material/dialog';
 import { OrderItemEditDialogComponent } from '../order-item-edit-dialog/order-item-edit-dialog.component';
 import { TimetablePhase } from '../../../core/models/timetable.model';
 import { TimetableService } from '../../../core/services/timetable.service';
+import { OrderService } from '../../../core/services/order.service';
 
 @Component({
   selector: 'app-order-item-list',
@@ -95,6 +96,7 @@ export class OrderItemListComponent {
     private readonly router: Router,
     private readonly dialog: MatDialog,
     private readonly timetableService: TimetableService,
+    private readonly orderService: OrderService,
     private readonly datePipe: DatePipe,
   ) {}
 
@@ -127,6 +129,31 @@ export class OrderItemListComponent {
       return undefined;
     }
     return `phase-${phase}`;
+  }
+
+  ttrPhaseLabel(item: OrderItem): string | undefined {
+    const phase = this.orderService.getTtrPhaseForItem(item);
+    if (phase === 'unknown') {
+      return undefined;
+    }
+    return this.orderService.getTtrPhaseMeta(phase).label;
+  }
+
+  ttrPhaseClass(item: OrderItem): string | undefined {
+    const phase = this.orderService.getTtrPhaseForItem(item);
+    if (phase === 'unknown') {
+      return undefined;
+    }
+    return `ttr-${phase.replace(/_/g, '-')}`;
+  }
+
+  ttrPhaseTooltip(item: OrderItem): string | undefined {
+    const phase = this.orderService.getTtrPhaseForItem(item);
+    if (phase === 'unknown') {
+      return undefined;
+    }
+    const meta = this.orderService.getTtrPhaseMeta(phase);
+    return `${meta.window} · ${meta.hint} (${this.referenceLabel(meta.reference)})`;
   }
 
   formatScheduleTime(value: string | undefined): string {
@@ -285,6 +312,19 @@ export class OrderItemListComponent {
       .trim()
       .toLowerCase()
       .replace(/(^|\s)\S/g, (match) => match.toUpperCase());
+  }
+
+  private referenceLabel(reference: 'fpDay' | 'operationalDay' | 'fpYear' | 'mixed'): string {
+    switch (reference) {
+      case 'fpDay':
+        return 'Fahrplantag';
+      case 'operationalDay':
+        return 'Produktionstag';
+      case 'fpYear':
+        return 'Fahrplanjahr';
+      default:
+        return 'Plan/Produktion';
+    }
   }
 
   originalTimetableRange(item: OrderItem): string | undefined {

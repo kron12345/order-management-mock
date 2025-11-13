@@ -36,6 +36,36 @@ import {
   TimetableHubRouteMetadata,
 } from './timetable-hub.service';
 
+export type OrderTimelineReference = 'fpDay' | 'operationalDay' | 'fpYear';
+
+export type OrderTtrPhase =
+  | 'capacity_supply'
+  | 'annual_request'
+  | 'final_offer'
+  | 'rolling_planning'
+  | 'short_term'
+  | 'ad_hoc'
+  | 'operational_delivery'
+  | 'unknown';
+
+export type OrderTtrPhaseFilter =
+  | 'all'
+  | 'capacity_supply'
+  | 'annual_request'
+  | 'final_offer'
+  | 'rolling_planning'
+  | 'short_term'
+  | 'ad_hoc'
+  | 'operational_delivery';
+
+export interface OrderTtrPhaseMeta {
+  key: OrderTtrPhase;
+  label: string;
+  window: string;
+  reference: OrderTimelineReference | 'mixed';
+  hint: string;
+}
+
 export interface OrderFilters {
   search: string;
   tag: string | 'all';
@@ -45,9 +75,13 @@ export interface OrderFilters {
   trainNumber: string;
   timetableYearLabel: string | 'all';
   linkedBusinessId: string | null;
+  fpRangeStart: string | null;
+  fpRangeEnd: string | null;
+  timelineReference: OrderTimelineReference;
+  ttrPhase: OrderTtrPhaseFilter;
 }
 
-const ORDER_FILTERS_STORAGE_KEY = 'orders.filters.v1';
+const ORDER_FILTERS_STORAGE_KEY = 'orders.filters.v2';
 const DEFAULT_ORDER_FILTERS: OrderFilters = {
   search: '',
   tag: 'all',
@@ -57,6 +91,69 @@ const DEFAULT_ORDER_FILTERS: OrderFilters = {
   trainNumber: '',
   timetableYearLabel: 'all',
   linkedBusinessId: null,
+  fpRangeStart: null,
+  fpRangeEnd: null,
+  timelineReference: 'fpDay',
+  ttrPhase: 'all',
+};
+const DAY_IN_MS = 24 * 60 * 60 * 1000;
+const TTR_PHASE_META: Record<OrderTtrPhase, OrderTtrPhaseMeta> = {
+  capacity_supply: {
+    key: 'capacity_supply',
+    label: 'Capacity Supply',
+    window: '18–8 Monate vor Fahrplanjahr',
+    reference: 'fpDay',
+    hint: 'Strategische Angebotsphase · Infrastrukturkapazitäten werden veröffentlicht.',
+  },
+  annual_request: {
+    key: 'annual_request',
+    label: 'Annual TT Request',
+    window: '12–7 Monate vor Fahrplanjahr',
+    reference: 'fpDay',
+    hint: 'Jahresfahrplanbestellungen erstellen und einreichen.',
+  },
+  final_offer: {
+    key: 'final_offer',
+    label: 'Final Offer (ENFP)',
+    window: '7–4 Monate vor Fahrplanjahr',
+    reference: 'fpDay',
+    hint: 'Angebote prüfen, final annehmen oder ablehnen.',
+  },
+  rolling_planning: {
+    key: 'rolling_planning',
+    label: 'Rolling Planning',
+    window: '13–3 Wochen vor Fahrplantag',
+    reference: 'fpDay',
+    hint: 'Mittelfristige Zusatz- und Saisonlagen abstimmen.',
+  },
+  short_term: {
+    key: 'short_term',
+    label: 'Short-Term',
+    window: '30–7 Tage vor Fahrplantag',
+    reference: 'fpDay',
+    hint: 'Kurzfristige Bedarfe mit schnellen Reaktionsfristen bedienen.',
+  },
+  ad_hoc: {
+    key: 'ad_hoc',
+    label: 'Ad-hoc',
+    window: '0–7 Tage vor Produktionstag',
+    reference: 'operationalDay',
+    hint: 'Akute Bedarfe oder Störungen, Reaktion in Minuten/Stunden.',
+  },
+  operational_delivery: {
+    key: 'operational_delivery',
+    label: 'Operative Begleitung',
+    window: 'laufender Betrieb',
+    reference: 'operationalDay',
+    hint: 'Leistung ist im Betrieb / Monitoring & Umsetzung.',
+  },
+  unknown: {
+    key: 'unknown',
+    label: 'Unklassifiziert',
+    window: 'fehlende Daten',
+    reference: 'mixed',
+    hint: 'Es fehlen Fahrplan- oder Datumseigenschaften zur Einordnung.',
+  },
 };
 
 type OrderSearchTokens = {
@@ -100,6 +197,7 @@ export interface CreateServiceOrderItemPayload {
   deviation?: string;
   name?: string;
   timetableYearLabel?: string;
+  tags?: string[];
 }
 
 export interface CreatePlanOrderItemsPayload
@@ -108,6 +206,7 @@ export interface CreatePlanOrderItemsPayload
   namePrefix?: string;
   responsible?: string;
   timetableYearLabel?: string;
+  tags?: string[];
 }
 
 export interface ImportedRailMlStop extends CreateScheduleTemplateStopPayload {}
@@ -189,6 +288,7 @@ export interface CreateManualPlanOrderItemPayload {
   validTo?: string;
   daysBitmap?: string;
   timetableYearLabel?: string;
+  tags?: string[];
 }
 
 export interface CreateImportedPlanOrderItemPayload {
@@ -199,6 +299,7 @@ export interface CreateImportedPlanOrderItemPayload {
   responsible?: string;
   parentItemId?: string;
   timetableYearLabel?: string;
+  tags?: string[];
 }
 
 type EditableOrderItemKeys =
@@ -213,7 +314,8 @@ type EditableOrderItemKeys =
   | 'trafficPeriodId'
   | 'linkedBusinessIds'
   | 'linkedTemplateId'
-  | 'linkedTrainPlanId';
+  | 'linkedTrainPlanId'
+  | 'tags';
 
 export type OrderItemUpdateData = Pick<OrderItem, EditableOrderItemKeys>;
 
@@ -278,6 +380,16 @@ export class OrderService {
       end: entry.item.end,
     })),
   );
+  readonly itemTtrPhaseIndex = computed(() => {
+    const reference = this._filters().timelineReference;
+    const map = new Map<string, OrderTtrPhase>();
+    this._orders().forEach((order) => {
+      order.items.forEach((item) => {
+        map.set(item.id, this.computeTtrPhase(item, reference));
+      });
+    });
+    return { reference, map };
+  });
 
   readonly filteredOrders = computed(() => {
     const filters = this._filters();
@@ -288,6 +400,9 @@ export class OrderService {
       filters.businessStatus !== 'all' ||
       filters.trainNumber.trim() !== '' ||
       filters.timetableYearLabel !== 'all' ||
+      filters.ttrPhase !== 'all' ||
+      Boolean(filters.fpRangeStart) ||
+      Boolean(filters.fpRangeEnd) ||
       Boolean(filters.linkedBusinessId);
 
     return this._orders().filter((order) => {
@@ -318,13 +433,69 @@ export class OrderService {
     });
   }
 
+  hasActiveFilters(snapshot: OrderFilters = this._filters()): boolean {
+    return (
+      snapshot.search.trim().length > 0 ||
+      snapshot.tag !== DEFAULT_ORDER_FILTERS.tag ||
+      snapshot.timeRange !== DEFAULT_ORDER_FILTERS.timeRange ||
+      snapshot.trainStatus !== DEFAULT_ORDER_FILTERS.trainStatus ||
+      snapshot.businessStatus !== DEFAULT_ORDER_FILTERS.businessStatus ||
+      snapshot.trainNumber.trim().length > 0 ||
+      snapshot.timetableYearLabel !== DEFAULT_ORDER_FILTERS.timetableYearLabel ||
+      snapshot.linkedBusinessId !== DEFAULT_ORDER_FILTERS.linkedBusinessId ||
+      snapshot.fpRangeStart !== DEFAULT_ORDER_FILTERS.fpRangeStart ||
+      snapshot.fpRangeEnd !== DEFAULT_ORDER_FILTERS.fpRangeEnd ||
+      snapshot.timelineReference !== DEFAULT_ORDER_FILTERS.timelineReference ||
+      snapshot.ttrPhase !== DEFAULT_ORDER_FILTERS.ttrPhase
+    );
+  }
+
   getOrderById(orderId: string): Order | undefined {
     return this._orders().find((order) => order.id === orderId);
+  }
+
+  getOrderItemById(itemId: string): OrderItem | undefined {
+    for (const order of this._orders()) {
+      const match = order.items.find((item) => item.id === itemId);
+      if (match) {
+        return match;
+      }
+    }
+    return undefined;
   }
 
   filterItemsForOrder(order: Order): OrderItem[] {
     const filters = this._filters();
     return order.items.filter((item) => this.matchesItem(item, filters));
+  }
+
+  getItemReferenceDate(
+    itemOrId: OrderItem | string,
+    reference?: OrderTimelineReference,
+  ): Date | null {
+    const item = typeof itemOrId === 'string' ? this.getOrderItemById(itemOrId) : itemOrId;
+    if (!item) {
+      return null;
+    }
+    return this.resolveReferenceDate(item, reference ?? this._filters().timelineReference);
+  }
+
+  getTtrPhaseForItem(
+    item: OrderItem,
+    reference?: OrderTimelineReference,
+  ): OrderTtrPhase {
+    if (reference) {
+      return this.computeTtrPhase(item, reference);
+    }
+    const cache = this.itemTtrPhaseIndex();
+    if (cache.map.has(item.id)) {
+      return cache.map.get(item.id)!;
+    }
+    return this.computeTtrPhase(item, cache.reference);
+  }
+
+  getTtrPhaseMeta(phase: OrderTtrPhase): OrderTtrPhaseMeta {
+    return TTR_PHASE_META[phase] ?? TTR_PHASE_META.unknown;
   }
 
   createOrder(payload: CreateOrderPayload): Order {
@@ -377,10 +548,12 @@ export class OrderService {
       this.timetableYearService.getYearBounds(payload.start).label;
     this.ensureOrderTimetableYear(payload.orderId, timetableYearLabel);
 
+    const tags = this.normalizeTags(payload.tags);
     const item: OrderItem = {
       id: this.generateItemId(payload.orderId),
       name,
       type: 'Leistung',
+      tags,
       serviceType,
       fromLocation: payload.fromLocation,
       toLocation: payload.toLocation,
@@ -397,7 +570,15 @@ export class OrderService {
   }
 
   addPlanOrderItems(payload: CreatePlanOrderItemsPayload) {
-    const { orderId, namePrefix, responsible, timetableYearLabel, ...planConfig } = payload;
+    const {
+      orderId,
+      namePrefix,
+      responsible,
+      timetableYearLabel,
+      tags,
+      ...planConfig
+    } = payload;
+    const normalizedTags = this.normalizeTags(tags);
     const normalizedCalendarDates = this.normalizeCalendarDates(planConfig.calendarDates ?? []);
     const effectiveCalendarDates = normalizedCalendarDates.length ? normalizedCalendarDates : undefined;
 
@@ -442,6 +623,7 @@ export class OrderService {
         id: this.generateItemId(orderId),
         name: itemName,
         type: 'Fahrplan',
+        tags: normalizedTags,
         responsible: plan.responsibleRu,
         linkedTemplateId: planConfig.templateId,
         linkedTrainPlanId: plan.id,
@@ -500,10 +682,12 @@ export class OrderService {
     }
     this.ensureOrderTimetableYear(payload.orderId, timetableYearLabel);
 
+    const tags = this.normalizeTags(payload.tags);
     const base: OrderItem = {
       id: this.generateItemId(payload.orderId),
       name: title,
       type: 'Fahrplan',
+      tags,
       responsible,
       linkedTrainPlanId: plan.id,
       timetableYearLabel,
@@ -550,11 +734,13 @@ export class OrderService {
     const lastStop = plan.stops[plan.stops.length - 1];
 
     const namePrefix = payload.namePrefix?.trim();
+    const tags = this.normalizeTags(payload.tags);
     const itemName = namePrefix ? `${namePrefix} ${payload.train.name}` : payload.train.name;
     const base: OrderItem = {
       id: this.generateItemId(payload.orderId),
       name: itemName,
       type: 'Fahrplan',
+      tags,
       responsible,
       linkedTrainPlanId: plan.id,
       parentItemId: payload.parentItemId,
@@ -856,10 +1042,11 @@ export class OrderService {
     filters: OrderFilters,
     tokens: OrderSearchTokens,
   ): boolean {
-    if (filters.tag !== 'all' && !(order.tags?.includes(filters.tag) ?? false)) {
+    const aggregatedTags = this.collectOrderAndItemTags(order);
+    if (filters.tag !== 'all' && !aggregatedTags.includes(filters.tag)) {
       return false;
     }
-    if (tokens.tags.length && !this.hasAllTags(order.tags ?? [], tokens.tags)) {
+    if (tokens.tags.length && !this.hasAllTags(aggregatedTags, tokens.tags)) {
       return false;
     }
     if (filters.timetableYearLabel !== 'all') {
@@ -950,6 +1137,7 @@ export class OrderService {
       item.timetableYearLabel ?? '',
       item.timetablePhase ?? '',
       item.linkedBusinessIds?.join(' ') ?? '',
+      item.tags?.join(' ') ?? '',
       timetable?.refTrainId ?? '',
       timetable?.trainNumber ?? '',
       timetable?.title ?? '',
@@ -1143,6 +1331,40 @@ export class OrderService {
       }
     }
 
+    let referenceDateCache: Date | null | undefined;
+    const resolveReferenceDate = () => {
+      if (referenceDateCache === undefined) {
+        referenceDateCache = this.resolveReferenceDate(item, filters.timelineReference);
+      }
+      return referenceDateCache;
+    };
+
+    if (filters.fpRangeStart || filters.fpRangeEnd) {
+      const referenceDate = resolveReferenceDate();
+      if (!referenceDate) {
+        return false;
+      }
+      if (filters.fpRangeStart) {
+        const boundaryStart = this.parseDateOnly(filters.fpRangeStart);
+        if (boundaryStart && referenceDate < boundaryStart) {
+          return false;
+        }
+      }
+      if (filters.fpRangeEnd) {
+        const boundaryEnd = this.endOfDay(this.parseDateOnly(filters.fpRangeEnd));
+        if (boundaryEnd && referenceDate > boundaryEnd) {
+          return false;
+        }
+      }
+    }
+
+    if (filters.ttrPhase !== 'all') {
+      const phase = this.computeTtrPhase(item, filters.timelineReference, resolveReferenceDate());
+      if (phase !== filters.ttrPhase) {
+        return false;
+      }
+    }
+
     if (filters.timeRange !== 'all') {
       if (!this.matchesTimeRange(item, filters.timeRange)) {
         return false;
@@ -1214,6 +1436,121 @@ export class OrderService {
     result.setDate(result.getDate() - diff);
     result.setHours(0, 0, 0, 0);
     return result;
+  }
+
+  private startOfDay(date: Date): Date {
+    const result = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    result.setHours(0, 0, 0, 0);
+    return result;
+  }
+
+  private endOfDay(date: Date | null): Date | null {
+    if (!date) {
+      return null;
+    }
+    const result = new Date(date.getFullYear(), date.getMonth(), date.getDate(), 23, 59, 59, 999);
+    return result;
+  }
+
+  private parseDateOnly(value?: string | null): Date | null {
+    if (!value) {
+      return null;
+    }
+    const normalized = value.slice(0, 10);
+    if (!normalized) {
+      return null;
+    }
+    const date = new Date(`${normalized}T00:00:00`);
+    if (Number.isNaN(date.getTime())) {
+      return null;
+    }
+    return date;
+  }
+
+  private extractItemStartDate(item: OrderItem): Date | null {
+    if (!item.start) {
+      return null;
+    }
+    const date = new Date(item.start);
+    if (Number.isNaN(date.getTime())) {
+      return null;
+    }
+    return this.startOfDay(date);
+  }
+
+  private resolveTimetableYearStart(item: OrderItem): Date | null {
+    const label = this.getItemTimetableYear(item);
+    try {
+      if (label) {
+        return this.timetableYearService.getYearByLabel(label).start;
+      }
+      const sample = this.extractReferenceSampleDate(item);
+      return sample ? this.timetableYearService.getYearBounds(sample).start : null;
+    } catch {
+      return null;
+    }
+  }
+
+  private extractReferenceSampleDate(item: OrderItem): Date | null {
+    const candidate =
+      item.validity?.[0]?.startDate ??
+      item.start ??
+      item.end ??
+      item.originalTimetable?.calendar?.validFrom ??
+      null;
+    return candidate ? new Date(candidate) : null;
+  }
+
+  private resolveReferenceDate(
+    item: OrderItem,
+    reference: OrderTimelineReference,
+  ): Date | null {
+    const validityStart = this.parseDateOnly(item.validity?.[0]?.startDate);
+    const timetableStart = this.parseDateOnly(item.originalTimetable?.calendar?.validFrom);
+    const itemStart = this.extractItemStartDate(item);
+    if (reference === 'fpDay') {
+      return validityStart ?? itemStart ?? timetableStart;
+    }
+    if (reference === 'fpYear') {
+      return this.resolveTimetableYearStart(item);
+    }
+    return itemStart ?? validityStart ?? timetableStart;
+  }
+
+  private computeTtrPhase(
+    item: OrderItem,
+    reference: OrderTimelineReference,
+    referenceDateOverride?: Date | null,
+  ): OrderTtrPhase {
+    const referenceDate =
+      referenceDateOverride ?? this.resolveReferenceDate(item, reference);
+    if (!referenceDate) {
+      return 'unknown';
+    }
+    const today = this.startOfDay(new Date());
+    const diffDays = Math.floor((referenceDate.getTime() - today.getTime()) / DAY_IN_MS);
+    if (Number.isNaN(diffDays)) {
+      return 'unknown';
+    }
+    if (diffDays >= 240) {
+      return 'capacity_supply';
+    }
+    if (diffDays >= 210) {
+      return 'annual_request';
+    }
+    if (diffDays >= 120) {
+      return 'final_offer';
+    }
+    if (diffDays >= 21) {
+      return 'rolling_planning';
+    }
+    if (diffDays >= 7) {
+      return 'short_term';
+    }
+    if (diffDays >= 0) {
+      return 'ad_hoc';
+    }
+    return 'operational_delivery';
   }
 
   linkBusinessToItem(businessId: string, itemId: string) {
@@ -1459,6 +1796,15 @@ export class OrderService {
     );
   }
 
+  private collectOrderAndItemTags(order: Order): string[] {
+    const tags = new Set<string>();
+    order.tags?.forEach((tag) => tags.add(tag));
+    order.items.forEach((item) => {
+      item.tags?.forEach((tag) => tags.add(tag));
+    });
+    return Array.from(tags);
+  }
+
   private parseSearchTokens(search: string): OrderSearchTokens {
     const tokens: OrderSearchTokens = {
       textTerms: [],
@@ -1588,6 +1934,7 @@ export class OrderService {
 
     return {
       ...item,
+      tags: item.tags ? [...item.tags] : undefined,
       validity,
       childItemIds: [...(item.childItemIds ?? [])],
       versionPath: item.versionPath ? [...item.versionPath] : undefined,
@@ -1843,6 +2190,9 @@ export class OrderService {
     if (updates.linkedBusinessIds) {
       clone.linkedBusinessIds = [...updates.linkedBusinessIds];
     }
+    if ('tags' in updates) {
+      clone.tags = updates.tags ? [...updates.tags] : [];
+    }
     return clone;
   }
 
@@ -1856,6 +2206,9 @@ export class OrderService {
     const next: OrderItem = { ...item, ...updates };
     if (updates.linkedBusinessIds) {
       next.linkedBusinessIds = [...updates.linkedBusinessIds];
+    }
+    if ('tags' in updates) {
+      next.tags = updates.tags ? [...updates.tags] : [];
     }
     return next;
   }

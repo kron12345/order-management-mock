@@ -279,9 +279,48 @@
               </button>
             }
 
+            @if (filters().ttrPhase !== 'all') {
+              <button type="button" class="filter-pill" (click)="clearTtrPhaseFilter()">
+                <mat-icon>timeline</mat-icon>
+                <span>TTR-Phase</span>
+                <strong>{{ describeTtrPhase(filters().ttrPhase) }}</strong>
+                <span class="filter-pill__count">{{ describeTtrPhaseWindow(filters().ttrPhase) }}</span>
+                <mat-icon>close</mat-icon>
+              </button>
+            }
+
+            @if (hasFpRange()) {
+              <button type="button" class="filter-pill" (click)="clearFpRangeFilter()">
+                <mat-icon>calendar_month</mat-icon>
+                <span>Fahrplanfenster</span>
+                <strong>{{ fpRangeLabel() }}</strong>
+                <span class="filter-pill__count">{{ timelineReferenceLabel() }}</span>
+                <mat-icon>close</mat-icon>
+              </button>
+            }
+
+            @if (filters().timelineReference !== 'fpDay') {
+              <button type="button" class="filter-pill" (click)="resetTimelineReference()">
+                <mat-icon>schedule</mat-icon>
+                <span>Bezug</span>
+                <strong>{{ timelineReferenceLabel() }}</strong>
+                <span class="filter-pill__count">{{ timelineReferenceHint() }}</span>
+                <mat-icon>close</mat-icon>
+              </button>
+            }
+
             @if (
               !searchControl.value.trim() &&
-              filters().tag === 'all'
+              filters().tag === 'all' &&
+              filters().ttrPhase === 'all' &&
+              !hasFpRange() &&
+              filters().timelineReference === 'fpDay' &&
+              filters().timeRange === 'all' &&
+              filters().trainStatus === 'all' &&
+              filters().businessStatus === 'all' &&
+              filters().trainNumber.trim() === '' &&
+              filters().timetableYearLabel === 'all' &&
+              filters().linkedBusinessId === null
             ) {
               <span class="filter-pill filter-pill--empty">
                 <mat-icon>radio_button_unchecked</mat-icon>

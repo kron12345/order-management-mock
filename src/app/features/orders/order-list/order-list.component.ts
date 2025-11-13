@@ -7,7 +7,7 @@ import { MatDialog } from '@angular/material/dialog';
 import { debounceTime, distinctUntilChanged } from 'rxjs';
 
 import { MATERIAL_IMPORTS } from '../../../core/material.imports.imports';
-import { OrderFilters, OrderService } from '../../../core/services/order.service';
+import { OrderFilters, OrderService, OrderTtrPhase } from '../../../core/services/order.service';
 import { Order } from '../../../core/models/order.model';
 import { OrderItem } from '../../../core/models/order-item.model';
 import { BusinessStatus } from '../../../core/models/business.model';
@@ -35,6 +35,10 @@ interface OrderHeroMetrics {
   totalItems: number;
   upcomingItems: number;
   attentionItems: number;
+  phaseCoverage: number;
+  rollingPlanningItems: number;
+  shortTermItems: number;
+  adHocItems: number;
 }
 
 interface SearchSuggestion {
@@ -112,6 +116,26 @@ export class OrderListComponent {
   readonly savedFilterPresets = computed(() => this.savedPresets());
   private readonly activePresetId = signal<string | null>(null);
   readonly activePreset = computed(() => this.activePresetId());
+  private readonly ttrPhaseMeta: Record<
+    Exclude<OrderFilters['ttrPhase'], 'all'>,
+    { label: string; window: string }
+  > = {
+    capacity_supply: { label: 'Capacity Supply', window: '18–8 Monate vor FP' },
+    annual_request: { label: 'Annual TT Request', window: '12–7 Monate vor FP' },
+    final_offer: { label: 'Final Offer (ENFP)', window: '7–4 Monate vor FP' },
+    rolling_planning: { label: 'Rolling Planning', window: '13–3 Wochen vor FP' },
+    short_term: { label: 'Short-Term', window: '30–7 Tage vor FP' },
+    ad_hoc: { label: 'Ad-hoc', window: '0–7 Tage vor Produktion' },
+    operational_delivery: { label: 'Operative Begleitung', window: 'laufender Betrieb' },
+  };
+  private readonly timelineReferenceLabels: Record<
+    OrderFilters['timelineReference'],
+    { label: string; hint: string }
+  > = {
+    fpDay: { label: 'Fahrplantag', hint: 'Planungsbezug' },
+    fpYear: { label: 'Fahrplanjahr', hint: 'Jahresfrist' },
+    operationalDay: { label: 'Produktionstag', hint: 'Echtzeit / Betrieb' },
+  };
 
   constructor() {
     this.restorePresetsFromStorage();
@@ -178,7 +202,7 @@ export class OrderListComponent {
       value: this.heroMetrics().totalOrders,
       hint: 'Aktive Aufträge',
       icon: 'inventory_2',
-      action: () => this.store.setFilter({ timeRange: 'all' }),
+      action: () => this.focusTtrPhase('all'),
     },
     {
       key: 'items',
@@ -194,7 +218,7 @@ export class OrderListComponent {
       value: this.heroMetrics().upcomingItems,
       hint: 'Start in den nächsten 7 Tagen',
       icon: 'event',
-      action: () => this.store.setFilter({ timeRange: 'thisWeek' }),
+      action: () => this.focusUpcoming(),
     },
     {
       key: 'attention',
@@ -202,7 +226,39 @@ export class OrderListComponent {
       value: this.heroMetrics().attentionItems,
       hint: 'Positionen mit Abweichung',
       icon: 'warning',
-      action: () => this.searchControl.setValue('deviation'),
+      action: () => this.focusAttention(),
+    },
+    {
+      key: 'phaseCoverage',
+      label: 'Phasen aktiv',
+      value: this.heroMetrics().phaseCoverage,
+      hint: 'Abgedeckte TTR-Buckets',
+      icon: 'category',
+      action: () => this.focusTtrPhase('all'),
+    },
+    {
+      key: 'rolling',
+      label: 'Rolling Window',
+      value: this.heroMetrics().rollingPlanningItems,
+      hint: '13–3 Wochen vor FP',
+      icon: 'sync_alt',
+      action: () => this.focusTtrPhase('rolling_planning'),
+    },
+    {
+      key: 'shortTerm',
+      label: 'Short-Term',
+      value: this.heroMetrics().shortTermItems,
+      hint: '30–7 Tage vor FP',
+      icon: 'bolt',
+      action: () => this.focusTtrPhase('short_term'),
+    },
+    {
+      key: 'adHoc',
+      label: 'Ad-hoc',
+      value: this.heroMetrics().adHocItems,
+      hint: '0–7 Tage vor Produktion',
+      icon: 'flash_on',
+      action: () => this.focusTtrPhase('ad_hoc'),
     },
   ]);
 
@@ -257,6 +313,70 @@ export class OrderListComponent {
     this.store.setFilter({ tag: 'all' });
   }
 
+  clearTtrPhaseFilter(): void {
+    this.clearActivePreset();
+    this.store.setFilter({ ttrPhase: 'all' });
+  }
+
+  clearFpRangeFilter(): void {
+    this.clearActivePreset();
+    this.store.setFilter({ fpRangeStart: null, fpRangeEnd: null });
+  }
+
+  resetTimelineReference(): void {
+    this.clearActivePreset();
+    this.store.setFilter({ timelineReference: 'fpDay' });
+  }
+
+  describeTtrPhase(phase: OrderFilters['ttrPhase']): string {
+    if (phase === 'all') {
+      return 'Alle Phasen';
+    }
+    return this.ttrPhaseMeta[phase]?.label ?? phase;
+  }
+
+  describeTtrPhaseWindow(phase: OrderFilters['ttrPhase']): string {
+    if (phase === 'all') {
+      return 'Keine Einschränkung';
+    }
+    return this.ttrPhaseMeta[phase]?.window ?? '';
+  }
+
+  hasFpRange(): boolean {
+    const filters = this.filters();
+    return Boolean(filters.fpRangeStart || filters.fpRangeEnd);
+  }
+
+  fpRangeLabel(): string {
+    const filters = this.filters();
+    if (filters.fpRangeStart && filters.fpRangeEnd) {
+      return `${this.formatDateLabel(filters.fpRangeStart)} – ${this.formatDateLabel(filters.fpRangeEnd)}`;
+    }
+    if (filters.fpRangeStart) {
+      return `ab ${this.formatDateLabel(filters.fpRangeStart)}`;
+    }
+    if (filters.fpRangeEnd) {
+      return `bis ${this.formatDateLabel(filters.fpRangeEnd)}`;
+    }
+    return '';
+  }
+
+  timelineReferenceLabel(): string {
+    return this.timelineReferenceLabels[this.filters().timelineReference]?.label ?? 'Fahrplantag';
+  }
+
+  timelineReferenceHint(): string {
+    return this.timelineReferenceLabels[this.filters().timelineReference]?.hint ?? '';
+  }
+
+  private formatDateLabel(value: string): string {
+    try {
+      return new Intl.DateTimeFormat('de-DE').format(new Date(`${value}T00:00:00`));
+    } catch {
+      return value;
+    }
+  }
+
   applyTagInsight(tag: string): void {
     this.startViewTransition();
     this.clearActivePreset();
@@ -275,6 +395,16 @@ export class OrderListComponent {
     this.startViewTransition();
     this.clearActivePreset();
     this.store.setFilter({ timeRange: 'thisWeek' });
+  }
+
+  focusTtrPhase(phase: OrderFilters['ttrPhase']): void {
+    this.startViewTransition();
+    if (phase === 'all') {
+      this.clearTtrPhaseFilter();
+      return;
+    }
+    this.clearActivePreset();
+    this.store.setFilter({ ttrPhase: phase });
   }
 
   toggleInsightsCollapsed(): void {
@@ -312,6 +442,9 @@ export class OrderListComponent {
       filters.businessStatus !== 'all' ||
       filters.trainNumber.trim() !== '' ||
       filters.timetableYearLabel !== 'all' ||
+      filters.ttrPhase !== 'all' ||
+      Boolean(filters.fpRangeStart) ||
+      Boolean(filters.fpRangeEnd) ||
       Boolean(filters.linkedBusinessId);
 
     return orders
@@ -347,6 +480,10 @@ export class OrderListComponent {
     let totalItems = 0;
     let upcoming = 0;
     let attention = 0;
+    let rollingPlanning = 0;
+    let shortTerm = 0;
+    let adHoc = 0;
+    const phaseSet = new Set<OrderTtrPhase>();
     const now = new Date();
     const nextWeek = new Date();
     nextWeek.setDate(now.getDate() + 7);
@@ -361,6 +498,17 @@ export class OrderListComponent {
         if (start && start >= now && start <= nextWeek) {
           upcoming += 1;
         }
+         const phase = this.store.getTtrPhaseForItem(item);
+         if (phase && phase !== 'unknown') {
+           phaseSet.add(phase);
+           if (phase === 'rolling_planning') {
+             rollingPlanning += 1;
+           } else if (phase === 'short_term') {
+             shortTerm += 1;
+           } else if (phase === 'ad_hoc') {
+             adHoc += 1;
+           }
+         }
       });
     });
 
@@ -369,6 +517,10 @@ export class OrderListComponent {
       totalItems,
       upcomingItems: upcoming,
       attentionItems: attention,
+      phaseCoverage: phaseSet.size,
+      rollingPlanningItems: rollingPlanning,
+      shortTermItems: shortTerm,
+      adHocItems: adHoc,
     };
   }
 
@@ -631,6 +783,10 @@ export class OrderListComponent {
       trainNumber: filters?.trainNumber ?? '',
       timetableYearLabel: filters?.timetableYearLabel ?? 'all',
       linkedBusinessId: filters?.linkedBusinessId ?? null,
+      fpRangeStart: filters?.fpRangeStart ?? null,
+      fpRangeEnd: filters?.fpRangeEnd ?? null,
+      timelineReference: filters?.timelineReference ?? 'fpDay',
+      ttrPhase: filters?.ttrPhase ?? 'all',
     };
   }
 
@@ -643,7 +799,11 @@ export class OrderListComponent {
       a.businessStatus === b.businessStatus &&
       a.trainNumber === b.trainNumber &&
       a.timetableYearLabel === b.timetableYearLabel &&
-      (a.linkedBusinessId ?? null) === (b.linkedBusinessId ?? null)
+      (a.linkedBusinessId ?? null) === (b.linkedBusinessId ?? null) &&
+      (a.fpRangeStart ?? null) === (b.fpRangeStart ?? null) &&
+      (a.fpRangeEnd ?? null) === (b.fpRangeEnd ?? null) &&
+      a.timelineReference === b.timelineReference &&
+      a.ttrPhase === b.ttrPhase
     );
   }
 

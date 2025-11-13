@@ -126,6 +126,7 @@ export class OrderPositionDialogComponent {
     calendarExclusions: this.fb.nonNullable.control<string[]>([]),
     deviation: [''],
     name: [''],
+    tags: [''],
   });
 
   readonly planForm = this.fb.group({
@@ -144,12 +145,14 @@ export class OrderPositionDialogComponent {
       validators: [nonEmptyDates],
     }),
     calendarExclusions: this.fb.nonNullable.control<string[]>([]),
+    tags: [''],
   });
 
   readonly manualPlanForm = this.fb.group({
     trainNumber: ['', Validators.required],
     name: [''],
     responsible: [''],
+    tags: [''],
     calendarYear: this.fb.nonNullable.control(this.defaultTimetableYearLabel, {
       validators: [Validators.required],
     }),
@@ -172,6 +175,7 @@ export class OrderPositionDialogComponent {
     trafficPeriodId: [''],
     namePrefix: [''],
     responsible: [''],
+    tags: [''],
   });
 
   readonly businessForm = this.fb.group({
@@ -221,11 +225,13 @@ export class OrderPositionDialogComponent {
     name: 'Positionsname (optional)',
     responsible: 'Verantwortlich (optional)',
     deviation: 'Bemerkung',
+    tags: 'Tags (optional)',
   };
   readonly serviceGeneralDescriptions = {
     name: 'Optionaler Anzeigename. Ohne Eingabe wird der Leistungstyp als Name verwendet.',
     responsible: 'Wer führt die Leistung aus oder ist Ansprechpartner?',
     deviation: 'Kurze Notiz zu Besonderheiten, z. B. +3 min.',
+    tags: 'Kommagetrennte Stichwörter, um Positionen zu gruppieren (z. B. rolling, premium).',
   } as const;
   readonly serviceFieldDescriptions = {
     start: 'Startuhrzeit der Leistung (HH:MM). Das Datum ergibt sich aus dem Referenzkalender.',
@@ -239,11 +245,13 @@ export class OrderPositionDialogComponent {
     name: 'Positionsname',
     responsible: 'Verantwortlich',
     deviation: 'Bemerkung',
+    tags: 'Tags (optional)',
   };
   readonly manualGeneralDescriptions = {
     name: 'Titel der Fahrplanposition, z. B. Sonderzug 4711.',
     responsible: 'Verantwortliche Person oder Stelle für den Fahrplan.',
     deviation: 'Hinweise oder Abweichungen für den manuellen Fahrplan.',
+    tags: 'Kommagetrennte Stichwörter für Filter & Automationen.',
   } as const;
   readonly planFieldDescriptions = {
     templateId: 'Vorlage mit Strecke und Zeiten, die für die Serie genutzt wird.',
@@ -254,6 +262,7 @@ export class OrderPositionDialogComponent {
     responsible: 'Verantwortlicher für die erzeugten Fahrpläne.',
     otn: 'Optionaler Startwert für die Zugnummer (OTN).',
     otnInterval: 'Differenz zwischen den OTN der nacheinander erzeugten Züge.',
+    tags: 'Kommagetrennte Schlagwörter, die allen erzeugten Fahrplanpositionen hinzugefügt werden.',
   } as const;
   readonly manualFieldDescriptions = {
     trainNumber: 'Offizielle Zugnummer (OTN), unter der der Zug geführt wird.',
@@ -262,6 +271,7 @@ export class OrderPositionDialogComponent {
     trafficPeriodId: 'Optional: überschreibt den aus der RailML-Datei erzeugten Referenzkalender.',
     namePrefix: 'Optionaler Zusatz für erzeugte Positionsnamen.',
     responsible: 'Verantwortliche Person für importierte Fahrpläne.',
+    tags: 'Kommagetrennte Schlagwörter, die allen importierten Positionen hinzugefügt werden.',
   } as const;
   readonly importFilterDescriptions = {
     search: 'Suche nach Zugname oder ID innerhalb der importierten Datei.',
@@ -615,6 +625,7 @@ export class OrderPositionDialogComponent {
       return;
     }
 
+    const itemTags = this.parseTagsInput(value.tags);
     const createdItems: OrderItem[] = [];
     try {
       for (const date of selectedDates) {
@@ -647,6 +658,7 @@ export class OrderPositionDialogComponent {
           deviation: value.deviation?.trim() || undefined,
           name: value.name?.trim() || undefined,
           timetableYearLabel: value.calendarYear ?? undefined,
+          tags: itemTags,
         };
         const item = this.orderService.addServiceOrderItem(payload);
         createdItems.push(item);
@@ -702,16 +714,17 @@ export class OrderPositionDialogComponent {
       const planName = value.name?.trim() || undefined;
       const yearInfo = this.timetableYearService.ensureDatesWithinSameYear(sortedDates);
       const groupId = `${this.order.id}:manual:${this.slugify(trainNumber)}`;
-      const tags = this.buildArchiveGroupTags(
+      const periodTags = this.buildArchiveGroupTags(
         groupId,
         planName ?? this.order.name ?? 'Manueller Fahrplan',
         'manual',
       );
+      const itemTags = this.parseTagsInput(value.tags);
       const trafficPeriodId = this.createManualTrafficPeriod({
         baseName: planName ?? 'Manueller Fahrplan',
         dates: sortedDates,
         responsible,
-        tags,
+        tags: periodTags,
         timetableYearLabel: yearInfo.label,
       });
       if (!trafficPeriodId) {
@@ -729,6 +742,7 @@ export class OrderPositionDialogComponent {
         validTo: sortedDates[sortedDates.length - 1],
         daysBitmap: this.buildDaysBitmapFromDates(sortedDates),
         timetableYearLabel: yearInfo.label,
+        tags: itemTags,
       };
       const item = this.orderService.addManualPlanOrderItem(payload);
       if (!this.applyBusinessLink([item])) {
@@ -762,6 +776,7 @@ export class OrderPositionDialogComponent {
     const namePrefix = options.namePrefix?.trim();
     const responsible = options.responsible?.trim() || undefined;
     const overridePeriodId = options.trafficPeriodId?.trim() || undefined;
+    const itemTags = this.parseTagsInput(options.tags);
 
     try {
       const periodAssignments =
@@ -822,6 +837,7 @@ export class OrderPositionDialogComponent {
           namePrefix,
           parentItemId,
           timetableYearLabel: train.timetableYearLabel,
+          tags: itemTags,
         });
         createdItemIds.set(train.id, item.id);
         if (!train.variantOf) {
@@ -919,6 +935,7 @@ export class OrderPositionDialogComponent {
       responsible: value.responsible?.trim() || undefined,
       responsibleRu: value.responsible?.trim() || undefined,
       timetableYearLabel: value.calendarYear ?? undefined,
+      tags: this.parseTagsInput(value.tags),
     };
 
     if (trainNumberStart !== undefined) {
@@ -989,6 +1006,17 @@ export class OrderPositionDialogComponent {
     return Array.from(includeSet)
       .filter((date) => !exclusionSet.has(date))
       .sort();
+  }
+
+  private parseTagsInput(value: string | null | undefined): string[] | undefined {
+    if (!value?.trim()) {
+      return undefined;
+    }
+    const tags = value
+      .split(',')
+      .map((tag) => tag.trim())
+      .filter((tag) => tag.length);
+    return tags.length ? Array.from(new Set(tags)) : undefined;
   }
 
   private createManualTrafficPeriod(options: {

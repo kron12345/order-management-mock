@@ -41,6 +41,7 @@ interface OrderItemEditFormModel {
   name: FormControl<string>;
   responsible: FormControl<string>;
   deviation: FormControl<string>;
+  tags: FormControl<string>;
   serviceType: FormControl<string>;
   fromLocation: FormControl<string>;
   toLocation: FormControl<string>;
@@ -145,6 +146,9 @@ export class OrderItemEditDialogComponent implements OnInit {
         nonNullable: true,
       }),
       deviation: this.fb.control(this.item.deviation ?? '', {
+        nonNullable: true,
+      }),
+      tags: this.fb.control((this.item.tags ?? []).join(', '), {
         nonNullable: true,
       }),
       serviceType: this.fb.control(this.item.serviceType ?? '', {
@@ -490,6 +494,9 @@ export class OrderItemEditDialogComponent implements OnInit {
     if (controls.deviation.dirty) {
       updates.deviation = this.normalizeOptionalString(value.deviation);
     }
+    if (controls.tags.dirty) {
+      updates.tags = this.parseTags(value.tags);
+    }
     if (this.isServiceItem && controls.serviceType.dirty) {
       updates.serviceType = this.normalizeOptionalString(value.serviceType);
     }
@@ -527,6 +534,17 @@ export class OrderItemEditDialogComponent implements OnInit {
   private normalizeOptionalString(value: string): string | undefined {
     const trimmed = value.trim();
     return trimmed.length ? trimmed : undefined;
+  }
+
+  private parseTags(value: string | undefined): string[] | undefined {
+    if (!value?.trim()) {
+      return undefined;
+    }
+    const tags = value
+      .split(',')
+      .map((tag) => tag.trim())
+      .filter((tag) => tag.length);
+    return tags.length ? Array.from(new Set(tags)) : undefined;
   }
 
   private normalizeDateTimeForInput(value: string | undefined): string {

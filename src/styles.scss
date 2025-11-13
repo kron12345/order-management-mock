@@ -1,7 +1,29 @@
-/* You can add global styles to this file, and also import other style files */
+@import "@fontsource/roboto/400.css";
+@import "@fontsource/roboto/500.css";
+@import "@fontsource/iosevka/400.css";
 
-html, body { height: 100%; }
-body { margin: 0; font-family: Roboto, "Helvetica Neue", sans-serif; }
+:root {
+  --font-sans: 'Roboto', 'Helvetica Neue', Arial, sans-serif;
+  --font-compact: 'Iosevka', 'Roboto Mono', 'SFMono-Regular', Consolas, monospace;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+code,
+pre,
+.font-compact {
+  font-family: var(--font-compact);
+  font-feature-settings: 'calt' 0, 'liga' 0;
+}
 
 .manager-shell {
   display: flex;

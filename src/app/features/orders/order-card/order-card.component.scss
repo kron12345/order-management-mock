@@ -298,6 +298,39 @@
           --mdc-chip-outline-color: rgba(209, 196, 233, 0.9);
           --mdc-chip-label-text-color: #f3e5f5;
         }
+        .status-chip--ttr {
+          --mdc-chip-container-color: rgba(3, 155, 229, 0.24);
+          --mdc-chip-outline-color: rgba(144, 202, 249, 0.8);
+          --mdc-chip-label-text-color: #e3f2fd;
+        }
+        .status-chip--ttr.ttr-phase-capacity-supply {
+          --mdc-chip-container-color: rgba(21, 101, 192, 0.35);
+          --mdc-chip-outline-color: rgba(144, 202, 249, 0.9);
+        }
+        .status-chip--ttr.ttr-phase-annual-request {
+          --mdc-chip-container-color: rgba(30, 136, 229, 0.32);
+          --mdc-chip-outline-color: rgba(187, 222, 251, 0.9);
+        }
+        .status-chip--ttr.ttr-phase-final-offer {
+          --mdc-chip-container-color: rgba(244, 143, 177, 0.32);
+          --mdc-chip-outline-color: rgba(255, 205, 210, 0.9);
+        }
+        .status-chip--ttr.ttr-phase-rolling-planning {
+          --mdc-chip-container-color: rgba(126, 87, 194, 0.32);
+          --mdc-chip-outline-color: rgba(206, 147, 216, 0.9);
+        }
+        .status-chip--ttr.ttr-phase-short-term {
+          --mdc-chip-container-color: rgba(255, 183, 77, 0.32);
+          --mdc-chip-outline-color: rgba(255, 224, 178, 0.9);
+        }
+        .status-chip--ttr.ttr-phase-ad-hoc {
+          --mdc-chip-container-color: rgba(239, 83, 80, 0.32);
+          --mdc-chip-outline-color: rgba(255, 205, 210, 0.9);
+        }
+        .status-chip--ttr.ttr-phase-operational-delivery {
+          --mdc-chip-container-color: rgba(38, 166, 154, 0.32);
+          --mdc-chip-outline-color: rgba(128, 203, 196, 0.9);
+        }
 
         .status-chip--variant {
           --mdc-chip-container-color: rgba(100, 181, 246, 0.2);

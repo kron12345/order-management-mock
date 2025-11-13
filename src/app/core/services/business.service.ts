@@ -599,4 +599,14 @@ export class BusinessService {
       // ignore
     }
   }
+
+  findByTags(requiredTags: string[]): Business | undefined {
+    if (!requiredTags.length) {
+      return undefined;
+    }
+    return this._businesses().find((business) => {
+      const tags = business.tags ?? [];
+      return requiredTags.every((tag) => tags.includes(tag));
+    });
+  }
 }

@@ -3,7 +3,8 @@ import { Component, Input } from '@angular/core';
 import { ControlContainer, FormGroup, FormGroupDirective, ReactiveFormsModule } from '@angular/forms';
 import { MATERIAL_IMPORTS } from '../../../../core/material.imports.imports';
 
-export type OrderItemGeneralLabels = Record<'name' | 'responsible' | 'deviation', string>;
+type FieldKey = 'name' | 'responsible' | 'deviation' | 'tags';
+export type OrderItemGeneralLabels = Record<FieldKey, string>;
 
 @Component({
   selector: 'app-order-item-general-fields',
@@ -23,24 +24,26 @@ export class OrderItemGeneralFieldsComponent {
   @Input() nameControl: string | null = 'name';
   @Input() responsibleControl: string | null = 'responsible';
   @Input() deviationControl: string | null = 'deviation';
+  @Input() tagsControl: string | null = 'tags';
   @Input() labels: OrderItemGeneralLabels = {
     name: 'Name',
     responsible: 'Verantwortung',
     deviation: 'Abweichung',
+    tags: 'Tags (optional)',
   };
-  @Input() hints: Partial<Record<'name' | 'responsible' | 'deviation', string>> = {};
-  @Input() placeholders: Partial<Record<'name' | 'responsible' | 'deviation', string>> = {};
-  @Input() descriptions: Partial<Record<'name' | 'responsible' | 'deviation', string>> = {};
+  @Input() hints: Partial<Record<FieldKey, string>> = {};
+  @Input() placeholders: Partial<Record<FieldKey, string>> = {};
+  @Input() descriptions: Partial<Record<FieldKey, string>> = {};
 
-  label(key: 'name' | 'responsible' | 'deviation'): string {
+  label(key: FieldKey): string {
     return this.labels[key];
   }
 
-  placeholder(key: 'name' | 'responsible' | 'deviation'): string | undefined {
+  placeholder(key: FieldKey): string | undefined {
     return this.placeholders[key];
   }
 
-  description(key: 'name' | 'responsible' | 'deviation'): string | undefined {
+  description(key: FieldKey): string | undefined {
     return this.descriptions[key];
   }
 

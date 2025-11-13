@@ -11,6 +11,7 @@ import {
 import { filter } from 'rxjs';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { MATERIAL_IMPORTS } from './core/material.imports.imports';
+import { TtrBusinessAutomationService } from './core/services/ttr-business-automation.service';
 
 type AppSection = 'manager' | 'planning' | 'timetable' | 'master-data' | 'settings';
 
@@ -24,6 +25,8 @@ type AppSection = 'manager' | 'planning' | 'timetable' | 'master-data' | 'settin
 export class AppComponent {
   private readonly router = inject(Router);
   private readonly activatedRoute = inject(ActivatedRoute);
+  // ensure phase automation orchestrator is instantiated once
+  private readonly _ttrAutomation = inject(TtrBusinessAutomationService);
 
   readonly pageTitle = signal('Auftragsmanager');
   readonly section = signal<AppSection>('manager');

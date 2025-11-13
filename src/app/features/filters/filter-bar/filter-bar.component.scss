@@ -11,6 +11,10 @@
     width: 260px;
     max-width: 100%;
   }
+
+  .fp-range-field {
+    min-width: 320px;
+  }
 }
 
 .filters-actions {
@@ -43,5 +47,15 @@
       font-size: 0.85rem;
       color: rgba(0, 0, 0, 0.6);
     }
+  }
+}
+
+.option-with-caption {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+
+  small {
+    color: rgba(0, 0, 0, 0.6);
   }
 }

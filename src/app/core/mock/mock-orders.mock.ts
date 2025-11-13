@@ -1,5 +1,30 @@
 import { Order } from '../models/order.model';
 
+const TODAY = new Date();
+
+const isoDate = (offsetDays: number): string => {
+  const date = new Date(TODAY);
+  date.setDate(date.getDate() + offsetDays);
+  return date.toISOString().slice(0, 10);
+};
+
+const isoDateTime = (offsetDays: number, time: string): string => {
+  return `${isoDate(offsetDays)}T${time}`;
+};
+
+const validityRange = (startOffset: number, lengthDays: number) => ({
+  startDate: isoDate(startOffset),
+  endDate: isoDate(startOffset + Math.max(lengthDays, 1)),
+});
+
+const timetableYearLabel = (monthOffset = 0): string => {
+  const base = new Date(TODAY);
+  base.setMonth(base.getMonth() + monthOffset);
+  const year = base.getMonth() >= 6 ? base.getFullYear() : base.getFullYear() - 1;
+  const next = (year + 1).toString();
+  return `${year}/${next.slice(-2)}`;
+};
+
 export const MOCK_ORDERS: Order[] = [
   {
     id: 'ORD-2030-001',
@@ -234,6 +259,106 @@ export const MOCK_ORDERS: Order[] = [
         versionPath: [1],
         trafficPeriodId: 'TPER-2030-BAULOG-BSL',
         timetableYearLabel: '2029/30',
+      },
+    ],
+  },
+  {
+    id: 'ORD-TTR-DEMO',
+    name: 'Demo · Automations- und Phasen-Playground',
+    customer: 'Demo EVU Süd',
+    tags: ['#demo', '#automation', '#ttr'],
+    comment:
+      'Diese Aufträge decken alle TTR-Phasen ab und dienen als Spielwiese für Automationsregeln.',
+    timetableYearLabel: timetableYearLabel(6),
+    items: [
+      {
+        id: 'ORD-TTR-DEMO-OP-001',
+        name: 'Kapazitätsworkshop Metropolregion',
+        type: 'Leistung',
+        serviceType: 'Workshop',
+        fromLocation: 'Berlin',
+        toLocation: 'Berlin',
+        start: isoDateTime(320, '09:00:00'),
+        end: isoDateTime(320, '11:30:00'),
+        responsible: 'Planung Hauptstadt',
+        tags: ['#capacity', '#vorlauf'],
+        validity: [validityRange(320, 1)],
+        timetablePhase: 'bedarf',
+        deviation: 'Strategische Abstimmung mit Infra.',
+      },
+      {
+        id: 'ORD-TTR-DEMO-OP-002',
+        name: 'Jahresbestellung Sprinter Nord',
+        type: 'Fahrplan',
+        start: isoDateTime(230, '05:40:00'),
+        end: isoDateTime(230, '09:05:00'),
+        responsible: 'Fernverkehr Nord',
+        tags: ['#annual', '#sprinter'],
+        validity: [validityRange(230, 90)],
+        timetablePhase: 'path_request',
+        linkedTemplateId: 'TPL-DEMO-ANNUAL',
+      },
+      {
+        id: 'ORD-TTR-DEMO-OP-003',
+        name: 'Final Offer Prüflauf',
+        type: 'Fahrplan',
+        start: isoDateTime(150, '06:15:00'),
+        end: isoDateTime(150, '08:55:00'),
+        responsible: 'Fernverkehr Mitte',
+        tags: ['#offer', '#entscheid'],
+        validity: [validityRange(150, 45)],
+        timetablePhase: 'offer',
+        deviation: 'TTT-Angebot mit +3 min Ankunft.',
+      },
+      {
+        id: 'ORD-TTR-DEMO-OP-004',
+        name: 'Rolling Planning Verstärker',
+        type: 'Fahrplan',
+        start: isoDateTime(40, '07:10:00'),
+        end: isoDateTime(40, '10:02:00'),
+        responsible: 'Operations Süd',
+        tags: ['#rolling', '#verstärker'],
+        validity: [validityRange(40, 14)],
+        timetablePhase: 'contract',
+        deviation: 'Zusätzliche Wochenendlage.',
+      },
+      {
+        id: 'ORD-TTR-DEMO-OP-005',
+        name: 'Short-Term Zusatzfahrt',
+        type: 'Fahrplan',
+        start: isoDateTime(12, '04:55:00'),
+        end: isoDateTime(12, '07:12:00'),
+        responsible: 'Dispo West',
+        tags: ['#str', '#kurzfrist'],
+        validity: [validityRange(12, 7)],
+        timetablePhase: 'operational',
+        deviation: 'Auslöser: Baustelle Rheinbrücke.',
+      },
+      {
+        id: 'ORD-TTR-DEMO-OP-006',
+        name: 'Ad-hoc Ersatzfahrt',
+        type: 'Fahrplan',
+        start: isoDateTime(2, '18:10:00'),
+        end: isoDateTime(2, '21:05:00'),
+        responsible: 'Leitstelle Köln',
+        tags: ['#adhoc', '#störung'],
+        validity: [validityRange(2, 1)],
+        timetablePhase: 'operational',
+        deviation: 'Fahrzeugtausch wegen Defekt.',
+      },
+      {
+        id: 'ORD-TTR-DEMO-OP-007',
+        name: 'Baukoordinations-Taskforce',
+        type: 'Leistung',
+        serviceType: 'Baukoordination',
+        fromLocation: 'Stuttgart',
+        toLocation: 'Stuttgart',
+        start: isoDateTime(-10, '08:00:00'),
+        end: isoDateTime(-10, '12:00:00'),
+        responsible: 'Infra Südwest',
+        tags: ['#operational', '#nachlauf'],
+        validity: [validityRange(-10, 5)],
+        timetablePhase: 'archived',
       },
     ],
   },

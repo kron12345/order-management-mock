@@ -50,6 +50,7 @@ export interface OrderItem {
   id: string;
   name: string;
   type: 'Leistung' | 'Fahrplan';
+  tags?: string[];
   start?: string; // ISO
   end?: string; // ISO
   responsible?: string;

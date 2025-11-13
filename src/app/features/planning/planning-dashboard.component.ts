@@ -1695,7 +1695,11 @@ export class PlanningDashboardComponent {
 
   private filterResourcesForStage(stage: PlanningStageId, resources: Resource[]): Resource[] {
     if (stage === 'base') {
-      return resources.filter((resource) => this.isServiceResource(resource));
+      const serviceResources = resources.filter((resource) => this.isServiceResource(resource));
+      if (serviceResources.length > 0) {
+        return serviceResources;
+      }
+      return resources;
     }
     if (stage === 'dispatch') {
       return resources.filter((resource) => this.isPhysicalResource(resource));
@@ -1714,6 +1718,9 @@ export class PlanningDashboardComponent {
   }
 
   private computeTimelineRange(stage: PlanningStageId): PlanningTimelineRange {
+    if (stage === 'base') {
+      return this.stageTimelineSignals.base();
+    }
     const selectedYears = this.selectedYearBounds(stage);
     if (!selectedYears.length) {
       return this.stageTimelineSignals[stage]();
@@ -1728,13 +1735,14 @@ export class PlanningDashboardComponent {
 
   private computeBaseTimelineRange(): PlanningTimelineRange {
     const template = this.templateStore.selectedTemplate();
-    if (!template?.baseWeekStartIso) {
-      const fallback = this.baseTimelineFallback();
-      return { start: new Date(fallback.start), end: new Date(fallback.end) };
-    }
-    const start = new Date(`${template.baseWeekStartIso}T00:00:00Z`);
+    const fallback = this.baseTimelineFallback();
+    const startCandidate = template?.baseWeekStartIso
+      ? new Date(`${template.baseWeekStartIso}T00:00:00Z`)
+      : new Date(fallback.start);
+    const start = Number.isFinite(startCandidate.getTime()) ? startCandidate : new Date(fallback.start);
     const end = new Date(start.getTime());
     end.setUTCDate(end.getUTCDate() + 7);
+    end.setUTCHours(end.getUTCHours() + 20);
     return { start, end };
   }
 

@@ -51,6 +51,18 @@
                 {{ timetablePhaseLabel(it) }}
               </mat-chip>
             }
+            @if (ttrPhaseLabel(it)) {
+              <span class="sep">•</span>
+              <mat-chip
+                class="ttr-chip"
+                appearance="outlined"
+                [ngClass]="ttrPhaseClass(it)"
+                matTooltip="{{ ttrPhaseTooltip(it) }}"
+                matTooltipShowDelay="250"
+              >
+                {{ ttrPhaseLabel(it) }}
+              </mat-chip>
+            }
           </div>
           @if (validitySummary(it)) {
             <div class="validity">
@@ -71,6 +83,16 @@
                 <span class="tag">{{ it.serviceType }}</span>
               }
             </div>
+          }
+          @if (it.tags?.length) {
+            <mat-chip-set class="item-tags" aria-label="Tags der Position">
+              @for (tag of it.tags; track tag) {
+                <mat-chip appearance="outlined" class="tag-chip">
+                  <mat-icon>sell</mat-icon>
+                  {{ tag }}
+                </mat-chip>
+              }
+            </mat-chip-set>
           }
           <div class="chips">
             @if (it.linkedTrainPlanId && trainPlanLabel(it.linkedTrainPlanId)) {

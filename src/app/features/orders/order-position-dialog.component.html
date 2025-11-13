@@ -13,8 +13,8 @@
             <app-order-item-general-fields
               [form]="serviceForm"
               [labels]="serviceGeneralLabels"
-              [hints]="{ name: 'Ohne Eingabe wird der Leistungstyp als Name verwendet.', deviation: 'z. B. +3 min' }"
-              [placeholders]="{ name: 'Leistung · Nachtpflege', deviation: 'z. B. +3 min' }"
+              [hints]="{ name: 'Ohne Eingabe wird der Leistungstyp als Name verwendet.', deviation: 'z. B. +3 min', tags: 'Kommagetrennte Schlagwörter, z. B. #rolling, #priority' }"
+              [placeholders]="{ name: 'Leistung · Nachtpflege', deviation: 'z. B. +3 min', tags: '#rolling, #priority' }"
               [descriptions]="serviceGeneralDescriptions"
               [responsibleControl]="null"
             ></app-order-item-general-fields>
@@ -138,6 +138,21 @@
                   <mat-icon>help_outline</mat-icon>
                 </button>
               </mat-form-field>
+              <mat-form-field appearance="outline">
+                <mat-label>Tags (optional)</mat-label>
+                <input matInput formControlName="tags" placeholder="#rolling, #priority" />
+                <mat-hint>Kommagetrennte Schlagwörter für jede erzeugte Position.</mat-hint>
+                <button
+                  mat-icon-button
+                  matSuffix
+                  type="button"
+                  class="help-icon"
+                  [matTooltip]="planFieldDescriptions.tags"
+                  aria-label="Tags Hilfe"
+                >
+                  <mat-icon>help_outline</mat-icon>
+                </button>
+              </mat-form-field>
             </div>
 
             <div class="grid">
@@ -247,8 +262,9 @@
             <app-order-item-general-fields
               [form]="manualPlanForm"
               [labels]="manualGeneralLabels"
-              [placeholders]="{ name: 'z. B. Sonderzug 4711' }"
+              [placeholders]="{ name: 'z. B. Sonderzug 4711', tags: '#rolling, #priority' }"
               [descriptions]="manualGeneralDescriptions"
+              [hints]="{ tags: 'Kommagetrennte Schlagwörter für Auswertung & Automationen.' }"
             ></app-order-item-general-fields>
 
             <p class="calendar-hint">
@@ -315,7 +331,6 @@
                 </mat-form-field>
                 <mat-form-field appearance="outline">
                   <mat-label>Verantwortlich</mat-label>
-                  <mat-label>Verantwortlich</mat-label>
                   <input matInput formControlName="responsible" />
                   <button
                     mat-icon-button
@@ -324,6 +339,20 @@
                     class="help-icon"
                     [matTooltip]="importOptionsDescriptions.responsible"
                     aria-label="Verantwortlich Hilfe"
+                  >
+                    <mat-icon>help_outline</mat-icon>
+                  </button>
+                </mat-form-field>
+                <mat-form-field appearance="outline">
+                  <mat-label>Tags (optional)</mat-label>
+                  <input matInput formControlName="tags" placeholder="#rolling, #priority" />
+                  <button
+                    mat-icon-button
+                    matSuffix
+                    type="button"
+                    class="help-icon"
+                    [matTooltip]="importOptionsDescriptions.tags"
+                    aria-label="Tags Hilfe"
                   >
                     <mat-icon>help_outline</mat-icon>
                   </button>

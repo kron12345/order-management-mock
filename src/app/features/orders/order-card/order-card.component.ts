@@ -1,4 +1,4 @@
-import { Component, Input, computed, signal } from '@angular/core';
+import { Component, Input, computed, effect, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { MatDialog } from '@angular/material/dialog';
 import { MATERIAL_IMPORTS } from '../../../core/material.imports.imports';
@@ -8,7 +8,11 @@ import { OrderItemListComponent } from '../order-item-list/order-item-list.compo
 import { OrderPositionDialogComponent } from '../order-position-dialog.component';
 import { BusinessService } from '../../../core/services/business.service';
 import { BusinessStatus } from '../../../core/models/business.model';
-import { OrderService } from '../../../core/services/order.service';
+import {
+  OrderService,
+  OrderTtrPhase,
+  OrderTtrPhaseFilter,
+} from '../../../core/services/order.service';
 import { CustomerService } from '../../../core/services/customer.service';
 import { Customer } from '../../../core/models/customer.model';
 import { TimetableService } from '../../../core/services/timetable.service';
@@ -60,11 +64,15 @@ export class OrderCardComponent {
   @Input()
   highlightItemId: string | null = null;
   expanded = signal(false);
+  private readonly autoExpandedByFilter = signal(false);
   readonly businessStatusSummaries = computed(() =>
     this.computeBusinessStatusSummaries(this.effectiveItems()),
   );
   readonly timetablePhaseSummaries = computed(() =>
     this.computeTimetablePhaseSummaries(this.effectiveItems()),
+  );
+  readonly ttrPhaseSummaries = computed(() =>
+    this.computeTtrPhaseSummaries(this.effectiveItems()),
   );
   readonly variantSummaries = computed(() =>
     this.computeVariantSummaries(this.effectiveItems()),
@@ -74,6 +82,9 @@ export class OrderCardComponent {
   );
   readonly orderHealth = computed(() => this.computeOrderHealth());
   private readonly filters = computed(() => this.orderService.filters());
+  private readonly filtersActive = computed(() =>
+    this.orderService.hasActiveFilters(this.filters()),
+  );
   readonly effectiveItems = computed(() => this.resolveItems());
   readonly selectionMode = signal(false);
   readonly selectedIds = signal<Set<string>>(new Set());
@@ -93,6 +104,15 @@ export class OrderCardComponent {
     operational: 'Betrieb',
     archived: 'Archiv',
   };
+  private readonly filterableTtrPhases = new Set<OrderTtrPhaseFilter>([
+    'capacity_supply',
+    'annual_request',
+    'final_offer',
+    'rolling_planning',
+    'short_term',
+    'ad_hoc',
+    'operational_delivery',
+  ]);
 
   constructor(
     private readonly dialog: MatDialog,
@@ -101,7 +121,23 @@ export class OrderCardComponent {
     private readonly customerService: CustomerService,
     private readonly timetableService: TimetableService,
     private readonly snackBar: MatSnackBar,
-  ) {}
+  ) {
+    effect(
+      () => {
+        const active = this.filtersActive();
+        if (active) {
+          if (!this.expanded()) {
+            this.expanded.set(true);
+            this.autoExpandedByFilter.set(true);
+          }
+        } else if (this.autoExpandedByFilter()) {
+          this.expanded.set(false);
+          this.autoExpandedByFilter.set(false);
+        }
+      },
+      { allowSignalWrites: true },
+    );
+  }
 
   openPositionDialog(event: MouseEvent) {
     event.stopPropagation();
@@ -137,6 +173,14 @@ export class OrderCardComponent {
       return;
     }
     this.selectionMode.set(true);
+  }
+
+  toggleExpanded(): void {
+    const next = !this.expanded();
+    this.expanded.set(next);
+    if (!next) {
+      this.autoExpandedByFilter.set(false);
+    }
   }
 
   clearSelection(event?: MouseEvent) {
@@ -268,6 +312,28 @@ export class OrderCardComponent {
     );
   }
 
+  private computeTtrPhaseSummaries(items: OrderItem[]): StatusSummary[] {
+    const counts = new Map<OrderTtrPhase, number>();
+    items.forEach((item) => {
+      const phase = this.orderService.getTtrPhaseForItem(item);
+      counts.set(phase, (counts.get(phase) ?? 0) + 1);
+    });
+
+    return Array.from(counts.entries())
+      .filter(([phase]) => phase !== 'unknown')
+      .map(([phase, count]) => {
+        const meta = this.orderService.getTtrPhaseMeta(phase);
+        const key = this.statusClassName(`ttr-${phase}`);
+        return {
+          key,
+          label: meta.label,
+          count,
+          value: phase,
+        };
+      })
+      .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label, 'de', { sensitivity: 'base' }));
+  }
+
   private computeVariantSummaries(items: OrderItem[]): StatusSummary[] {
     const counts = new Map<string, number>();
     const labels = new Map<string, string>();
@@ -322,6 +388,21 @@ export class OrderCardComponent {
 
   private statusClassName(value: string): string {
     return `status-${this.normalizeStatusValue(value)}`;
+  }
+
+  ttrPhaseChipClasses(value: string): string {
+    return `ttr-phase-${this.normalizeStatusValue(value)}`;
+  }
+
+  ttrPhaseTooltip(value: string): string {
+    const meta = this.orderService.getTtrPhaseMeta(value as OrderTtrPhase);
+    const referenceLabel =
+      meta.reference === 'fpDay'
+        ? 'Fahrplantag'
+        : meta.reference === 'operationalDay'
+          ? 'Produktionstag'
+          : 'Plan-/Produktionsbezug';
+    return `${meta.window} · ${meta.hint} (${referenceLabel})`;
   }
 
   private sortSummaries(summaries: StatusSummary[]): StatusSummary[] {
@@ -393,6 +474,37 @@ export class OrderCardComponent {
   clearPhaseFilter(event: MouseEvent) {
     event.stopPropagation();
     this.orderService.setFilter({ trainStatus: 'all' });
+  }
+
+  clearTtrPhaseFilter(event: MouseEvent) {
+    event.stopPropagation();
+    this.orderService.setFilter({ ttrPhase: 'all' });
+  }
+
+  isTtrPhaseActive(phase: string): boolean {
+    if (phase === 'all') {
+      return this.filters().ttrPhase === 'all';
+    }
+    const typed = phase as OrderTtrPhase;
+    if (!this.isFilterableTtrPhase(typed)) {
+      return false;
+    }
+    return this.filters().ttrPhase === (typed as OrderTtrPhaseFilter);
+  }
+
+  toggleTtrPhaseFilter(phase: string, event: MouseEvent) {
+    event.stopPropagation();
+    const typed = phase as OrderTtrPhase;
+    if (!this.isFilterableTtrPhase(typed)) {
+      return;
+    }
+    const filterPhase = typed as OrderTtrPhaseFilter;
+    const next = this.filters().ttrPhase === filterPhase ? 'all' : filterPhase;
+    this.orderService.setFilter({ ttrPhase: next });
+  }
+
+  private isFilterableTtrPhase(phase: OrderTtrPhase): boolean {
+    return this.filterableTtrPhases.has(phase as OrderTtrPhaseFilter);
   }
 
   customerDetails(): Customer | undefined {

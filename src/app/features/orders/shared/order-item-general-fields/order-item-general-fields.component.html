@@ -76,4 +76,30 @@
       }
     </mat-form-field>
   }
+
+  @if (hasControl(tagsControl)) {
+    <mat-form-field appearance="outline">
+      <mat-label>{{ label('tags') }}</mat-label>
+      <input
+        matInput
+        [formControlName]="tagsControl!"
+        [placeholder]="placeholder('tags') ?? ''"
+      />
+      @if (description('tags')) {
+        <button
+          mat-icon-button
+          matSuffix
+          type="button"
+          class="help-icon"
+          [matTooltip]="description('tags')!"
+          [attr.aria-label]="label('tags') + ' Hilfe'"
+        >
+          <mat-icon>help_outline</mat-icon>
+        </button>
+      }
+      @if (hints.tags) {
+        <mat-hint>{{ hints.tags }}</mat-hint>
+      }
+    </mat-form-field>
+  }
 </div>
