@@ -339,21 +339,6 @@
           </button>
         </div>
 
-        <div class="planning-side-panels__shift" *ngIf="selectedActivities().length === 1">
-          <span>Horizontal verschieben:</span>
-          <button mat-stroked-button type="button" (click)="shiftSelectedActivityBy(-30)">
-            -30 min
-          </button>
-          <button mat-stroked-button type="button" (click)="shiftSelectedActivityBy(-5)">
-            -5 min
-          </button>
-          <button mat-stroked-button type="button" (click)="shiftSelectedActivityBy(5)">
-            +5 min
-          </button>
-          <button mat-stroked-button type="button" (click)="shiftSelectedActivityBy(30)">
-            +30 min
-          </button>
-        </div>
       </div>
     </div>
 
@@ -424,6 +409,14 @@
                 <mat-form-field appearance="outline" class="planning-attribute-grid__item">
                   <mat-label>Start</mat-label>
                   <input matInput type="datetime-local" formControlName="start" />
+                  <mat-error
+                    *ngIf="
+                      activityForm.controls.start.invalid &&
+                      (activityForm.controls.start.dirty || activityForm.controls.start.touched)
+                    "
+                  >
+                    Startzeit ist erforderlich.
+                  </mat-error>
                 </mat-form-field>
                 <mat-form-field
                   appearance="outline"
@@ -449,6 +442,35 @@
                   <mat-label>Nach</mat-label>
                   <input matInput formControlName="to" />
                 </mat-form-field>
+              </div>
+
+              <div class="planning-attribute-grid__duration" *ngIf="activityForm.value.start && activityForm.value.end">
+                Dauer:
+                <span class="planning-attribute-grid__duration-value">
+                  {{ activityForm.value.start | duration : activityForm.value.end }}
+                </span>
+                <span class="planning-attribute-grid__duration-actions">
+                  <button mat-stroked-button type="button" (click)="adjustFormEndBy(-30)">-30</button>
+                  <button mat-stroked-button type="button" (click)="adjustFormEndBy(-15)">-15</button>
+                  <button mat-stroked-button type="button" (click)="adjustFormEndBy(15)">+15</button>
+                  <button mat-stroked-button type="button" (click)="adjustFormEndBy(30)">+30</button>
+                </span>
+              </div>
+
+              <div class="planning-time-tools">
+                <div class="planning-time-tools__row">
+                  <span>Horizontal:</span>
+                  <button mat-stroked-button type="button" (click)="shiftFormBy(-30)">-30</button>
+                  <button mat-stroked-button type="button" (click)="shiftFormBy(-5)">-5</button>
+                  <button mat-stroked-button type="button" (click)="shiftFormBy(5)">+5</button>
+                  <button mat-stroked-button type="button" (click)="shiftFormBy(30)">+30</button>
+                </div>
+                <div class="planning-time-tools__row">
+                  <span>Andocken:</span>
+                  <button mat-stroked-button type="button" (click)="snapFormToPrevious()">« Vorherige</button>
+                  <button mat-stroked-button type="button" (click)="snapFormToNext()">Nächste »</button>
+                  <button mat-stroked-button type="button" (click)="fillGapForForm()">Lücke</button>
+                </div>
               </div>
 
               <mat-form-field
@@ -483,8 +505,16 @@
         </div>
 
         <div class="planning-panel__actions">
+          <button
+            mat-button
+            type="button"
+            *ngIf="isSelectedActivityPending()"
+            (click)="resetPendingActivityEdits()"
+          >
+            Rückgängig
+          </button>
           <button mat-button type="button" (click)="clearSelectedActivity()">
-            {{ isSelectedActivityPending() ? 'Verwerfen' : 'Abbrechen' }}
+            {{ isSelectedActivityPending() ? 'Panel schließen' : 'Abbrechen' }}
           </button>
           <button mat-button color="warn" type="button" (click)="deleteSelectedActivity()">
             Löschen
@@ -492,9 +522,8 @@
           <button
             mat-flat-button
             color="primary"
-            type="button"
-            [disabled]="activityForm.pristine || activityForm.invalid"
-            (click)="saveSelectedActivityEdits()"
+            type="submit"
+            [disabled]="activityForm.invalid || (!isSelectedActivityPending() && activityForm.pristine)"
           >
             {{ isSelectedActivityPending() ? 'Anlegen' : 'Speichern' }}
           </button>

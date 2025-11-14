@@ -12,7 +12,7 @@ import { MatCardModule } from '@angular/material/card';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { MatSelectModule } from '@angular/material/select';
-import { FormsModule, ReactiveFormsModule, FormBuilder } from '@angular/forms';
+import { FormsModule, ReactiveFormsModule, FormBuilder, Validators } from '@angular/forms';
 import { GanttComponent } from '../../gantt/gantt.component';
 import { GanttWindowLauncherComponent } from './components/gantt-window-launcher.component';
 import { PlanWeekTemplateComponent } from './components/plan-week-template.component';
@@ -38,6 +38,7 @@ import { TimetableYearService } from '../../core/services/timetable-year.service
 import { TimetableYearBounds } from '../../core/models/timetable-year.model';
 import { PlanWeekTemplateStoreService } from './stores/plan-week-template.store';
 import { PlanWeekActivity } from '../../models/planning-template';
+import { DurationPipe } from '../../shared/pipes/duration.pipe';
 
 interface PlanningBoard {
   id: string;
@@ -159,6 +160,7 @@ type ActivityTypePickerGroup = {
     MatInputModule,
     MatSelectModule,
     DragDropModule,
+    DurationPipe,
     GanttComponent,
     GanttWindowLauncherComponent,
     PlanWeekTemplateComponent,
@@ -251,9 +253,10 @@ export class PlanningDashboardComponent {
     this.createEmptyYearSelection(),
   );
   private readonly pendingActivitySignal = signal<PendingActivityState | null>(null);
+  private readonly pendingActivityOriginal = signal<Activity | null>(null);
 
   protected readonly activityForm = this.fb.group({
-    start: [''],
+    start: ['', Validators.required],
     end: [''],
     type: [''],
     from: [''],
@@ -312,6 +315,10 @@ export class PlanningDashboardComponent {
       .pipe(takeUntilDestroyed())
       .subscribe((value) => this.activityFormTypeSignal.set(value ?? ''));
 
+    this.activityForm.valueChanges.pipe(takeUntilDestroyed()).subscribe(() => {
+      this.updatePendingActivityFromForm();
+    });
+
     effect(
       () => {
         const selection = this.selectedActivityState();
@@ -336,7 +343,9 @@ export class PlanningDashboardComponent {
           remark: selection.activity.remark ?? '',
         });
         this.activityFormTypeSignal.set(selection.activity.type ?? '');
-        this.activityForm.markAsPristine();
+        if (!this.isPendingSelection(selection.activity.id)) {
+          this.activityForm.markAsPristine();
+        }
       },
       { allowSignalWrites: true },
     );
@@ -703,6 +712,148 @@ export class PlanningDashboardComponent {
     this.activityCreationToolSignal.set(next);
   }
 
+  protected resetPendingActivityEdits(): void {
+    const pendingState = this.pendingActivitySignal();
+    const original = this.pendingActivityOriginal();
+    const selection = this.selectedActivityState();
+    const stage = this.activeStageSignal();
+    if (!pendingState || !original || !selection) {
+      return;
+    }
+    if (pendingState.stage !== stage || pendingState.activity.id !== original.id) {
+      return;
+    }
+
+    this.pendingActivitySignal.set({ stage: pendingState.stage, activity: original });
+    this.selectedActivityState.set({ activity: original, resource: selection.resource });
+
+    this.activityForm.setValue({
+      start: this.toLocalDateTime(original.start),
+      end: original.end ? this.toLocalDateTime(original.end) : '',
+      type: original.type ?? '',
+      from: original.from ?? '',
+      to: original.to ?? '',
+      remark: original.remark ?? '',
+    });
+    this.activityForm.markAsPristine();
+  }
+
+  protected adjustFormEndBy(deltaMinutes: number): void {
+    const value = this.activityForm.getRawValue();
+    if (!value.start) {
+      return;
+    }
+    const start = this.fromLocalDateTime(value.start);
+    if (!start) {
+      return;
+    }
+    const baseEnd = value.end ? this.fromLocalDateTime(value.end) : new Date(start);
+    if (!baseEnd) {
+      return;
+    }
+    const nextEndMs = baseEnd.getTime() + deltaMinutes * 60 * 1000;
+    const minEndMs = start.getTime() + 60 * 1000;
+    const safeEnd = new Date(Math.max(nextEndMs, minEndMs));
+    const nextEndLocal = this.toLocalDateTime(safeEnd.toISOString());
+    this.activityForm.controls.end.setValue(nextEndLocal);
+    this.activityForm.controls.end.markAsDirty();
+  }
+
+  protected shiftFormBy(deltaMinutes: number): void {
+    const value = this.activityForm.getRawValue();
+    if (!value.start) {
+      return;
+    }
+    const start = this.fromLocalDateTime(value.start);
+    if (!start) {
+      return;
+    }
+    const end = value.end ? this.fromLocalDateTime(value.end) : null;
+    const deltaMs = deltaMinutes * 60 * 1000;
+    const nextStart = new Date(start.getTime() + deltaMs);
+    this.activityForm.controls.start.setValue(this.toLocalDateTime(nextStart.toISOString()));
+    this.activityForm.controls.start.markAsDirty();
+    if (end) {
+      const nextEnd = new Date(end.getTime() + deltaMs);
+      this.activityForm.controls.end.setValue(this.toLocalDateTime(nextEnd.toISOString()));
+      this.activityForm.controls.end.markAsDirty();
+    }
+  }
+
+  private updatePendingActivityFromForm(): void {
+    const selection = this.selectedActivityState();
+    const pendingState = this.pendingActivitySignal();
+    const stage = this.activeStageSignal();
+    if (!selection || !pendingState) {
+      return;
+    }
+    if (pendingState.stage !== stage || pendingState.activity.id !== selection.activity.id) {
+      return;
+    }
+
+    const value = this.activityForm.getRawValue();
+    if (!value.start) {
+      return;
+    }
+    const startDate = this.fromLocalDateTime(value.start);
+    if (!startDate || !Number.isFinite(startDate.getTime())) {
+      return;
+    }
+
+    const desiredType =
+      value.type && value.type.length > 0 ? value.type : (selection.activity.type ?? '');
+    const definition =
+      this.findActivityType(desiredType) ??
+      this.findActivityType(selection.activity.type ?? null);
+    const isPoint = definition?.timeMode === 'point';
+    const endDateRaw = !isPoint && value.end ? this.fromLocalDateTime(value.end) : null;
+    const endDateValid =
+      endDateRaw && endDateRaw.getTime() > startDate.getTime() ? endDateRaw : null;
+
+    const updated: Activity = {
+      ...selection.activity,
+      title: this.buildActivityTitle(definition ?? null),
+      start: startDate.toISOString(),
+      end: endDateValid ? endDateValid.toISOString() : null,
+      type: (desiredType || selection.activity.type) ?? '',
+    };
+
+    if (definition) {
+      if (this.definitionHasField(definition, 'from')) {
+        updated.from = value.from ?? '';
+      } else {
+        updated.from = undefined;
+      }
+      if (this.definitionHasField(definition, 'to')) {
+        updated.to = value.to ?? '';
+      } else {
+        updated.to = undefined;
+      }
+      if (this.definitionHasField(definition, 'remark')) {
+        updated.remark = value.remark ?? '';
+      } else {
+        updated.remark = undefined;
+      }
+    }
+
+    const normalized = this.applyActivityTypeConstraints(updated);
+    const current = pendingState.activity;
+
+    if (
+      current.start === normalized.start &&
+      current.end === normalized.end &&
+      (current.type ?? '') === (normalized.type ?? '') &&
+      (current.title ?? '') === (normalized.title ?? '') &&
+      (current.from ?? '') === (normalized.from ?? '') &&
+      (current.to ?? '') === (normalized.to ?? '') &&
+      (current.remark ?? '') === (normalized.remark ?? '')
+    ) {
+      return;
+    }
+
+    this.commitPendingActivityUpdate(normalized);
+  }
+
   protected handleResourceViewModeChange(event: { resourceId: string; mode: 'block' | 'detail' }): void {
     const stage = this.activeStageSignal();
     const current = this.resourceViewModeState();
@@ -727,6 +878,7 @@ export class PlanningDashboardComponent {
     }
     const draft = this.createActivityDraft(event, definition);
     const normalized = this.applyActivityTypeConstraints(draft);
+    this.pendingActivityOriginal.set(normalized);
     this.startPendingActivity(stage, event.resource, normalized);
   }
 
@@ -826,13 +978,18 @@ export class PlanningDashboardComponent {
     const selection = this.selectedActivityState();
     if (selection && this.isPendingSelection(selection.activity.id)) {
       this.pendingActivitySignal.set(null);
+      this.pendingActivityOriginal.set(null);
     }
     this.selectedActivityState.set(null);
   }
 
   protected saveSelectedActivityEdits(): void {
     const selection = this.selectedActivityState();
-    if (!selection || this.activityForm.invalid) {
+    if (!selection) {
+      return;
+    }
+    if (this.activityForm.invalid) {
+      this.activityForm.markAllAsTouched();
       return;
     }
     const stage = this.activeStageSignal();
@@ -883,6 +1040,7 @@ export class PlanningDashboardComponent {
         this.updateStageActivities(stage, (activities) => [...activities, normalized]);
       }
       this.pendingActivitySignal.set(null);
+      this.pendingActivityOriginal.set(null);
       this.selectedActivityState.set({ activity: normalized, resource: selection.resource });
       return;
     }
@@ -1059,6 +1217,180 @@ export class PlanningDashboardComponent {
     this.replaceActivity(normalized);
   }
 
+  protected snapSelectedActivityToPrevious(): void {
+    const selection = this.selectedActivityState();
+    if (!selection) {
+      return;
+    }
+    const formValue = this.activityForm.getRawValue();
+    if (!formValue.start) {
+      return;
+    }
+    const base = selection.activity;
+    const startDate = this.fromLocalDateTime(formValue.start);
+    const endDate = formValue.end ? this.fromLocalDateTime(formValue.end) : null;
+    if (!startDate) {
+      return;
+    }
+    const reference: Activity = {
+      ...base,
+      start: startDate.toISOString(),
+      end: endDate ? endDate.toISOString() : null,
+    };
+    const neighbors = this.findNeighborActivities(reference);
+    const previous = neighbors.previous;
+    if (!previous || !previous.end) {
+      return;
+    }
+    const definition = this.findActivityType(base.type ?? null);
+    const isPoint = definition?.timeMode === 'point';
+    const prevEndDate = new Date(previous.end);
+    const prevEndMs = prevEndDate.getTime();
+    let updated: Activity;
+    if (isPoint || !base.end) {
+      updated = {
+        ...base,
+        start: prevEndDate.toISOString(),
+      };
+    } else {
+      const currentStartMs = startDate.getTime();
+      const currentEndMs = (endDate ?? startDate).getTime();
+      const durationMs = Math.max(60_000, currentEndMs - currentStartMs);
+      const newStartMs = prevEndMs;
+      const newEndMs = newStartMs + durationMs;
+      updated = {
+        ...base,
+        start: new Date(newStartMs).toISOString(),
+        end: new Date(newEndMs).toISOString(),
+      };
+    }
+    this.activityForm.controls.start.setValue(this.toLocalDateTime(updated.start));
+    if (!isPoint && updated.end) {
+      this.activityForm.controls.end.setValue(this.toLocalDateTime(updated.end));
+    } else {
+      this.activityForm.controls.end.setValue('');
+    }
+    this.activityForm.controls.start.markAsDirty();
+    this.activityForm.controls.end.markAsDirty();
+  }
+
+  protected snapSelectedActivityToNext(): void {
+    const selection = this.selectedActivityState();
+    if (!selection) {
+      return;
+    }
+    const formValue = this.activityForm.getRawValue();
+    if (!formValue.start) {
+      return;
+    }
+    const base = selection.activity;
+    const startDate = this.fromLocalDateTime(formValue.start);
+    const endDate = formValue.end ? this.fromLocalDateTime(formValue.end) : null;
+    if (!startDate) {
+      return;
+    }
+    const reference: Activity = {
+      ...base,
+      start: startDate.toISOString(),
+      end: endDate ? endDate.toISOString() : null,
+    };
+    const neighbors = this.findNeighborActivities(reference);
+    const next = neighbors.next;
+    if (!next) {
+      return;
+    }
+    const definition = this.findActivityType(base.type ?? null);
+    const isPoint = definition?.timeMode === 'point';
+    const nextStartDate = new Date(next.start);
+    const nextStartMs = nextStartDate.getTime();
+    let updated: Activity;
+    if (isPoint || !endDate) {
+      updated = {
+        ...base,
+        start: nextStartDate.toISOString(),
+      };
+    } else {
+      const currentStartMs = startDate.getTime();
+      const currentEndMs = endDate.getTime();
+      const durationMs = Math.max(60_000, currentEndMs - currentStartMs);
+      const newEndMs = nextStartMs;
+      const newStartMs = newEndMs - durationMs;
+      updated = {
+        ...base,
+        start: new Date(newStartMs).toISOString(),
+        end: new Date(newEndMs).toISOString(),
+      };
+    }
+    this.activityForm.controls.start.setValue(this.toLocalDateTime(updated.start));
+    if (!isPoint && updated.end) {
+      this.activityForm.controls.end.setValue(this.toLocalDateTime(updated.end));
+    } else {
+      this.activityForm.controls.end.setValue('');
+    }
+    this.activityForm.controls.start.markAsDirty();
+    this.activityForm.controls.end.markAsDirty();
+  }
+
+  protected fillGapForSelectedActivity(): void {
+    const selection = this.selectedActivityState();
+    if (!selection) {
+      return;
+    }
+    const formValue = this.activityForm.getRawValue();
+    if (!formValue.start) {
+      return;
+    }
+    const base = selection.activity;
+    const startDate = this.fromLocalDateTime(formValue.start);
+    const endDate = formValue.end ? this.fromLocalDateTime(formValue.end) : null;
+    if (!startDate) {
+      return;
+    }
+    const reference: Activity = {
+      ...base,
+      start: startDate.toISOString(),
+      end: endDate ? endDate.toISOString() : null,
+    };
+    const neighbors = this.findNeighborActivities(reference);
+    const previous = neighbors.previous;
+    const next = neighbors.next;
+    if (!previous || !previous.end || !next) {
+      return;
+    }
+    const startMs = new Date(previous.end).getTime();
+    const endMs = new Date(next.start).getTime();
+    if (!(Number.isFinite(startMs) && Number.isFinite(endMs)) || endMs <= startMs + 60_000) {
+      return;
+    }
+    const definition = this.findActivityType(base.type ?? null);
+    const isPoint = definition?.timeMode === 'point';
+    const updated: Activity = {
+      ...base,
+      start: new Date(startMs).toISOString(),
+      end: isPoint ? null : new Date(endMs).toISOString(),
+    };
+    this.activityForm.controls.start.setValue(this.toLocalDateTime(updated.start));
+    if (!isPoint && updated.end) {
+      this.activityForm.controls.end.setValue(this.toLocalDateTime(updated.end));
+    } else {
+      this.activityForm.controls.end.setValue('');
+    }
+    this.activityForm.controls.start.markAsDirty();
+    this.activityForm.controls.end.markAsDirty();
+  }
+
+  protected snapFormToPrevious(): void {
+    this.snapSelectedActivityToPrevious();
+  }
+
+  protected snapFormToNext(): void {
+    this.snapSelectedActivityToNext();
+  }
+
+  protected fillGapForForm(): void {
+    this.fillGapForSelectedActivity();
+  }
+
   protected addParticipantsToActiveBoard(): void {
     const participantIds = this.selectedActivityParticipantIds();
     if (participantIds.length === 0) {
@@ -1211,6 +1543,48 @@ export class PlanningDashboardComponent {
       result.push({ activity, resource });
     });
     return result;
+  }
+
+  private findNeighborActivities(activity: Activity): { previous: Activity | null; next: Activity | null } {
+    const stage = this.activeStageSignal();
+    const all = this.normalizedStageActivitySignals[stage]();
+    const serviceId = activity.serviceId ?? null;
+    const resourceId = activity.resourceId;
+    const targetStartMs = new Date(activity.start).getTime();
+    const targetEndMs = activity.end ? new Date(activity.end).getTime() : targetStartMs;
+    if (!Number.isFinite(targetStartMs) || !Number.isFinite(targetEndMs)) {
+      return { previous: null, next: null };
+    }
+    let previous: Activity | null = null;
+    let next: Activity | null = null;
+    let previousEndMs = Number.NEGATIVE_INFINITY;
+    let nextStartMs = Number.POSITIVE_INFINITY;
+    all.forEach((entry) => {
+      if (entry.id === activity.id) {
+        return;
+      }
+      if (entry.resourceId !== resourceId) {
+        return;
+      }
+      const entryService = entry.serviceId ?? null;
+      if (serviceId ? entryService !== serviceId : !!entryService) {
+        return;
+      }
+      const startMs = new Date(entry.start).getTime();
+      const endMs = entry.end ? new Date(entry.end).getTime() : startMs;
+      if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) {
+        return;
+      }
+      if (endMs <= targetStartMs && endMs > previousEndMs) {
+        previous = entry;
+        previousEndMs = endMs;
+      }
+      if (startMs >= targetEndMs && startMs < nextStartMs) {
+        next = entry;
+        nextStartMs = startMs;
+      }
+    });
+    return { previous, next };
   }
 
   private computeMoveTargetOptions(): Resource[] {
@@ -2015,10 +2389,32 @@ export class PlanningDashboardComponent {
       attributes: plan.attributes,
       serviceCategory: resource ? this.resolveServiceCategory(resource) ?? undefined : undefined,
     };
+    // Restore optional route fields (persisted inside attributes on PlanWeek level)
+    const attr = plan.attributes as Record<string, unknown> | undefined;
+    const fromAttr = typeof attr?.['from'] === 'string' ? (attr?.['from'] as string) : undefined;
+    const toAttr = typeof attr?.['to'] === 'string' ? (attr?.['to'] as string) : undefined;
+    if (fromAttr !== undefined) {
+      activity.from = fromAttr;
+    }
+    if (toAttr !== undefined) {
+      activity.to = toAttr;
+    }
     return this.applyActivityTypeConstraints(activity);
   }
 
   private activityToPlanActivity(activity: Activity, templateId: string): PlanWeekActivity {
+    // Ensure route fields are persisted within the attributes bag for PlanWeek storage
+    const attrs: Record<string, unknown> = { ...(activity.attributes ?? {}) };
+    if (typeof activity.from === 'string') {
+      attrs['from'] = activity.from;
+    } else {
+      delete (attrs as any)['from'];
+    }
+    if (typeof activity.to === 'string') {
+      attrs['to'] = activity.to;
+    } else {
+      delete (attrs as any)['to'];
+    }
     return {
       id: activity.id,
       templateId,
@@ -2028,7 +2424,7 @@ export class PlanningDashboardComponent {
       endIso: activity.end ?? activity.start,
       type: activity.type ?? undefined,
       remark: activity.remark ?? undefined,
-      attributes: activity.attributes,
+      attributes: attrs,
     };
   }
 

@@ -35,14 +35,33 @@
   width: 100%;
 }
 
+.gantt-activity__row {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  gap: 8px;
+}
+
+.gantt-activity__row--with-route {
+  justify-content: space-between;
+}
+
+.gantt-activity__row--no-route {
+  justify-content: center;
+}
+
 .gantt-activity__title {
+  flex: 1 1 auto;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   font-weight: 600;
+  text-align: center;
 }
 
 .gantt-activity__route {
+  flex: 0 1 32%;
+  min-width: 0;
   display: inline-flex;
   gap: 6px;
   align-items: center;
@@ -50,6 +69,16 @@
   opacity: 0.85;
   letter-spacing: 0.02em;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.gantt-activity__route--from {
+  justify-content: flex-start;
+}
+
+.gantt-activity__route--to {
+  justify-content: flex-end;
 }
 
 .gantt-activity--service {
@@ -135,11 +164,6 @@
   padding: 0;
 }
 
-.gantt-activity--compact .gantt-activity__title,
-.gantt-activity--compact .gantt-activity__route {
-  display: none;
-}
-
 .gantt-activity--compact {
   padding: 0;
 }
@@ -208,14 +232,64 @@
   box-shadow: inset 0 0 6px rgba(15, 23, 42, 0.2);
 }
 
-:host ::ng-deep .gantt-activity__tooltip {
-  padding: 14px 18px;
+.gantt-activity-popover {
+  padding: 12px 14px;
   border-radius: 10px;
   background: #0f172a;
   color: #fff;
   box-shadow: 0 12px 28px rgba(15, 23, 42, 0.38);
-  max-width: 280px;
-  white-space: pre-line;
+  max-width: 320px;
   font-size: 0.82rem;
   line-height: 1.3;
+}
+
+.gantt-activity-popover__title {
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+.gantt-activity-popover__content {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.gantt-activity-popover__remark {
+  margin-bottom: 4px;
+  font-size: 0.78rem;
+  opacity: 0.85;
+}
+
+.gantt-activity-popover__sections {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.gantt-activity-popover__section {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.gantt-activity-popover__section-title {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  opacity: 0.7;
+}
+
+.gantt-activity-popover__row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.gantt-activity-popover__label {
+  opacity: 0.75;
+}
+
+.gantt-activity-popover__value {
+  font-weight: 500;
+  text-align: right;
 }

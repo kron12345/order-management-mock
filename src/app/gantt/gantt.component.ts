@@ -229,6 +229,8 @@ export class GanttComponent implements AfterViewInit {
   private mousePanMoved = false;
   private mousePanContainer: HTMLElement | null = null;
   private suppressNextTimelineClick = false;
+  private lastOverlapGroupKey: string | null = null;
+  private lastOverlapActivityId: string | null = null;
 
   constructor() {
     this.destroyRef.onDestroy(() => this.updateDragBadge(null));
@@ -890,7 +892,31 @@ export class GanttComponent implements AfterViewInit {
     if (this.shouldBlockEdit(activity.id)) {
       return;
     }
-    this.activityEditRequested.emit({ resource, activity });
+    const group = this.findOverlappingActivities(resource.id, activity);
+    if (group.length <= 1) {
+      this.lastOverlapGroupKey = null;
+      this.lastOverlapActivityId = null;
+      this.activityEditRequested.emit({ resource, activity });
+      return;
+    }
+    const groupKey = group
+      .map((entry) => entry.id)
+      .sort()
+      .join('|');
+    let nextIndex = 0;
+    if (this.lastOverlapGroupKey === groupKey && this.lastOverlapActivityId) {
+      const currentIndex = group.findIndex((entry) => entry.id === this.lastOverlapActivityId);
+      if (currentIndex >= 0) {
+        nextIndex = (currentIndex + 1) % group.length;
+      }
+    } else {
+      const clickedIndex = group.findIndex((entry) => entry.id === activity.id);
+      nextIndex = clickedIndex >= 0 ? clickedIndex : 0;
+    }
+    const target = group[nextIndex];
+    this.lastOverlapGroupKey = groupKey;
+    this.lastOverlapActivityId = target.id;
+    this.activityEditRequested.emit({ resource, activity: target });
   }
 
   onActivitySelectionToggle(resource: Resource, activity: Activity) {
@@ -1411,7 +1437,7 @@ export class GanttComponent implements AfterViewInit {
           left: barLeft,
           width: barWidth,
           classes,
-          dragDisabled: isPending,
+          dragDisabled: false,
           selected: selectedIds.has(activity.id),
           label: displayInfo.label,
           showRoute: !isMilestone && displayInfo.showRoute && !!(activity.from || activity.to),
@@ -1761,5 +1787,27 @@ export class GanttComponent implements AfterViewInit {
     this.dragEditBlockUntil = 0;
     this.dragEditBlockGlobalUntil = 0;
     return false;
+  }
+
+  private findOverlappingActivities(resourceId: string, reference: Activity): Activity[] {
+    const list = this.activitiesByResource().get(resourceId) ?? [];
+    const refStartMs = new Date(reference.start).getTime();
+    const refEndMs = reference.end ? new Date(reference.end).getTime() : refStartMs;
+    if (!Number.isFinite(refStartMs) || !Number.isFinite(refEndMs)) {
+      return [reference];
+    }
+    const overlaps = list.filter((entry) => {
+      const start = entry.startMs;
+      const end = entry.endMs;
+      if (!Number.isFinite(start) || !Number.isFinite(end)) {
+        return false;
+      }
+      return end > refStartMs && start < refEndMs;
+    });
+    if (!overlaps.length) {
+      return [reference];
+    }
+    overlaps.sort((a, b) => a.startMs - b.startMs || a.id.localeCompare(b.id));
+    return overlaps;
   }
 }

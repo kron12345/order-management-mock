@@ -1,14 +1,14 @@
 import { Component, EventEmitter, Input, Output } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { MatTooltipModule } from '@angular/material/tooltip';
 import { Activity } from '../models/activity';
 import { DurationPipe } from '../shared/pipes/duration.pipe';
 import { CdkDragEnd, CdkDragMove, CdkDragStart, DragDropModule } from '@angular/cdk/drag-drop';
+import { ConnectedPosition, OverlayModule } from '@angular/cdk/overlay';
 
 @Component({
   selector: 'app-gantt-activity',
   standalone: true,
-  imports: [CommonModule, MatTooltipModule, DurationPipe, DragDropModule],
+  imports: [CommonModule, DurationPipe, DragDropModule, OverlayModule],
   templateUrl: './gantt-activity.component.html',
   styleUrl: './gantt-activity.component.scss',
 })
@@ -39,6 +39,9 @@ export class GanttActivityComponent {
   private touchPointer: { id: number; x: number; y: number } | null = null;
   private readonly touchMoveTolerancePx = 8;
   private suppressNextClick = false;
+  protected isPopoverOpen = false;
+  private isTriggerHovered = false;
+  private isPopoverHovered = false;
 
   private readonly dateTime = new Intl.DateTimeFormat('de-DE', {
     weekday: 'short',
@@ -61,6 +64,15 @@ export class GanttActivityComponent {
     transfer: 'Transfer',
     other: 'Sonstige',
   };
+  private readonly typeShortLabels: Record<string, string> = {
+    'service-start': 'Start',
+    'service-end': 'Ende',
+    service: 'DL',
+    break: 'PA',
+    travel: 'TR',
+    transfer: 'TF',
+    other: 'AKT',
+  };
   get tooltipText(): string {
     if (!this.activity) {
       return '';
@@ -79,6 +91,23 @@ export class GanttActivityComponent {
     }
     return lines.join('\n');
   }
+
+  readonly popoverPositions: ConnectedPosition[] = [
+    {
+      originX: 'center',
+      originY: 'top',
+      overlayX: 'center',
+      overlayY: 'bottom',
+      offsetY: -8,
+    },
+    {
+      originX: 'center',
+      originY: 'bottom',
+      overlayX: 'center',
+      overlayY: 'top',
+      offsetY: 8,
+    },
+  ];
 
   get hostClasses(): string[] {
     const classes = ['gantt-activity--service'];
@@ -114,7 +143,7 @@ export class GanttActivityComponent {
     if (this.displayMode === 'block') {
       return false;
     }
-    return this.widthPx >= 120 && !!(this.activity?.from || this.activity?.to);
+    return this.widthPx >= 120 && this.hasRoute;
   }
 
   get typeLabel(): string {
@@ -124,12 +153,36 @@ export class GanttActivityComponent {
     return this.typeLabels[this.activity.type ?? 'service'] ?? 'Aktivität';
   }
 
+  get compactTypeLabel(): string {
+    if (!this.activity) {
+      return '';
+    }
+    const type = this.activity.type ?? 'service';
+    return this.typeShortLabels[type] ?? this.typeLabels[type] ?? 'Aktivität';
+  }
+
+  get useCompactLabels(): boolean {
+    return this.widthPx < 80;
+  }
+
+  get hasRoute(): boolean {
+    return !!(this.activity?.from || this.activity?.to);
+  }
+
+  get fromLabel(): string {
+    return this.formatLocationLabel(this.activity?.from);
+  }
+
+  get toLabel(): string {
+    return this.formatLocationLabel(this.activity?.to);
+  }
+
   get effectiveTitle(): string {
     const explicit = (this.displayTitle ?? '').trim();
     if (explicit) {
       return explicit;
     }
-    return this.typeLabel;
+    return this.useCompactLabels ? this.compactTypeLabel : this.typeLabel;
   }
 
   get routeLabel(): string {
@@ -181,6 +234,46 @@ export class GanttActivityComponent {
       return '';
     }
     return this.tooltipText.replace(/\n+/g, ', ');
+  }
+
+  protected onTriggerMouseEnter(): void {
+    this.isTriggerHovered = true;
+    this.updatePopoverOpen();
+  }
+
+  protected onTriggerMouseLeave(): void {
+    this.isTriggerHovered = false;
+    this.updatePopoverOpen();
+  }
+
+  protected onPopoverMouseEnter(): void {
+    this.isPopoverHovered = true;
+    this.updatePopoverOpen();
+  }
+
+  protected onPopoverMouseLeave(): void {
+    this.isPopoverHovered = false;
+    this.updatePopoverOpen();
+  }
+
+  private updatePopoverOpen(): void {
+    this.isPopoverOpen = this.isTriggerHovered || this.isPopoverHovered;
+  }
+
+  private formatLocationLabel(raw: string | null | undefined): string {
+    const value = (raw ?? '—').toString().trim();
+    if (!value || value === '—') {
+      return '—';
+    }
+    const upper = value.toUpperCase();
+    if (upper.length <= 10) {
+      return upper;
+    }
+    const firstWord = upper.split(/\s+/)[0];
+    if (firstWord.length >= 3 && firstWord.length <= 10) {
+      return firstWord;
+    }
+    return upper.slice(0, 10);
   }
 
   protected handleClick(event: MouseEvent): void {

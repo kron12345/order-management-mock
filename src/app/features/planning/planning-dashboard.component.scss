@@ -413,11 +413,63 @@
   gap: 12px;
 }
 
+.planning-attribute-grid__duration {
+  margin-top: 4px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.8rem;
+  color: rgba(15, 23, 42, 0.75);
+}
+
+.planning-attribute-grid__duration-value {
+  font-weight: 600;
+}
+
+.planning-attribute-grid__duration-actions {
+  margin-left: auto;
+  display: inline-flex;
+  gap: 4px;
+}
+
+.planning-attribute-grid__duration-actions button {
+  min-width: 0;
+  padding: 0 6px;
+  line-height: 1.2;
+  font-size: 0.72rem;
+}
+
 .planning-panel__actions {
   margin-top: 12px;
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+}
+
+.planning-time-tools {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.8rem;
+}
+
+.planning-time-tools__row {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.planning-time-tools__row span {
+  opacity: 0.8;
+}
+
+.planning-time-tools__row button {
+  min-width: 0;
+  padding: 0 8px;
+  line-height: 1.2;
+  font-size: 0.78rem;
 }
 
 .planning-side-panels__form {
