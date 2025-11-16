@@ -6,6 +6,7 @@ import { PlanningDataService } from './planning-data.service';
 import { PlanningStageId } from './planning-stage.model';
 import { Resource } from '../../models/resource';
 import { Activity, ServiceRole } from '../../models/activity';
+import { getActivityOwnerId } from '../../models/activity-ownership';
 import { ActivityTypeDefinition, ActivityTypeService } from '../../core/services/activity-type.service';
 
 @Component({
@@ -79,7 +80,10 @@ export class PlanningExternalBoardComponent {
     if (!filter || filter.size === 0) {
       return activities;
     }
-    return activities.filter((activity) => filter.has(activity.resourceId));
+    return activities.filter((activity) => {
+      const ownerId = getActivityOwnerId(activity);
+      return ownerId ? filter.has(ownerId) : false;
+    });
   });
 
   readonly timelineRange = computed(() => {

@@ -4,11 +4,13 @@ import { Activity } from '../models/activity';
 import { DurationPipe } from '../shared/pipes/duration.pipe';
 import { CdkDragEnd, CdkDragMove, CdkDragStart, DragDropModule } from '@angular/cdk/drag-drop';
 import { ConnectedPosition, OverlayModule } from '@angular/cdk/overlay';
+import { MatIconModule } from '@angular/material/icon';
+import { ActivityParticipantCategory } from '../models/activity-ownership';
 
 @Component({
   selector: 'app-gantt-activity',
   standalone: true,
-  imports: [CommonModule, DurationPipe, DragDropModule, OverlayModule],
+  imports: [CommonModule, DurationPipe, DragDropModule, OverlayModule, MatIconModule],
   templateUrl: './gantt-activity.component.html',
   styleUrl: './gantt-activity.component.scss',
 })
@@ -22,6 +24,9 @@ export class GanttActivityComponent {
   @Input() displayTitle: string | null = null;
   @Input() showRouteDetails = false;
   @Input() dragDisabled = false;
+  @Input() isMirror = false;
+  @Input() roleIcon: string | null = null;
+  @Input() roleLabel: string | null = null;
   @Input({ required: true }) dragData!: GanttActivityDragData;
   @Output() activitySelected = new EventEmitter<Activity>();
   @Output() toggleSelection = new EventEmitter<Activity>();
@@ -42,6 +47,9 @@ export class GanttActivityComponent {
   protected isPopoverOpen = false;
   private isTriggerHovered = false;
   private isPopoverHovered = false;
+  protected dragMode: 'move' | 'copy' = 'move';
+  private popoverHideTimer: ReturnType<typeof setTimeout> | null = null;
+  private readonly popoverHideDelayMs = 120;
 
   private readonly dateTime = new Intl.DateTimeFormat('de-DE', {
     weekday: 'short',
@@ -113,6 +121,9 @@ export class GanttActivityComponent {
     const classes = ['gantt-activity--service'];
     if (this.activity?.type) {
       classes.push(`gantt-activity--${this.activity.type}`);
+    }
+    if (this.isMirror) {
+      classes.push('gantt-activity--mirror');
     }
     if (this.displayMode === 'block') {
       classes.push('gantt-activity--block');
@@ -257,7 +268,22 @@ export class GanttActivityComponent {
   }
 
   private updatePopoverOpen(): void {
-    this.isPopoverOpen = this.isTriggerHovered || this.isPopoverHovered;
+    const shouldOpen = this.isTriggerHovered || this.isPopoverHovered;
+    if (shouldOpen) {
+      if (this.popoverHideTimer !== null) {
+        clearTimeout(this.popoverHideTimer);
+        this.popoverHideTimer = null;
+      }
+      this.isPopoverOpen = true;
+      return;
+    }
+    if (this.popoverHideTimer !== null) {
+      return;
+    }
+    this.popoverHideTimer = window.setTimeout(() => {
+      this.isPopoverOpen = false;
+      this.popoverHideTimer = null;
+    }, this.popoverHideDelayMs);
   }
 
   private formatLocationLabel(raw: string | null | undefined): string {
@@ -327,7 +353,16 @@ export class GanttActivityComponent {
   }
 
   protected handlePointerDown(event: PointerEvent): void {
-    if (!this.isTouchPointer(event) || !this.activity) {
+    if (!this.activity) {
+      return;
+    }
+    // Verwende den aktuell gesetzten Drag-Modus (move/copy),
+    // ohne ihn hier zurückzusetzen – so kann der Tooltip den Kopiermodus vorbereiten.
+    this.dragData = {
+      ...this.dragData,
+      mode: this.dragMode,
+    };
+    if (!this.isTouchPointer(event)) {
       return;
     }
     this.touchPointer = { id: event.pointerId, x: event.clientX, y: event.clientY };
@@ -362,6 +397,11 @@ export class GanttActivityComponent {
 
   protected onDragStarted(event: CdkDragStart<GanttActivityDragData>): void {
     this.isDragging = true;
+    // Sicherstellen, dass der aktuelle Modus (move/copy) im Drag-Datenobjekt landet.
+    event.source.data = {
+      ...event.source.data,
+      mode: this.dragMode,
+    };
     this.dragStarted.emit(event);
   }
 
@@ -373,6 +413,12 @@ export class GanttActivityComponent {
     this.isDragging = false;
     this.dragSuppressUntil = Date.now() + this.dragSuppressWindowMs;
     this.dragEnded.emit(event);
+    // Nach einem Drag-Modus stets zurück auf "move" setzen
+    this.dragMode = 'move';
+    this.dragData = {
+      ...this.dragData,
+      mode: this.dragMode,
+    };
   }
 
   private shouldSuppressEdit(): boolean {
@@ -419,11 +465,38 @@ export class GanttActivityComponent {
       this.touchHoldTimer = null;
     }
   }
+
+  protected disableCopyMode(event: Event): void {
+    event.stopPropagation();
+    event.preventDefault();
+    this.dragMode = 'move';
+    this.dragData = {
+      ...this.dragData,
+      mode: this.dragMode,
+    };
+  }
+  protected enableCopyMode(): void {
+    if (!this.activity) {
+      return;
+    }
+    this.dragMode = 'copy';
+    this.dragData = {
+      ...this.dragData,
+      mode: this.dragMode,
+    };
+    this.isTriggerHovered = false;
+    this.isPopoverHovered = false;
+    this.updatePopoverOpen();
+  }
 }
 
 export interface GanttActivityDragData {
   activity: Activity;
   resourceId: string;
+  participantResourceId: string;
+  participantCategory: ActivityParticipantCategory | null;
+  isOwnerSlot: boolean;
   initialLeft: number;
   width: number;
+  mode?: 'move' | 'copy';
 }

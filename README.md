@@ -180,7 +180,7 @@ Der Bereich „Aufträge“ deckt die komplette TTR/TTT-Pipeline ab – von KPIs
 - **OpenAPI:** `external_documents/openapi/planning-activities.yaml` dokumentiert alle Endpunkte sowie Schemas für Activities, Resources, Timeline, Validierungsergebnisse.
 - **Activity-Modell (`src/app/models/activity.ts`):**
   - Enthält IDs, Zeitfenster, Service-Zuordnung, Ort (`locationId`), Kapazität (`capacityGroupId`), Qualifikationen, Work-Rule-Tags, Client-ID für Mandantenfähigkeit.
-  - `participantResourceIds` erlaubt Multi-Assign (z. B. Fahrzeug + Personal auf derselben Aktivität).
+  - Die Teilnehmerliste `participants` (inkl. Rollen & Ressourcentypen) bildet sämtliche Zuordnungen ab und ersetzt die früheren Legacy-Felder.
 - **Validierung (`src/app/models/activity-validation.ts`):** standardisierte Rules (`location-conflict`, `capacity-conflict`, `working-time`, `qualification`, `custom`).
 - **API-Config:** `API_CONFIG` (unter `src/app/core/config/api-config.ts`) definiert die Basis-URL und kann überschrieben werden.
 

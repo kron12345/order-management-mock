@@ -23,7 +23,14 @@ import { ScrollingModule } from '@angular/cdk/scrolling';
 import { MatIconModule } from '@angular/material/icon';
 import { CdkDragEnd, CdkDragMove, CdkDragStart } from '@angular/cdk/drag-drop';
 import { Resource } from '../models/resource';
-import { Activity } from '../models/activity';
+import { Activity, ActivityParticipant, ActivityParticipantRole } from '../models/activity';
+import {
+  ActivityParticipantCategory,
+  classifyParticipant,
+  getActivityOwnerId,
+  getActivityOwnersByCategory,
+  participantCategoryFromKind,
+} from '../models/activity-ownership';
 import { TimeScaleService } from '../core/services/time-scale.service';
 import { createTimeViewport, TimeViewport } from '../core/signals/time-viewport.signal';
 import { GanttMenuComponent } from './gantt-menu.component';
@@ -46,6 +53,18 @@ import { ZOOM_RANGE_MS, findNearestZoomConfig } from '../core/constants/time-sca
 interface PreparedActivity extends Activity {
   startMs: number;
   endMs: number;
+  ownerResourceId: string | null;
+}
+
+interface PreparedActivitySlot {
+  id: string;
+  activity: PreparedActivity;
+  participant: ActivityParticipant;
+  resourceId: string;
+  category: ActivityParticipantCategory;
+  isOwner: boolean;
+  icon: string | null;
+  iconLabel: string | null;
 }
 
 interface GanttGroupRow {
@@ -94,6 +113,10 @@ interface ActivityRepositionEventPayload {
   targetResourceId: string;
   start: Date;
   end: Date | null;
+  sourceResourceId?: string | null;
+  participantCategory?: ActivityParticipantCategory | null;
+  participantResourceId?: string | null;
+  isOwnerSlot?: boolean;
 }
 
 type ActivitySelectionMode = 'set' | 'toggle';
@@ -108,7 +131,11 @@ interface ActivityDragState {
   activity: Activity;
   sourceResourceId: string;
   sourceResourceKind: Resource['kind'] | null;
+  participantResourceId: string;
+  participantCategory: ActivityParticipantCategory | null;
+  isOwnerSlot: boolean;
   hasEnd: boolean;
+  mode: 'move' | 'copy';
   pointerOffsetPx: number | null;
   durationMs: number;
   sourceCell: HTMLElement | null;
@@ -120,6 +147,7 @@ interface ActivityDragState {
     start: Date;
     end: Date | null;
     leftPx: number;
+    participantCategory: ActivityParticipantCategory | null;
   } | null;
 }
 
@@ -256,6 +284,7 @@ export class GanttComponent implements AfterViewInit {
   @Output() activityCreateRequested = new EventEmitter<{ resource: Resource; start: Date }>();
   @Output() activityEditRequested = new EventEmitter<{ resource: Resource; activity: Activity }>();
   @Output() activityRepositionRequested = new EventEmitter<ActivityRepositionEventPayload>();
+  @Output() activityCopyRequested = new EventEmitter<ActivityRepositionEventPayload>();
 
   @Input()
   set selectedActivityIds(value: string[] | null) {
@@ -279,14 +308,23 @@ export class GanttComponent implements AfterViewInit {
 
   @Input({ required: true })
   set activities(value: Activity[]) {
-    const prepared = (value ?? []).map((activity) => ({
-      ...activity,
-      startMs: new Date(activity.start).getTime(),
-      endMs: activity.end ? new Date(activity.end).getTime() : new Date(activity.start).getTime(),
-    }));
+    const prepared = (value ?? []).map((activity) => {
+      const startDate = new Date(activity.start);
+      const startMs = startDate.getTime();
+      const endMs = activity.end ? new Date(activity.end).getTime() : startMs;
+      return {
+        ...activity,
+        startMs,
+        endMs,
+        ownerResourceId: getActivityOwnerId(activity),
+      };
+    });
     const nextIds = prepared.map((activity) => activity.id);
     const signature = prepared
-      .map((activity) => `${activity.id}:${activity.resourceId}:${activity.startMs}:${activity.endMs}`)
+      .map(
+        (activity) =>
+          `${activity.id}:${activity.ownerResourceId ?? ''}:${activity.startMs}:${activity.endMs}`,
+      )
       .join('|');
     if (
       this.previousActivityIds &&
@@ -356,6 +394,7 @@ export class GanttComponent implements AfterViewInit {
       end: value.end ?? null,
       startMs: start.getTime(),
       endMs: end.getTime(),
+      ownerResourceId: getActivityOwnerId(value),
     };
     this.pendingActivitySignal.set(prepared);
   }
@@ -438,28 +477,34 @@ export class GanttComponent implements AfterViewInit {
     return map;
   });
 
-  readonly activitiesByResource = computed(() => {
-    const source = this.activitiesSignal();
-    const map = new Map<string, PreparedActivity[]>();
-    source.forEach((activity) => {
-      const list = map.get(activity.resourceId);
-      if (list) {
-        list.push(activity);
-      } else {
-        map.set(activity.resourceId, [activity]);
-      }
-    });
+  readonly activitySlotsByResource = computed(() => {
     const allowedResourceIds = new Set(this.resourcesSignal().map((resource) => resource.id));
-    const pending = this.pendingActivitySignal();
-    if (pending && allowedResourceIds.has(pending.resourceId)) {
-      const pendingList = map.get(pending.resourceId);
-      if (pendingList) {
-        pendingList.push(pending);
-      } else {
-        map.set(pending.resourceId, [pending]);
+    const map = new Map<string, PreparedActivitySlot[]>();
+    const addSlot = (slot: PreparedActivitySlot) => {
+      if (!allowedResourceIds.has(slot.resourceId)) {
+        return;
       }
+      const list = map.get(slot.resourceId);
+      if (list) {
+        list.push(slot);
+      } else {
+        map.set(slot.resourceId, [slot]);
+      }
+    };
+    this.activitiesSignal().forEach((activity) => {
+      this.buildParticipantSlots(activity).forEach(addSlot);
+    });
+    const pending = this.pendingActivitySignal();
+    if (pending) {
+      this.buildParticipantSlots(pending).forEach(addSlot);
     }
-    map.forEach((list) => list.sort((a, b) => a.startMs - b.startMs));
+    map.forEach((list) =>
+      list.sort(
+        (a, b) =>
+          a.activity.startMs - b.activity.startMs ||
+          a.activity.id.localeCompare(b.activity.id),
+      ),
+    );
     return map;
   });
 
@@ -934,10 +979,17 @@ export class GanttComponent implements AfterViewInit {
     const sourceCell = this.findTimelineCellForElement(event.source.element.nativeElement);
     const sourceResourceKind =
       this.resourceKindMap().get(event.source.data.resourceId) ?? null;
+    const participantCategory =
+      event.source.data.participantCategory ??
+      this.resourceCategoryFromKind(sourceResourceKind);
     this.dragState = {
       activity,
       sourceResourceId: event.source.data.resourceId,
       sourceResourceKind,
+      participantResourceId: event.source.data.participantResourceId ?? event.source.data.resourceId,
+      participantCategory,
+      isOwnerSlot: event.source.data.isOwnerSlot ?? true,
+      mode: event.source.data.mode ?? 'move',
       hasEnd: !!activity.end,
       pointerOffsetPx: null,
       durationMs:
@@ -998,24 +1050,40 @@ export class GanttComponent implements AfterViewInit {
     const sourceKind =
       this.resourceKindMap().get(this.dragState.sourceResourceId) ?? this.dragState.sourceResourceKind;
     this.dragState.sourceResourceKind = sourceKind ?? this.dragState.sourceResourceKind ?? null;
+    const requiredCategory = this.dragState.participantCategory;
+    const pointerCategory = pointerResourceKind
+      ? this.resourceCategoryFromKind(pointerResourceKind)
+      : null;
+    const categoryMismatch = (candidate: ActivityParticipantCategory | null) => {
+      if (!requiredCategory || requiredCategory === 'other') {
+        return false;
+      }
+      if (!candidate || candidate === 'other') {
+        return true;
+      }
+      return candidate !== requiredCategory;
+    };
     if (!sameResource) {
       if (pointerResourceId && pointerResourceId !== this.dragState.sourceResourceId) {
-        if (!pointerResourceKind || !sourceKind || pointerResourceKind !== sourceKind) {
+        if (categoryMismatch(pointerCategory)) {
           this.dragState.pendingTarget = null;
           this.applyDragHoverCell(pointerCell);
           this.updateDragBadge(
-            `Nur ${this.describeResourceKind(sourceKind)} erlaubt`,
+            `Nur ${this.describeParticipantCategory(requiredCategory)}`,
             pointer,
           );
           this.setDragFeedback(
             'invalid',
-            `Nur ${this.describeResourceKind(sourceKind)} können dieses Element aufnehmen.`,
+            `Nur ${this.describeParticipantCategory(requiredCategory)} können dieses Element aufnehmen.`,
           );
           return;
         }
         targetResourceKind = pointerResourceKind;
       } else {
-        if (!this.dragState.pendingTarget || this.dragState.pendingTarget.resourceId === this.dragState.sourceResourceId) {
+        if (
+          !this.dragState.pendingTarget ||
+          this.dragState.pendingTarget.resourceId === this.dragState.sourceResourceId
+        ) {
           this.dragState.pendingTarget = null;
           this.applyDragHoverCell(pointerCell);
           this.updateDragBadge('Kein Ziel', pointer);
@@ -1024,6 +1092,18 @@ export class GanttComponent implements AfterViewInit {
         }
         targetResourceKind = this.dragState.pendingTarget.resourceKind;
       }
+    } else if (pointerResourceId && categoryMismatch(pointerCategory)) {
+      this.dragState.pendingTarget = null;
+      this.applyDragHoverCell(pointerCell);
+      this.updateDragBadge(
+        `Nur ${this.describeParticipantCategory(requiredCategory)}`,
+        pointer,
+      );
+      this.setDragFeedback(
+        'invalid',
+        `Nur ${this.describeParticipantCategory(requiredCategory)} können dieses Element aufnehmen.`,
+      );
+      return;
     }
     let startTime = this.timeScale.pxToTime(clampedLeft);
     let endTime =
@@ -1043,20 +1123,23 @@ export class GanttComponent implements AfterViewInit {
       start: startTime,
       end: endTime,
       leftPx: clampedLeft,
+      participantCategory: pointerCategory ?? this.dragState.participantCategory ?? null,
     };
     const badgeLabel = sameResource
       ? `${this.formatTimeLabel(startTime)}`
       : `${this.getResourceName(targetResourceId)} • ${this.formatTimeLabel(startTime)}`;
     this.updateDragBadge(badgeLabel, pointer);
     if (sameResource) {
+      const verb = this.dragState.mode === 'copy' ? 'kopiert' : 'verschoben';
       this.setDragFeedback(
         'valid',
-        `Loslassen verschiebt Start auf ${this.formatTimeLabel(startTime)}.`,
+        `Loslassen ${verb} Start auf ${this.formatTimeLabel(startTime)}.`,
       );
     } else {
+      const verb = this.dragState.mode === 'copy' ? 'kopiert' : 'verschiebt';
       this.setDragFeedback(
         'valid',
-        `Loslassen verschiebt auf "${this.getResourceName(targetResourceId)}".`,
+        `Loslassen ${verb} auf "${this.getResourceName(targetResourceId)}".`,
       );
     }
   }
@@ -1092,16 +1175,42 @@ export class GanttComponent implements AfterViewInit {
           : this.dragState.hasEnd
             ? new Date(pending.start)
             : null;
-      this.activityRepositionRequested.emit({
+      const payload: ActivityRepositionEventPayload = {
         activity,
         start: pending.start,
         end: emitEnd,
         targetResourceId: pending.resourceId,
-      });
-      if (resourceChanged) {
-        this.setDragFeedback('info', `Leistung auf "${this.getResourceName(pending.resourceId)}" verschoben.`);
-      } else if (changedStart || changedDuration) {
-        this.setDragFeedback('info', `Startzeit aktualisiert (${this.formatTimeLabel(pending.start)}).`);
+        sourceResourceId: this.dragState.sourceResourceId,
+        participantCategory: this.dragState.participantCategory,
+        participantResourceId: this.dragState.participantResourceId,
+        isOwnerSlot: this.dragState.isOwnerSlot,
+      };
+      if (this.dragState.mode === 'copy') {
+        this.activityCopyRequested.emit(payload);
+        if (resourceChanged) {
+          this.setDragFeedback(
+            'info',
+            `Leistung auf "${this.getResourceName(pending.resourceId)}" kopiert.`,
+          );
+        } else {
+          this.setDragFeedback(
+            'info',
+            `Kopie bei ${this.formatTimeLabel(pending.start)} erstellt.`,
+          );
+        }
+      } else {
+        this.activityRepositionRequested.emit(payload);
+        if (resourceChanged) {
+          this.setDragFeedback(
+            'info',
+            `Leistung auf "${this.getResourceName(pending.resourceId)}" verschoben.`,
+          );
+        } else if (changedStart || changedDuration) {
+          this.setDragFeedback(
+            'info',
+            `Startzeit aktualisiert (${this.formatTimeLabel(pending.start)}).`,
+          );
+        }
       }
     } else {
       this.setDragFeedback('info', 'Keine Änderung – ursprüngliche Position bleibt erhalten.');
@@ -1219,6 +1328,17 @@ export class GanttComponent implements AfterViewInit {
       return 'Ressource';
     }
     return RESOURCE_KIND_LABELS[kind] ?? 'Ressource';
+  }
+
+  private describeParticipantCategory(category: ActivityParticipantCategory | null): string {
+    switch (category) {
+      case 'vehicle':
+        return 'Fahrzeugressourcen';
+      case 'personnel':
+        return 'Personalressourcen';
+      default:
+        return 'passende Ressourcen';
+    }
   }
 
   private setDragOriginCell(cell: HTMLElement | null) {
@@ -1402,10 +1522,11 @@ export class GanttComponent implements AfterViewInit {
     const pxPerMs = this.timeScale.pixelsPerMs();
 
     resources.forEach((resource) => {
-      const list = this.activitiesByResource().get(resource.id) ?? [];
+      const slots = this.activitySlotsByResource().get(resource.id) ?? [];
       const bars: GanttBar[] = [];
       const serviceMap = new Map<string, ServiceRangeAccumulator>();
-      for (const activity of list) {
+      for (const slot of slots) {
+        const activity = slot.activity;
         if (activity.endMs < startMs - 2 * 60 * 60 * 1000 || activity.startMs > endMs + 2 * 60 * 60 * 1000) {
           continue;
         }
@@ -1432,7 +1553,11 @@ export class GanttComponent implements AfterViewInit {
         if (isPending) {
           classes.push('gantt-activity--ghost', 'gantt-activity--pending');
         }
+        if (!slot.isOwner) {
+          classes.push('gantt-activity--mirror');
+        }
         bars.push({
+          id: slot.id,
           activity,
           left: barLeft,
           width: barWidth,
@@ -1441,6 +1566,12 @@ export class GanttComponent implements AfterViewInit {
           selected: selectedIds.has(activity.id),
           label: displayInfo.label,
           showRoute: !isMilestone && displayInfo.showRoute && !!(activity.from || activity.to),
+          isMirror: !slot.isOwner,
+          participantResourceId: slot.resourceId,
+          participantCategory: slot.category,
+          isOwner: slot.isOwner,
+          roleIcon: slot.icon,
+          roleLabel: slot.iconLabel,
         });
         const serviceId = activity.serviceId;
         if (!serviceId) {
@@ -1485,6 +1616,37 @@ export class GanttComponent implements AfterViewInit {
     });
 
     return map;
+  }
+
+  private buildParticipantSlots(activity: PreparedActivity): PreparedActivitySlot[] {
+    if (!activity.participants || activity.participants.length === 0) {
+      return [];
+    }
+    const owners = getActivityOwnersByCategory(activity);
+    return activity.participants
+      .filter((participant): participant is ActivityParticipant => !!participant?.resourceId)
+      .map((participant, index) => {
+        const category = classifyParticipant(participant);
+        const ownerMatch =
+          (category === 'vehicle' &&
+            owners.vehicle?.resourceId === participant.resourceId) ||
+          (category === 'personnel' &&
+            owners.personnel?.resourceId === participant.resourceId);
+        const isOwner =
+          ownerMatch ||
+          (category === 'other' && index === 0 && !owners.vehicle && !owners.personnel);
+        const iconInfo = this.participantRoleIcon(participant, isOwner, category);
+        return {
+          id: `${activity.id}:${participant.resourceId}`,
+          activity,
+          participant,
+          resourceId: participant.resourceId,
+          category,
+          isOwner,
+          icon: iconInfo.icon,
+          iconLabel: iconInfo.label,
+        };
+      });
   }
 
   private buildGroups(resources: Resource[]): GanttGroupDefinition[] {
@@ -1569,6 +1731,39 @@ export class GanttComponent implements AfterViewInit {
     }
   }
 
+  private participantRoleIcon(
+    participant: ActivityParticipant,
+    isOwner: boolean,
+    category: ActivityParticipantCategory,
+  ): { icon: string | null; label: string | null } {
+    switch (participant.role) {
+      case 'teacher':
+        return { icon: 'school', label: 'Lehrer' };
+      case 'student':
+        return { icon: 'face', label: 'Schüler' };
+      case 'primary-personnel':
+        return { icon: 'workspace_premium', label: 'Hauptpersonal' };
+      case 'secondary-personnel':
+        return { icon: 'groups', label: 'Begleitpersonal' };
+      case 'primary-vehicle':
+        return { icon: 'train', label: 'Fahrzeug (Primär)' };
+      case 'secondary-vehicle':
+        return { icon: 'directions_transit', label: 'Fahrzeug (Sekundär)' };
+      default:
+        break;
+    }
+    if (!isOwner) {
+      return { icon: 'link', label: 'Verknüpfte Ressource' };
+    }
+    if (category === 'vehicle') {
+      return { icon: 'train', label: 'Fahrzeug' };
+    }
+    if (category === 'personnel') {
+      return { icon: 'badge', label: 'Personal' };
+    }
+    return { icon: null, label: null };
+  }
+
   private defaultGroupLabel(category: string | null, poolId: string | null): string {
     switch (category) {
       case 'vehicle-service':
@@ -1582,6 +1777,12 @@ export class GanttComponent implements AfterViewInit {
       default:
         return 'Weitere Ressourcen';
     }
+  }
+
+  private resourceCategoryFromKind(
+    kind: Resource['kind'] | null | undefined,
+  ): ActivityParticipantCategory {
+    return participantCategoryFromKind(kind ?? undefined);
   }
 
   private resetExpandedGroups(_resources: Resource[]): void {
@@ -1790,13 +1991,23 @@ export class GanttComponent implements AfterViewInit {
   }
 
   private findOverlappingActivities(resourceId: string, reference: Activity): Activity[] {
-    const list = this.activitiesByResource().get(resourceId) ?? [];
+    const slots = this.activitySlotsByResource().get(resourceId) ?? [];
+    const list = slots.map((slot) => slot.activity);
+    const uniqueActivities: PreparedActivity[] = [];
+    const seen = new Set<string>();
+    list.forEach((activity) => {
+      if (seen.has(activity.id)) {
+        return;
+      }
+      seen.add(activity.id);
+      uniqueActivities.push(activity);
+    });
     const refStartMs = new Date(reference.start).getTime();
     const refEndMs = reference.end ? new Date(reference.end).getTime() : refStartMs;
     if (!Number.isFinite(refStartMs) || !Number.isFinite(refEndMs)) {
       return [reference];
     }
-    const overlaps = list.filter((entry) => {
+    const overlaps = uniqueActivities.filter((entry) => {
       const start = entry.startMs;
       const end = entry.endMs;
       if (!Number.isFinite(start) || !Number.isFinite(end)) {

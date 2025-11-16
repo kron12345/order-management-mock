@@ -245,7 +245,8 @@ export class PlanWeekTemplateStoreService {
       .pipe(
         take(1),
         tap((items) => {
-          this.setState({ activities: { ...this.state().activities, [templateId]: items } });
+          const normalized = items.map((item) => this.normalizePlanWeekActivity(item));
+          this.setState({ activities: { ...this.state().activities, [templateId]: normalized } });
         }),
         catchError((error) => {
           console.error('[PlanWeekTemplateStore] Failed to load activities', error);
@@ -261,8 +262,9 @@ export class PlanWeekTemplateStoreService {
       .pipe(
         take(1),
         tap((saved) => {
+          const normalized = this.normalizePlanWeekActivity(saved);
           const current = this.state().activities[templateId] ?? [];
-          const next = this.upsertById(current, saved);
+          const next = this.upsertById(current, normalized);
           this.setState({ activities: { ...this.state().activities, [templateId]: next } });
         }),
         catchError((error) => {
@@ -307,5 +309,12 @@ export class PlanWeekTemplateStoreService {
     const clone = [...items];
     clone.splice(index, 1, next);
     return clone;
+  }
+
+  private normalizePlanWeekActivity(activity: PlanWeekActivity): PlanWeekActivity {
+    return {
+      ...activity,
+      participants: activity.participants?.map((participant) => ({ ...participant })) ?? [],
+    };
   }
 }

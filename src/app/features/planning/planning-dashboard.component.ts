@@ -12,6 +12,7 @@ import { MatCardModule } from '@angular/material/card';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { MatSelectModule } from '@angular/material/select';
+import { MatDialog } from '@angular/material/dialog';
 import { FormsModule, ReactiveFormsModule, FormBuilder, Validators } from '@angular/forms';
 import { GanttComponent } from '../../gantt/gantt.component';
 import { GanttWindowLauncherComponent } from './components/gantt-window-launcher.component';
@@ -19,7 +20,13 @@ import { PlanWeekTemplateComponent } from './components/plan-week-template.compo
 import { DragDropModule } from '@angular/cdk/drag-drop';
 import { PlanningDataService, PlanningTimelineRange } from './planning-data.service';
 import { Resource, ResourceKind } from '../../models/resource';
-import { Activity, ServiceRole } from '../../models/activity';
+import { Activity, ActivityParticipant, ActivityParticipantRole, ServiceRole } from '../../models/activity';
+import {
+  ActivityParticipantCategory,
+  getActivityOwnerByCategory,
+  getActivityOwnerId,
+  getActivityParticipantIds,
+} from '../../models/activity-ownership';
 import {
   ActivityFieldKey,
   ActivityTypeDefinition,
@@ -37,8 +44,13 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { TimetableYearService } from '../../core/services/timetable-year.service';
 import { TimetableYearBounds } from '../../core/models/timetable-year.model';
 import { PlanWeekTemplateStoreService } from './stores/plan-week-template.store';
-import { PlanWeekActivity } from '../../models/planning-template';
+import { PlanWeekActivity, PlanWeekActivityParticipant } from '../../models/planning-template';
 import { DurationPipe } from '../../shared/pipes/duration.pipe';
+import {
+  ActivityLinkRole,
+  ActivityLinkRoleDialogComponent,
+  ActivityLinkRoleDialogResult,
+} from './activity-link-role-dialog.component';
 
 interface PlanningBoard {
   id: string;
@@ -65,6 +77,11 @@ interface StageRuntimeState {
 }
 
 interface PendingActivityState {
+  stage: PlanningStageId;
+  activity: Activity;
+}
+
+interface ActivityEditPreviewState {
   stage: PlanningStageId;
   activity: Activity;
 }
@@ -254,6 +271,10 @@ export class PlanningDashboardComponent {
   );
   private readonly pendingActivitySignal = signal<PendingActivityState | null>(null);
   private readonly pendingActivityOriginal = signal<Activity | null>(null);
+  private readonly typePickerOpenSignal = signal(false);
+  private readonly activityDetailsOpenSignal = signal(true);
+  private readonly dialog = inject(MatDialog);
+  private readonly activityEditPreviewSignal = signal<ActivityEditPreviewState | null>(null);
 
   protected readonly activityForm = this.fb.group({
     start: ['', Validators.required],
@@ -307,6 +328,17 @@ export class PlanningDashboardComponent {
       { allowSignalWrites: true },
     );
 
+    effect(
+      () => {
+        const preview = this.activityEditPreviewSignal();
+        const activeStage = this.activeStageSignal();
+        if (preview && preview.stage !== activeStage) {
+          this.clearEditingPreview();
+        }
+      },
+      { allowSignalWrites: true },
+    );
+
     this.activityForm.controls.type.valueChanges.pipe(takeUntilDestroyed()).subscribe((value) => {
       this.activityFormTypeSignal.set(value ?? '');
     });
@@ -317,6 +349,7 @@ export class PlanningDashboardComponent {
 
     this.activityForm.valueChanges.pipe(takeUntilDestroyed()).subscribe(() => {
       this.updatePendingActivityFromForm();
+      this.updateEditingPreviewFromForm();
     });
 
     effect(
@@ -332,6 +365,7 @@ export class PlanningDashboardComponent {
             remark: '',
           });
           this.activityFormTypeSignal.set(this.activityCreationToolSignal());
+          this.clearEditingPreview();
           return;
         }
         this.activityForm.setValue({
@@ -343,6 +377,7 @@ export class PlanningDashboardComponent {
           remark: selection.activity.remark ?? '',
         });
         this.activityFormTypeSignal.set(selection.activity.type ?? '');
+        this.clearEditingPreview();
         if (!this.isPendingSelection(selection.activity.id)) {
           this.activityForm.markAsPristine();
         }
@@ -503,6 +538,15 @@ export class PlanningDashboardComponent {
       (definition.relevantFor ?? definition.appliesTo).includes(resourceKind),
     );
   });
+  protected readonly quickActivityTypes = computed<ActivityTypeDefinition[]>(() => {
+    const candidates = this.activityTypeCandidates();
+    if (!candidates.length) {
+      return [];
+    }
+    // Erste paar sinnvolle Typen als Schnellauswahl anbieten
+    const MAX_QUICK_TYPES = 6;
+    return candidates.slice(0, MAX_QUICK_TYPES);
+  });
   protected readonly activityTypePickerGroups = computed<ActivityTypePickerGroup[]>(() => {
     const definitions = this.activityTypeCandidates();
     if (!definitions.length) {
@@ -601,6 +645,8 @@ export class PlanningDashboardComponent {
   protected readonly pendingActivity = computed<Activity | null>(() =>
     this.pendingActivityForStage(this.activeStageSignal()),
   );
+  protected readonly isTypePickerOpen = computed(() => this.typePickerOpenSignal());
+  protected readonly activityDetailsOpen = computed(() => this.activityDetailsOpenSignal());
 
   protected readonly isSelectedActivityPending = computed(() => {
     const selection = this.selectedActivityState();
@@ -661,6 +707,23 @@ export class PlanningDashboardComponent {
     this.activityForm.controls.type.setValue(typeId);
     this.activityForm.controls.type.markAsDirty();
     this.activityFormTypeSignal.set(typeId);
+  }
+
+  protected openTypePicker(): void {
+    this.typePickerOpenSignal.set(true);
+  }
+
+  protected closeTypePicker(): void {
+    this.typePickerOpenSignal.set(false);
+  }
+
+  protected selectActivityTypeFromPicker(typeId: string): void {
+    this.selectActivityType(typeId);
+    this.closeTypePicker();
+  }
+
+  protected toggleActivityDetails(): void {
+    this.activityDetailsOpenSignal.update((current) => !current);
   }
 
   protected onStageChange(stage: PlanningStageId | null | undefined): void {
@@ -791,67 +854,36 @@ export class PlanningDashboardComponent {
       return;
     }
 
-    const value = this.activityForm.getRawValue();
-    if (!value.start) {
+    const normalized = this.buildActivityFromForm(selection);
+    if (!normalized) {
       return;
     }
-    const startDate = this.fromLocalDateTime(value.start);
-    if (!startDate || !Number.isFinite(startDate.getTime())) {
+    if (this.areActivitiesEquivalent(pendingState.activity, normalized)) {
       return;
     }
-
-    const desiredType =
-      value.type && value.type.length > 0 ? value.type : (selection.activity.type ?? '');
-    const definition =
-      this.findActivityType(desiredType) ??
-      this.findActivityType(selection.activity.type ?? null);
-    const isPoint = definition?.timeMode === 'point';
-    const endDateRaw = !isPoint && value.end ? this.fromLocalDateTime(value.end) : null;
-    const endDateValid =
-      endDateRaw && endDateRaw.getTime() > startDate.getTime() ? endDateRaw : null;
-
-    const updated: Activity = {
-      ...selection.activity,
-      title: this.buildActivityTitle(definition ?? null),
-      start: startDate.toISOString(),
-      end: endDateValid ? endDateValid.toISOString() : null,
-      type: (desiredType || selection.activity.type) ?? '',
-    };
-
-    if (definition) {
-      if (this.definitionHasField(definition, 'from')) {
-        updated.from = value.from ?? '';
-      } else {
-        updated.from = undefined;
-      }
-      if (this.definitionHasField(definition, 'to')) {
-        updated.to = value.to ?? '';
-      } else {
-        updated.to = undefined;
-      }
-      if (this.definitionHasField(definition, 'remark')) {
-        updated.remark = value.remark ?? '';
-      } else {
-        updated.remark = undefined;
-      }
-    }
-
-    const normalized = this.applyActivityTypeConstraints(updated);
-    const current = pendingState.activity;
-
-    if (
-      current.start === normalized.start &&
-      current.end === normalized.end &&
-      (current.type ?? '') === (normalized.type ?? '') &&
-      (current.title ?? '') === (normalized.title ?? '') &&
-      (current.from ?? '') === (normalized.from ?? '') &&
-      (current.to ?? '') === (normalized.to ?? '') &&
-      (current.remark ?? '') === (normalized.remark ?? '')
-    ) {
-      return;
-    }
-
     this.commitPendingActivityUpdate(normalized);
+  }
+
+  private updateEditingPreviewFromForm(): void {
+    const selection = this.selectedActivityState();
+    if (!selection) {
+      this.clearEditingPreview();
+      return;
+    }
+    if (this.isPendingSelection(selection.activity.id)) {
+      this.clearEditingPreview();
+      return;
+    }
+    const normalized = this.buildActivityFromForm(selection);
+    if (!normalized) {
+      this.clearEditingPreview();
+      return;
+    }
+    if (this.areActivitiesEquivalent(selection.activity, normalized)) {
+      this.clearEditingPreview();
+      return;
+    }
+    this.activityEditPreviewSignal.set({ stage: this.activeStageSignal(), activity: normalized });
   }
 
   protected handleResourceViewModeChange(event: { resourceId: string; mode: 'block' | 'detail' }): void {
@@ -890,6 +922,7 @@ export class PlanningDashboardComponent {
       resource: event.resource,
       activity: this.applyActivityTypeConstraints(event.activity),
     });
+    this.clearEditingPreview();
   }
 
   protected handleActivitySelectionToggle(event: {
@@ -922,6 +955,10 @@ export class PlanningDashboardComponent {
     targetResourceId: string;
     start: Date;
     end: Date | null;
+    sourceResourceId?: string | null;
+    participantCategory?: ActivityParticipantCategory | null;
+    participantResourceId?: string | null;
+    isOwnerSlot?: boolean;
   }): void {
     if (this.isPendingSelection(event.activity.id)) {
       this.updatePendingActivityPosition(event);
@@ -933,40 +970,211 @@ export class PlanningDashboardComponent {
       return;
     }
     const targetId = event.targetResourceId;
-    this.updateStageActivities(stage, (activities) =>
-      activities.map((activity) => {
-        if (activity.id !== event.activity.id) {
-          return activity;
-        }
-        const participants = (activity.participantResourceIds ?? []).filter(
-          (participant) => participant !== activity.resourceId && participant !== targetId,
-        );
-        participants.push(targetId);
-        return {
-          ...activity,
-          resourceId: targetId,
-          start: event.start.toISOString(),
-          end: event.end ? event.end.toISOString() : null,
-          participantResourceIds: participants,
-        };
-      }),
-    );
-    const activeSelection = this.selectedActivityState();
-    if (activeSelection?.activity.id === event.activity.id) {
-      const resource =
-        this.stageResourceSignals[stage]().find((res) => res.id === targetId) ??
-        activeSelection.resource;
-      const updatedSelectionActivity = this.applyActivityTypeConstraints({
-        ...activeSelection.activity,
-        resourceId: targetId,
+    const targetResource =
+      this.stageResourceSignals[stage]().find((resource) => resource.id === targetId) ?? null;
+    if (!targetResource) {
+      return;
+    }
+    const attrs = (event.activity.attributes ?? {}) as Record<string, unknown>;
+    const linkGroupId =
+      typeof attrs['linkGroupId'] === 'string' ? (attrs['linkGroupId'] as string) : null;
+    const isOwnerSlot = event.isOwnerSlot ?? true;
+    const participantResourceId = event.participantResourceId ?? event.sourceResourceId ?? null;
+    const targetCategory =
+      event.participantCategory ?? this.resourceParticipantCategory(targetResource);
+    const applyUpdate = (activity: Activity): Activity => {
+      const updatedBase: Activity = {
+        ...activity,
         start: event.start.toISOString(),
         end: event.end ? event.end.toISOString() : null,
+      };
+      if (!isOwnerSlot && participantResourceId) {
+        return this.moveParticipantToResource(updatedBase, participantResourceId, targetResource);
+      }
+      return this.addParticipantToActivity(updatedBase, targetResource, undefined, undefined, {
+        retainPreviousOwner: false,
+        ownerCategory: targetCategory,
       });
+    };
+    this.updateStageActivities(stage, (activities) => {
+      if (!linkGroupId) {
+        return activities.map((activity) => {
+          if (activity.id !== event.activity.id) {
+            return activity;
+          }
+          return applyUpdate(activity);
+        });
+      }
+      return activities.map((activity) => {
+        const currentAttrs = (activity.attributes ?? {}) as Record<string, unknown>;
+        const currentGroupId =
+          typeof currentAttrs['linkGroupId'] === 'string'
+            ? (currentAttrs['linkGroupId'] as string)
+            : null;
+        if (activity.id === event.activity.id) {
+          return applyUpdate(activity);
+        }
+        if (!currentGroupId || currentGroupId !== linkGroupId) {
+          return activity;
+        }
+        return {
+          ...activity,
+          start: event.start.toISOString(),
+          end: event.end ? event.end.toISOString() : null,
+        };
+      });
+    });
+    const activeSelection = this.selectedActivityState();
+    if (activeSelection?.activity.id === event.activity.id) {
+      const resource = targetResource;
+      const updatedSelectionActivity = this.applyActivityTypeConstraints(
+        !isOwnerSlot && participantResourceId
+          ? this.moveParticipantToResource(
+              {
+                ...activeSelection.activity,
+                start: event.start.toISOString(),
+                end: event.end ? event.end.toISOString() : null,
+              },
+              participantResourceId,
+              targetResource,
+            )
+          : this.addParticipantToActivity(
+              {
+                ...activeSelection.activity,
+                start: event.start.toISOString(),
+                end: event.end ? event.end.toISOString() : null,
+              },
+              targetResource,
+              undefined,
+              undefined,
+              {
+                retainPreviousOwner: false,
+                ownerCategory: targetCategory,
+              },
+            ),
+      );
       this.selectedActivityState.set({
         activity: updatedSelectionActivity,
         resource,
       });
     }
+  }
+
+  protected handleActivityCopy(event: {
+    activity: Activity;
+    targetResourceId: string;
+    start: Date;
+    end: Date | null;
+  }): void {
+    const stage = this.activeStageSignal();
+    const source = event.activity;
+    const targetResourceId = event.targetResourceId;
+    const sourceOwnerId = this.activityOwnerId(source);
+    if (!sourceOwnerId || targetResourceId === sourceOwnerId) {
+      return;
+    }
+    const resources = this.stageResourceSignals[stage]();
+    const sourceResource = resources.find((res) => res.id === sourceOwnerId);
+    const targetResource = resources.find((res) => res.id === targetResourceId);
+    if (!sourceResource || !targetResource || sourceResource.kind !== targetResource.kind) {
+      return;
+    }
+    const dialogRef = this.dialog.open<
+      ActivityLinkRoleDialogComponent,
+      {
+        sourceResourceName: string;
+        targetResourceName: string;
+      },
+      ActivityLinkRoleDialogResult | undefined
+    >(ActivityLinkRoleDialogComponent, {
+      width: '420px',
+      data: {
+        sourceResourceName: sourceResource.name,
+        targetResourceName: targetResource.name,
+      },
+    });
+
+    dialogRef.afterClosed().subscribe((result) => {
+      if (!result) {
+        return;
+      }
+      if (stage === 'base') {
+        this.applyBaseActivityCopyWithRoles(source, sourceResource, targetResource, event, result);
+      } else {
+        this.applyActivityCopyWithRoles(stage, source, sourceResource, targetResource, event, result);
+      }
+    });
+  }
+
+  private applyActivityCopyWithRoles(
+    stage: PlanningStageId,
+    source: Activity,
+    sourceResource: Resource,
+    targetResource: Resource,
+    event: {
+      activity: Activity;
+      targetResourceId: string;
+      start: Date;
+      end: Date | null;
+    },
+    roles: ActivityLinkRoleDialogResult,
+  ): void {
+    const sourceRole = this.mapLinkRoleToParticipantRole(roles.sourceRole);
+    const targetRole = this.mapLinkRoleToParticipantRole(roles.targetRole);
+
+    this.updateStageActivities(stage, (activities) =>
+      activities.map((activity) => {
+        if (activity.id !== source.id) {
+          return activity;
+        }
+        const withParticipant = this.addParticipantToActivity(
+          activity,
+          sourceResource,
+          targetResource,
+          targetRole,
+          { retainPreviousOwner: true },
+        );
+        const withRoles = this.applyParticipantRoleUpdates(withParticipant, [
+          { resourceId: sourceResource.id, role: sourceRole },
+          { resourceId: targetResource.id, role: targetRole },
+        ]);
+        return this.applyActivityTypeConstraints(withRoles);
+      }),
+    );
+  }
+
+  private applyBaseActivityCopyWithRoles(
+    source: Activity,
+    sourceResource: Resource,
+    targetResource: Resource,
+    event: {
+      activity: Activity;
+      targetResourceId: string;
+      start: Date;
+      end: Date | null;
+    },
+    roles: ActivityLinkRoleDialogResult,
+  ): void {
+    const templateId = this.templateStore.selectedTemplate()?.id;
+    if (!templateId) {
+      return;
+    }
+    const sourceRole = this.mapLinkRoleToParticipantRole(roles.sourceRole);
+    const targetRole = this.mapLinkRoleToParticipantRole(roles.targetRole);
+    const updated = this.applyParticipantRoleUpdates(
+      this.addParticipantToActivity(
+        source,
+        sourceResource,
+        targetResource,
+        targetRole,
+        { retainPreviousOwner: true },
+      ),
+      [
+        { resourceId: sourceResource.id, role: sourceRole },
+        { resourceId: targetResource.id, role: targetRole },
+      ],
+    );
+    this.saveTemplateActivity(this.applyActivityTypeConstraints(updated));
   }
 
   protected clearActivitySelection(): void {
@@ -981,25 +1189,17 @@ export class PlanningDashboardComponent {
       this.pendingActivityOriginal.set(null);
     }
     this.selectedActivityState.set(null);
+    this.clearEditingPreview();
   }
 
-  protected saveSelectedActivityEdits(): void {
-    const selection = this.selectedActivityState();
+  private buildActivityFromForm(selection: { activity: Activity; resource: Resource } | null): Activity | null {
     if (!selection) {
-      return;
+      return null;
     }
-    if (this.activityForm.invalid) {
-      this.activityForm.markAllAsTouched();
-      return;
-    }
-    const stage = this.activeStageSignal();
-    const pending = this.pendingActivitySignal();
-    const isPendingDraft =
-      pending && pending.stage === stage && pending.activity.id === selection.activity.id;
     const value = this.activityForm.getRawValue();
     const startDate = value.start ? this.fromLocalDateTime(value.start) : null;
     if (!startDate) {
-      return;
+      return null;
     }
     const desiredType =
       value.type && value.type.length > 0 ? value.type : (selection.activity.type ?? '');
@@ -1007,7 +1207,8 @@ export class PlanningDashboardComponent {
       this.findActivityType(desiredType) ?? this.findActivityType(selection.activity.type ?? null);
     const isPoint = definition?.timeMode === 'point';
     const endDateRaw = !isPoint && value.end ? this.fromLocalDateTime(value.end) : null;
-    const endDateValid = endDateRaw && endDateRaw.getTime() > startDate.getTime() ? endDateRaw : null;
+    const endDateValid =
+      endDateRaw && endDateRaw.getTime() > startDate.getTime() ? endDateRaw : null;
     const updated: Activity = {
       ...selection.activity,
       title: this.buildActivityTitle(definition ?? null),
@@ -1032,7 +1233,39 @@ export class PlanningDashboardComponent {
         updated.remark = undefined;
       }
     }
-    const normalized = this.applyActivityTypeConstraints(updated);
+    return this.applyActivityTypeConstraints(updated);
+  }
+
+  private areActivitiesEquivalent(a: Activity, b: Activity): boolean {
+    const norm = (value: string | null | undefined) => value ?? '';
+    return (
+      a.start === b.start &&
+      (a.end ?? null) === (b.end ?? null) &&
+      norm(a.type) === norm(b.type) &&
+      norm(a.title) === norm(b.title) &&
+      norm(a.from) === norm(b.from) &&
+      norm(a.to) === norm(b.to) &&
+      norm(a.remark) === norm(b.remark)
+    );
+  }
+
+  protected saveSelectedActivityEdits(): void {
+    const selection = this.selectedActivityState();
+    if (!selection) {
+      return;
+    }
+    if (this.activityForm.invalid) {
+      this.activityForm.markAllAsTouched();
+      return;
+    }
+    const stage = this.activeStageSignal();
+    const pending = this.pendingActivitySignal();
+    const isPendingDraft =
+      pending && pending.stage === stage && pending.activity.id === selection.activity.id;
+    const normalized = this.buildActivityFromForm(selection);
+    if (!normalized) {
+      return;
+    }
     if (isPendingDraft) {
       if (stage === 'base') {
         this.saveTemplateActivity(normalized);
@@ -1042,11 +1275,13 @@ export class PlanningDashboardComponent {
       this.pendingActivitySignal.set(null);
       this.pendingActivityOriginal.set(null);
       this.selectedActivityState.set({ activity: normalized, resource: selection.resource });
+      this.clearEditingPreview();
       return;
     }
     if (stage === 'base') {
       this.saveTemplateActivity(normalized);
       this.selectedActivityState.set({ activity: normalized, resource: selection.resource });
+      this.clearEditingPreview();
       return;
     }
     this.replaceActivity(normalized);
@@ -1075,6 +1310,7 @@ export class PlanningDashboardComponent {
       activities.filter((activity) => activity.id !== selection.activity.id),
     );
     this.selectedActivityState.set(null);
+    this.clearEditingPreview();
   }
 
   protected handleServiceAssignRequest(resource: Resource): void {
@@ -1095,35 +1331,44 @@ export class PlanningDashboardComponent {
     }
     const stage = this.activeStageSignal();
     this.data.updateStageData(stage, (stageData) => {
+      const targetResource =
+        stageData.resources.find((resource) => resource.id === targetResourceId) ?? null;
+      if (!targetResource) {
+        return stageData;
+      }
       const existing = stageData.activities;
-      const serviceActivities = existing.filter((activity) => activity.resourceId === serviceResource.id);
+      const serviceActivities = existing.filter((activity) => this.isActivityOwnedBy(activity, serviceResource.id));
       const updatedExisting = existing.map((activity) => {
-        if (activity.resourceId !== serviceResource.id) {
+        if (!this.isActivityOwnedBy(activity, serviceResource.id)) {
           return activity;
         }
-        return {
-          ...activity,
-          participantResourceIds: this.mergeParticipants(activity.participantResourceIds, [
-            serviceResource.id,
-            targetResourceId,
-          ]),
-        };
+        return this.addParticipantToActivity(activity, serviceResource, targetResource, undefined, {
+          retainPreviousOwner: false,
+          ownerCategory: this.resourceParticipantCategory(serviceResource),
+        });
       });
       const additions: Activity[] = [];
       serviceActivities.forEach((activity) => {
         const duplicate = existing.some(
-          (entry) => entry.resourceId === targetResourceId && entry.serviceId === activity.serviceId,
+          (entry) =>
+            this.isActivityOwnedBy(entry, targetResourceId) && entry.serviceId === activity.serviceId,
         );
         if (!duplicate) {
-          additions.push({
-            ...activity,
-            id: this.generateActivityId('assign'),
-            resourceId: targetResourceId,
-            participantResourceIds: this.mergeParticipants(activity.participantResourceIds, [
-              serviceResource.id,
-              targetResourceId,
-            ]),
-          });
+          additions.push(
+            this.addParticipantToActivity(
+              {
+                ...activity,
+                id: this.generateActivityId('assign'),
+              },
+              targetResource,
+              serviceResource,
+              undefined,
+              {
+                retainPreviousOwner: false,
+                ownerCategory: this.resourceParticipantCategory(targetResource),
+              },
+            ),
+          );
         }
       });
       return {
@@ -1166,24 +1411,24 @@ export class PlanningDashboardComponent {
         if (!idsToMove.has(activity.id)) {
           return activity;
         }
-        const participants = (activity.participantResourceIds ?? []).filter(
-          (participant) => participant !== activity.resourceId && participant !== targetId,
-        );
-        participants.push(targetId);
-        return {
-          ...activity,
-          resourceId: targetId,
-          participantResourceIds: participants,
-        };
+        return this.addParticipantToActivity(activity, targetResource, undefined, undefined, {
+          retainPreviousOwner: false,
+          ownerCategory: this.resourceParticipantCategory(targetResource),
+        });
       }),
     );
     const activeSelection = this.selectedActivityState();
     if (activeSelection && idsToMove.has(activeSelection.activity.id)) {
       this.selectedActivityState.set({
-        activity: this.applyActivityTypeConstraints({
-          ...activeSelection.activity,
-          resourceId: targetResource.id,
-        }),
+        activity: this.applyActivityTypeConstraints(
+          this.addParticipantToActivity(
+            activeSelection.activity,
+            targetResource,
+            undefined,
+            undefined,
+            { retainPreviousOwner: false, ownerCategory: this.resourceParticipantCategory(targetResource) },
+          ),
+        ),
         resource: targetResource,
       });
     }
@@ -1239,13 +1484,20 @@ export class PlanningDashboardComponent {
     };
     const neighbors = this.findNeighborActivities(reference);
     const previous = neighbors.previous;
-    if (!previous || !previous.end) {
+    if (!previous) {
+      return;
+    }
+    const prevTerminalIso = previous.end ?? previous.start;
+    if (!prevTerminalIso) {
       return;
     }
     const definition = this.findActivityType(base.type ?? null);
     const isPoint = definition?.timeMode === 'point';
-    const prevEndDate = new Date(previous.end);
+    const prevEndDate = new Date(prevTerminalIso);
     const prevEndMs = prevEndDate.getTime();
+    if (!Number.isFinite(prevEndMs)) {
+      return;
+    }
     let updated: Activity;
     if (isPoint || !base.end) {
       updated = {
@@ -1354,12 +1606,19 @@ export class PlanningDashboardComponent {
     const neighbors = this.findNeighborActivities(reference);
     const previous = neighbors.previous;
     const next = neighbors.next;
-    if (!previous || !previous.end || !next) {
+    if (!previous || !next) {
       return;
     }
-    const startMs = new Date(previous.end).getTime();
+    const prevTerminalIso = previous.end ?? previous.start;
+    if (!prevTerminalIso) {
+      return;
+    }
+    const startMs = new Date(prevTerminalIso).getTime();
     const endMs = new Date(next.start).getTime();
-    if (!(Number.isFinite(startMs) && Number.isFinite(endMs)) || endMs <= startMs + 60_000) {
+    if (
+      !(Number.isFinite(startMs) && Number.isFinite(endMs)) ||
+      endMs <= startMs + 60_000
+    ) {
       return;
     }
     const definition = this.findActivityType(base.type ?? null);
@@ -1435,13 +1694,43 @@ export class PlanningDashboardComponent {
 
   private replaceActivity(updated: Activity): void {
     const stage = this.activeStageSignal();
-    this.updateStageActivities(stage, (activities) =>
-      activities.map((activity) => (activity.id === updated.id ? updated : activity)),
-    );
+    this.updateStageActivities(stage, (activities) => {
+      const attrs = (updated.attributes ?? {}) as Record<string, unknown>;
+      const linkGroupId = typeof attrs['linkGroupId'] === 'string' ? (attrs['linkGroupId'] as string) : null;
+      if (!linkGroupId) {
+        return activities.map((activity) => (activity.id === updated.id ? updated : activity));
+      }
+      return activities.map((activity) => {
+        const currentAttrs = (activity.attributes ?? {}) as Record<string, unknown>;
+        const currentGroupId =
+          typeof currentAttrs['linkGroupId'] === 'string' ? (currentAttrs['linkGroupId'] as string) : null;
+        if (!currentGroupId || currentGroupId !== linkGroupId) {
+          return activity.id === updated.id ? updated : activity;
+        }
+        // Gleiche Gruppe: Inhalt übernehmen, Ressourcenkontext beibehalten.
+        const next: Activity = {
+          ...activity,
+          title: updated.title,
+          start: updated.start,
+          end: updated.end,
+          type: updated.type,
+          from: updated.from,
+          to: updated.to,
+          remark: updated.remark,
+          attributes: {
+            ...(updated.attributes ?? {}),
+            ...(activity.attributes ?? {}),
+            linkGroupId,
+          },
+        };
+        return next;
+      });
+    });
+    const ownerId = this.activityOwnerId(updated);
     const resource =
-      this.stageResourceSignals[stage]().find((entry) => entry.id === updated.resourceId) ??
-      this.selectedActivityState()?.resource ??
-      null;
+      (ownerId
+        ? this.stageResourceSignals[stage]().find((entry) => entry.id === ownerId)
+        : null) ?? this.selectedActivityState()?.resource ?? null;
     if (resource) {
       this.selectedActivityState.set({
         activity: this.applyActivityTypeConstraints(updated),
@@ -1450,12 +1739,18 @@ export class PlanningDashboardComponent {
     } else {
       this.selectedActivityState.set(null);
     }
+    this.clearEditingPreview();
+  }
+
+  private clearEditingPreview(): void {
+    this.activityEditPreviewSignal.set(null);
   }
 
   private startPendingActivity(stage: PlanningStageId, resource: Resource, activity: Activity): void {
     this.pendingActivitySignal.set({ stage, activity });
     this.selectedActivityState.set({ activity, resource });
     this.selectedActivityIdsSignal.set(new Set());
+    this.clearEditingPreview();
   }
 
   private isPendingSelection(activityId: string | null | undefined): boolean {
@@ -1476,10 +1771,11 @@ export class PlanningDashboardComponent {
     }
     this.pendingActivitySignal.set({ stage: pending.stage, activity });
     const stage = this.activeStageSignal();
+    const ownerId = this.activityOwnerId(activity);
     const resource =
-      this.stageResourceSignals[stage]().find((entry) => entry.id === activity.resourceId) ??
-      this.selectedActivityState()?.resource ??
-      null;
+      (ownerId
+        ? this.stageResourceSignals[stage]().find((entry) => entry.id === ownerId)
+        : null) ?? this.selectedActivityState()?.resource ?? null;
     if (resource) {
       this.selectedActivityState.set({ activity, resource });
     } else {
@@ -1501,14 +1797,33 @@ export class PlanningDashboardComponent {
     targetResourceId: string;
     start: Date;
     end: Date | null;
+    participantResourceId?: string | null;
+    participantCategory?: ActivityParticipantCategory | null;
+    sourceResourceId?: string | null;
+    isOwnerSlot?: boolean;
   }): void {
-    const updated: Activity = {
+    const stage = this.activeStageSignal();
+    const targetResource =
+      this.stageResourceSignals[stage]().find((entry) => entry.id === event.targetResourceId) ??
+      null;
+    const base: Activity = {
       ...event.activity,
-      resourceId: event.targetResourceId,
       start: event.start.toISOString(),
       end: event.end ? event.end.toISOString() : null,
-      participantResourceIds: [event.targetResourceId],
     };
+    const updated = targetResource
+      ? !event.isOwnerSlot && (event.participantResourceId ?? event.sourceResourceId)
+        ? this.moveParticipantToResource(
+            base,
+            event.participantResourceId ?? event.sourceResourceId,
+            targetResource,
+          )
+        : this.addParticipantToActivity(base, targetResource, undefined, undefined, {
+            retainPreviousOwner: false,
+            ownerCategory:
+              event.participantCategory ?? this.resourceParticipantCategory(targetResource),
+          })
+      : base;
     this.commitPendingActivityUpdate(this.applyActivityTypeConstraints(updated));
   }
 
@@ -1536,7 +1851,11 @@ export class PlanningDashboardComponent {
       if (!activity) {
         return;
       }
-      const resource = resourceMap.get(activity.resourceId);
+      const ownerId = this.activityOwnerId(activity);
+      if (!ownerId) {
+        return;
+      }
+      const resource = resourceMap.get(ownerId);
       if (!resource) {
         return;
       }
@@ -1549,7 +1868,18 @@ export class PlanningDashboardComponent {
     const stage = this.activeStageSignal();
     const all = this.normalizedStageActivitySignals[stage]();
     const serviceId = activity.serviceId ?? null;
-    const resourceId = activity.resourceId;
+    const role = activity.serviceRole ?? null;
+    const type = activity.type ?? '';
+    const isServiceBoundary =
+      role === 'start' ||
+      role === 'end' ||
+      type === 'service-start' ||
+      type === 'service-end';
+    const requireServiceMatch = !!serviceId && !isServiceBoundary;
+    const resourceId = this.activityOwnerId(activity);
+    if (!resourceId) {
+      return { previous: null, next: null };
+    }
     const targetStartMs = new Date(activity.start).getTime();
     const targetEndMs = activity.end ? new Date(activity.end).getTime() : targetStartMs;
     if (!Number.isFinite(targetStartMs) || !Number.isFinite(targetEndMs)) {
@@ -1563,11 +1893,11 @@ export class PlanningDashboardComponent {
       if (entry.id === activity.id) {
         return;
       }
-      if (entry.resourceId !== resourceId) {
+      if (!this.isActivityOwnedBy(entry, resourceId)) {
         return;
       }
       const entryService = entry.serviceId ?? null;
-      if (serviceId ? entryService !== serviceId : !!entryService) {
+      if (requireServiceMatch && entryService !== serviceId) {
         return;
       }
       const startMs = new Date(entry.start).getTime();
@@ -1613,14 +1943,25 @@ export class PlanningDashboardComponent {
     return undefined;
   }
 
+  private resourceParticipantCategory(resource: Resource | null): ActivityParticipantCategory {
+    if (!resource) {
+      return 'other';
+    }
+    if (resource.kind === 'vehicle' || resource.kind === 'vehicle-service') {
+      return 'vehicle';
+    }
+    if (resource.kind === 'personnel' || resource.kind === 'personnel-service') {
+      return 'personnel';
+    }
+    return 'other';
+  }
+
   private selectedActivityParticipantIds(): string[] {
     const selection = this.selectedActivityState();
     if (!selection) {
       return [];
     }
-    return this.mergeParticipants(selection.activity.participantResourceIds, [
-      selection.activity.resourceId,
-    ]);
+    return getActivityParticipantIds(selection.activity);
   }
 
   private findActivityType(id: string | null | undefined): ActivityTypeDefinition | null {
@@ -1699,13 +2040,161 @@ export class PlanningDashboardComponent {
     return activity;
   }
 
-  private mergeParticipants(
-    existing: string[] | undefined,
-    extras: (string | undefined | null)[],
-  ): string[] {
-    const set = new Set(existing ?? []);
-    extras.filter((value): value is string => !!value).forEach((value) => set.add(value));
-    return Array.from(set);
+  private activityOwnerId(activity: Activity): string | null {
+    return getActivityOwnerId(activity);
+  }
+
+  private resolvePrimaryRoleForResource(resource: Resource): ActivityParticipantRole {
+    return resource.kind === 'vehicle' || resource.kind === 'vehicle-service'
+      ? 'primary-vehicle'
+      : 'primary-personnel';
+  }
+
+  private isPrimaryParticipantRole(role: ActivityParticipantRole | undefined): boolean {
+    return role === 'primary-personnel' || role === 'primary-vehicle';
+  }
+
+  private isActivityOwnedBy(activity: Activity, resourceId: string): boolean {
+    if (!resourceId) {
+      return false;
+    }
+    return this.activityOwnerId(activity) === resourceId;
+  }
+
+  private addParticipantToActivity(
+    activity: Activity,
+    owner: Resource,
+    partner?: Resource | null,
+    partnerRole?: ActivityParticipantRole,
+    options?: { retainPreviousOwner?: boolean; ownerCategory?: ActivityParticipantCategory },
+  ): Activity {
+    const participants = new Map<string, ActivityParticipant>();
+    (activity.participants ?? []).forEach((participant) => {
+      if (!participant?.resourceId) {
+        return;
+      }
+      participants.set(participant.resourceId, { ...participant });
+    });
+
+    const ownerCategory = options?.ownerCategory ?? this.resourceParticipantCategory(owner);
+
+    if (!options?.retainPreviousOwner && ownerCategory !== 'other') {
+      const previousOwner = getActivityOwnerByCategory(activity, ownerCategory);
+      if (previousOwner && previousOwner.resourceId !== owner.id) {
+        participants.delete(previousOwner.resourceId);
+      }
+    }
+
+    const ensureParticipant = (resource?: Resource | null, role?: ActivityParticipantRole) => {
+      if (!resource?.id) {
+        return;
+      }
+      const previous = participants.get(resource.id);
+      const participant: ActivityParticipant = {
+        resourceId: resource.id,
+        kind: resource.kind,
+        role: role ?? previous?.role,
+      };
+      participants.set(resource.id, participant);
+    };
+
+    ensureParticipant(partner, partnerRole);
+    ensureParticipant(owner, this.resolvePrimaryRoleForResource(owner));
+
+    const participantList = Array.from(participants.values()).sort((a, b) => {
+      if (a.resourceId === owner.id) {
+        return -1;
+      }
+      if (b.resourceId === owner.id) {
+        return 1;
+      }
+      return a.resourceId.localeCompare(b.resourceId);
+    });
+    return {
+      ...activity,
+      participants: participantList,
+    };
+  }
+
+  private moveParticipantToResource(
+    activity: Activity,
+    fromResourceId: string | null | undefined,
+    target: Resource,
+  ): Activity {
+    if (!fromResourceId) {
+      return activity;
+    }
+    const participants = activity.participants ?? [];
+    if (participants.length === 0) {
+      return this.addParticipantToActivity(activity, target, undefined, undefined, {
+        retainPreviousOwner: true,
+      });
+    }
+    let updated = false;
+    const mapped = participants.map((participant) => {
+      if (participant.resourceId !== fromResourceId) {
+        return participant;
+      }
+      updated = true;
+      return {
+        ...participant,
+        resourceId: target.id,
+        kind: target.kind,
+      };
+    });
+    const uniq = new Map<string, ActivityParticipant>();
+    mapped.forEach((participant) => {
+      if (participant?.resourceId) {
+        uniq.set(participant.resourceId, participant);
+      }
+    });
+    if (!updated) {
+      uniq.set(target.id, {
+        resourceId: target.id,
+        kind: target.kind,
+      });
+    }
+    return {
+      ...activity,
+      participants: Array.from(uniq.values()),
+    };
+  }
+
+  private applyParticipantRoleUpdates(
+    activity: Activity,
+    updates: Array<{ resourceId: string; role: ActivityParticipantRole | null | undefined }>,
+  ): Activity {
+    if (!activity.participants?.length || !updates.length) {
+      return activity;
+    }
+    const roleMap = new Map(
+      updates
+        .filter((entry) => !!entry.role && !!entry.resourceId)
+        .map((entry) => [entry.resourceId, entry.role as ActivityParticipantRole]),
+    );
+    if (roleMap.size === 0) {
+      return activity;
+    }
+    let changed = false;
+    const participants = activity.participants.map((participant) => {
+      const nextRole = roleMap.get(participant.resourceId);
+      if (!nextRole || participant.role === nextRole) {
+        return participant;
+      }
+      changed = true;
+      return {
+        ...participant,
+        role: nextRole,
+      };
+    });
+    return changed ? { ...activity, participants } : activity;
+  }
+
+  private mapLinkRoleToParticipantRole(role: ActivityLinkRole): ActivityParticipantRole {
+    if (role === 'teacher' || role === 'student') {
+      return role;
+    }
+    return 'secondary-personnel';
   }
 
   private computeAssignmentCandidatesFor(resource: Resource): Resource[] {
@@ -1843,17 +2332,29 @@ export class PlanningDashboardComponent {
   protected boardActivities(board: PlanningBoard): Activity[] {
     const stage = this.activeStageSignal();
     const resourceSet = new Set(board.resourceIds);
-    return this.normalizedStageActivitySignals[stage]().filter((activity) =>
-      resourceSet.has(activity.resourceId),
-    );
+    return this.normalizedStageActivitySignals[stage]().filter((activity) => {
+      const ownerId = this.activityOwnerId(activity);
+      return ownerId ? resourceSet.has(ownerId) : false;
+    });
   }
 
   protected boardPendingActivity(board: PlanningBoard): Activity | null {
-    const pending = this.pendingActivity();
-    if (!pending) {
-      return null;
+    const stage = this.activeStageSignal();
+    const pending = this.pendingActivityForStage(stage);
+    if (pending) {
+      const ownerId = this.activityOwnerId(pending);
+      if (ownerId && board.resourceIds.includes(ownerId)) {
+        return pending;
+      }
     }
-    return board.resourceIds.includes(pending.resourceId) ? pending : null;
+    const preview = this.activityEditPreviewSignal();
+    if (preview && preview.stage === stage) {
+      const ownerId = this.activityOwnerId(preview.activity);
+      if (ownerId && board.resourceIds.includes(ownerId)) {
+        return preview.activity;
+      }
+    }
+    return null;
   }
 
   protected isActiveBoard(boardId: string): boolean {
@@ -2376,18 +2877,14 @@ export class PlanningDashboardComponent {
   }
 
   private planActivityToActivity(plan: PlanWeekActivity, resources: Resource[]): Activity {
-    const resource = resources.find((entry) => entry.id === plan.resourceId) ?? null;
     const activity: Activity = {
       id: plan.id,
-      resourceId: plan.resourceId,
       title: plan.title,
       start: plan.startIso,
       end: plan.endIso ?? plan.startIso,
       type: plan.type,
       remark: plan.remark ?? null,
-      participantResourceIds: [plan.resourceId],
       attributes: plan.attributes,
-      serviceCategory: resource ? this.resolveServiceCategory(resource) ?? undefined : undefined,
     };
     // Restore optional route fields (persisted inside attributes on PlanWeek level)
     const attr = plan.attributes as Record<string, unknown> | undefined;
@@ -2399,7 +2896,51 @@ export class PlanningDashboardComponent {
     if (toAttr !== undefined) {
       activity.to = toAttr;
     }
-    return this.applyActivityTypeConstraints(activity);
+    const normalized = this.applyActivityTypeConstraints(activity);
+    const planParticipants = plan.participants ?? [];
+    if (planParticipants.length === 0) {
+      return normalized;
+    }
+    const ownerParticipant =
+      planParticipants.find((participant) => this.isPrimaryParticipantRole(participant.role)) ??
+      planParticipants[0];
+    if (!ownerParticipant) {
+      return normalized;
+    }
+    const ownerResource =
+      resources.find((entry) => entry.id === ownerParticipant.resourceId) ?? null;
+    if (!ownerResource) {
+      return normalized;
+    }
+    const baseWithCategory: Activity = {
+      ...normalized,
+      serviceCategory: this.resolveServiceCategory(ownerResource) ?? normalized.serviceCategory,
+    };
+    let result = this.addParticipantToActivity(
+      baseWithCategory,
+      ownerResource,
+      undefined,
+      ownerParticipant.role,
+      { retainPreviousOwner: false, ownerCategory: this.resourceParticipantCategory(ownerResource) },
+    );
+    planParticipants.forEach((participant) => {
+      if (participant.resourceId === ownerResource.id) {
+        return;
+      }
+      const participantResource =
+        resources.find((entry) => entry.id === participant.resourceId) ?? null;
+      if (!participantResource) {
+        return;
+      }
+      result = this.addParticipantToActivity(
+        result,
+        ownerResource,
+        participantResource,
+        participant.role,
+        { retainPreviousOwner: true },
+      );
+    });
+    return result;
   }
 
   private activityToPlanActivity(activity: Activity, templateId: string): PlanWeekActivity {
@@ -2415,16 +2956,27 @@ export class PlanningDashboardComponent {
     } else {
       delete (attrs as any)['to'];
     }
+    const planParticipants: PlanWeekActivityParticipant[] =
+      (activity.participants ?? []).map((participant) => ({
+        resourceId: participant.resourceId,
+        role: participant.role,
+      })) ?? [];
+    if (planParticipants.length === 0) {
+      const ownerId = this.activityOwnerId(activity);
+      if (ownerId) {
+        planParticipants.push({ resourceId: ownerId });
+      }
+    }
     return {
       id: activity.id,
       templateId,
-      resourceId: activity.resourceId,
       title: activity.title,
       startIso: activity.start,
       endIso: activity.end ?? activity.start,
       type: activity.type ?? undefined,
       remark: activity.remark ?? undefined,
       attributes: attrs,
+      participants: planParticipants,
     };
   }
 
@@ -2437,10 +2989,14 @@ export class PlanningDashboardComponent {
     const resourceBuckets = new Map<string, Activity[]>();
 
     clones.forEach((activity) => {
-      if (!resourceBuckets.has(activity.resourceId)) {
-        resourceBuckets.set(activity.resourceId, []);
+      const ownerId = this.activityOwnerId(activity);
+      if (!ownerId) {
+        return;
       }
-      resourceBuckets.get(activity.resourceId)!.push(activity);
+      if (!resourceBuckets.has(ownerId)) {
+        resourceBuckets.set(ownerId, []);
+      }
+      resourceBuckets.get(ownerId)!.push(activity);
     });
 
     resourceBuckets.forEach((list, resourceId) => {
@@ -2466,7 +3022,7 @@ export class PlanningDashboardComponent {
 
         if (this.isServiceStartActivity(activity)) {
           const serviceDate = this.toIsoDate(startDate);
-          const serviceId = this.buildServiceId(activity.resourceId, serviceDate);
+          const serviceId = this.buildServiceId(resourceId, serviceDate);
           const category = resource ? this.resolveServiceCategory(resource) : activity.serviceCategory ?? undefined;
           const templateId = resource?.id ?? activity.serviceTemplateId ?? null;
           currentService = { id: serviceId, category, templateId };
@@ -2551,12 +3107,10 @@ export class PlanningDashboardComponent {
         : null;
     const draft: Activity = {
       id: this.generateActivityId(definition.id),
-      resourceId: event.resource.id,
       title: this.buildActivityTitle(definition),
       start: event.start.toISOString(),
       end: endDate ? endDate.toISOString() : null,
       type: definition.id,
-      participantResourceIds: [event.resource.id],
       serviceCategory: this.resolveServiceCategory(event.resource),
     };
     if (this.definitionHasField(definition, 'from')) {
@@ -2568,7 +3122,10 @@ export class PlanningDashboardComponent {
     if (this.definitionHasField(definition, 'remark')) {
       draft.remark = '';
     }
-    return draft;
+    return this.addParticipantToActivity(draft, event.resource, undefined, undefined, {
+      retainPreviousOwner: false,
+      ownerCategory: this.resourceParticipantCategory(event.resource),
+    });
   }
 
   private handleBaseActivityReposition(event: {
@@ -2576,20 +3133,32 @@ export class PlanningDashboardComponent {
     targetResourceId: string;
     start: Date;
     end: Date | null;
+    participantResourceId?: string | null;
+    participantCategory?: ActivityParticipantCategory | null;
+    sourceResourceId?: string | null;
+    isOwnerSlot?: boolean;
   }): void {
-    const updated: Activity = {
+    const resources = this.stageResourceSignals.base();
+    const targetResource = resources.find((res) => res.id === event.targetResourceId) ?? null;
+    const base: Activity = {
       ...event.activity,
-      resourceId: event.targetResourceId,
       start: event.start.toISOString(),
       end: event.end ? event.end.toISOString() : null,
-      participantResourceIds: [event.targetResourceId],
     };
+    const isOwnerSlot = event.isOwnerSlot ?? true;
+    const participantResourceId = event.participantResourceId ?? event.sourceResourceId ?? null;
+    const category = event.participantCategory ?? this.resourceParticipantCategory(targetResource);
+    const updated = targetResource
+      ? !isOwnerSlot && participantResourceId
+        ? this.moveParticipantToResource(base, participantResourceId, targetResource)
+        : this.addParticipantToActivity(base, targetResource, undefined, undefined, {
+            retainPreviousOwner: false,
+            ownerCategory: category,
+          })
+      : base;
     const normalized = this.applyActivityTypeConstraints(updated);
     this.saveTemplateActivity(normalized);
-    const resource =
-      this.stageResourceSignals.base().find((res) => res.id === event.targetResourceId) ??
-      this.selectedActivityState()?.resource ??
-      null;
+    const resource = targetResource ?? this.selectedActivityState()?.resource ?? null;
     const currentSelection = this.selectedActivityState();
     if (resource && currentSelection?.activity.id === event.activity.id) {
       this.selectedActivityState.set({ activity: normalized, resource });

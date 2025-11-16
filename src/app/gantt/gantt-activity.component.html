@@ -10,6 +10,11 @@
           {{ fromLabel }}
         </span>
       }
+      @if (roleIcon) {
+        <span class="gantt-activity__role-icon" [attr.title]="roleLabel ?? null">
+          <mat-icon [fontIcon]="roleIcon"></mat-icon>
+        </span>
+      }
       @if (showTitle) {
         <span class="gantt-activity__title">{{ effectiveTitle }}</span>
       }
@@ -50,7 +55,16 @@
   (cdkDragStarted)="onDragStarted($event)"
   (cdkDragMoved)="onDragMoved($event)"
   (cdkDragEnded)="onDragEnded($event)"
+  [class.gantt-activity--copy-mode]="dragMode === 'copy'"
 >
+  <button
+    *ngIf="dragMode === 'copy'"
+    type="button"
+    class="gantt-activity__copy-chip"
+    (click)="disableCopyMode($event)"
+  >
+    × Kopieren
+  </button>
   <ng-container [ngTemplateOutlet]="activityContent"></ng-container>
 </div>
 
@@ -100,6 +114,11 @@
             </div>
           </div>
         }
+      </div>
+      <div class="gantt-activity-popover__actions">
+        <button type="button" class="gantt-activity-popover__action" (click)="enableCopyMode()">
+          Vertikal kopieren
+        </button>
       </div>
     </div>
   </div>

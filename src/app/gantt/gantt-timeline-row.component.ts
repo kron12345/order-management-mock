@@ -2,9 +2,11 @@ import { Component, EventEmitter, Input, Output } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { GanttActivityComponent, GanttActivityDragData } from './gantt-activity.component';
 import { Activity } from '../models/activity';
+import { ActivityParticipantCategory } from '../models/activity-ownership';
 import { CdkDragMove, CdkDragStart, CdkDragEnd, DragDropModule } from '@angular/cdk/drag-drop';
 
 export interface GanttBar {
+  id: string;
   activity: Activity;
   left: number;
   width: number;
@@ -13,6 +15,12 @@ export interface GanttBar {
   label?: string;
   showRoute?: boolean;
   dragDisabled?: boolean;
+  participantResourceId?: string;
+  participantCategory?: ActivityParticipantCategory | null;
+  isOwner?: boolean;
+  isMirror?: boolean;
+  roleIcon?: string | null;
+  roleLabel?: string | null;
 }
 
 export interface GanttBackgroundSegment {

@@ -1,7 +1,7 @@
 import { DestroyRef, Injectable, Signal, computed, inject, signal } from '@angular/core';
 import { EMPTY, Observable } from 'rxjs';
 import { catchError, take, tap } from 'rxjs/operators';
-import { Activity } from '../../models/activity';
+import { Activity, ActivityParticipant } from '../../models/activity';
 import { Resource } from '../../models/resource';
 import { addDays } from '../../core/utils/time-math';
 import { ActivityApiService } from '../../core/api/activity-api.service';
@@ -68,8 +68,8 @@ function cloneResources(resources: Resource[]): Resource[] {
 function cloneActivities(activities: Activity[]): Activity[] {
   return activities.map((activity) => ({
     ...activity,
-    participantResourceIds: activity.participantResourceIds
-      ? [...activity.participantResourceIds]
+    participants: activity.participants
+      ? activity.participants.map((participant) => ({ ...participant }))
       : undefined,
     requiredQualifications: activity.requiredQualifications
       ? [...activity.requiredQualifications]
@@ -93,7 +93,9 @@ function cloneTimelineRange(range: PlanningTimelineRange): PlanningTimelineRange
 function cloneStageData(stage: PlanningStageData): PlanningStageData {
   return {
     resources: cloneResources(stage.resources),
-    activities: cloneActivities(stage.activities),
+    activities: cloneActivities(
+      normalizeActivityParticipants(stage.activities, stage.resources),
+    ),
     timelineRange: cloneTimelineRange(stage.timelineRange),
     version: stage.version,
   };
@@ -107,6 +109,44 @@ function normalizeTimelineRange(range: PlanningTimelineRange): PlanningTimelineR
     };
   }
   return range;
+}
+
+function normalizeActivityParticipants(
+  activities: Activity[],
+  resources: Resource[],
+): Activity[] {
+  if (!activities.length) {
+    return activities;
+  }
+  const resourceKindMap = new Map<string, Resource['kind']>();
+  resources.forEach((resource) => resourceKindMap.set(resource.id, resource.kind));
+
+  const ensureKind = (
+    resourceId: string,
+    fallbackKind: Resource['kind'] = 'personnel',
+  ): Resource['kind'] => {
+    return resourceKindMap.get(resourceId) ?? fallbackKind;
+  };
+
+  return activities.map((activity) => {
+    const participantsMap = new Map<string, ActivityParticipant>();
+    const existing = activity.participants ?? [];
+    existing.forEach((participant) => {
+      if (!participant?.resourceId) {
+        return;
+      }
+      participantsMap.set(participant.resourceId, {
+        ...participant,
+        kind: participant.kind ?? ensureKind(participant.resourceId),
+      });
+    });
+
+    const participants = Array.from(participantsMap.values());
+    return {
+      ...activity,
+      participants,
+    };
+  });
 }
 
 @Injectable({ providedIn: 'root' })
@@ -193,9 +233,14 @@ export class PlanningDataService {
     const timeline = normalizeTimelineRange(
       this.createTimelineFromSnapshot(snapshot.timelineRange),
     );
+    const resources = cloneResources(snapshot.resources ?? []);
+    const activities = normalizeActivityParticipants(
+      cloneActivities(snapshot.activities ?? []),
+      resources,
+    );
     const data: PlanningStageData = {
-      resources: cloneResources(snapshot.resources ?? []),
-      activities: cloneActivities(snapshot.activities ?? []),
+      resources,
+      activities,
       timelineRange: timeline,
       version: snapshot.version ?? null,
     };
@@ -275,7 +320,8 @@ export class PlanningDataService {
       if (!stage) {
         return record;
       }
-      const merged = mergeActivityList(stage.activities, upserts, deleteIds);
+      const normalizedUpserts = normalizeActivityParticipants(upserts, stage.resources);
+      const merged = mergeActivityList(stage.activities, normalizedUpserts, deleteIds);
       if (merged === stage.activities) {
         return record;
       }
@@ -333,6 +379,10 @@ export class PlanningDataService {
   private syncActivities(stage: PlanningStageId, diff: ActivityDiff): void {
     if (!diff.hasChanges) {
       return;
+    }
+    const stageData = this.stageDataSignal()[stage];
+    if (diff.upserts && stageData) {
+      diff.upserts = normalizeActivityParticipants(diff.upserts, stageData.resources);
     }
     this.api
       .batchMutateActivities(stage, {
@@ -492,9 +542,6 @@ function activitiesEqual(a: Activity, b: Activity): boolean {
 function normalizeActivityForComparison(activity: Activity): Record<string, unknown> {
   return {
     ...activity,
-    participantResourceIds: activity.participantResourceIds
-      ? [...activity.participantResourceIds].sort()
-      : undefined,
     requiredQualifications: activity.requiredQualifications
       ? [...activity.requiredQualifications].sort()
       : undefined,
@@ -502,6 +549,9 @@ function normalizeActivityForComparison(activity: Activity): Record<string, unkn
       ? [...activity.assignedQualifications].sort()
       : undefined,
     workRuleTags: activity.workRuleTags ? [...activity.workRuleTags].sort() : undefined,
+    participants: activity.participants
+      ? [...activity.participants].sort((a, b) => a.resourceId.localeCompare(b.resourceId))
+      : undefined,
     attributes: sortObject(activity.attributes ?? null),
     meta: sortObject(activity.meta ?? null),
   };

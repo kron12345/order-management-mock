@@ -241,6 +241,7 @@
                   (serviceAssignmentRequested)="handleServiceAssignRequest($event)"
                   (activityCreateRequested)="handleActivityCreate($event)"
                   (activityEditRequested)="handleActivityEdit($event)"
+                  (activityCopyRequested)="handleActivityCopy($event)"
                   (activityRepositionRequested)="handleActivityReposition($event)"
                   (activitySelectionToggle)="handleActivitySelectionToggle($event)"
                   (removeResource)="removeResourceFromBoard(board.id, $event)"
@@ -361,50 +362,58 @@
         <form [formGroup]="activityForm" class="planning-side-panels__form" (ngSubmit)="saveSelectedActivityEdits()">
           <input type="hidden" formControlName="type" />
 
-          <div class="planning-type-editor">
-            <div class="planning-type-editor__type">
-              @if (activeTypePickerGroup(); as activeGroup) {
-                <div class="planning-type-picker">
-                  <div class="planning-type-picker__header">
-                    <span class="planning-type-picker__title">Typ</span>
-                    <span class="planning-type-picker__current">
-                      {{ selectedActivityDefinition()?.label ?? 'Bitte wählen' }}
-                    </span>
-                  </div>
-                  <div class="planning-type-picker__tabs" *ngIf="activityTypePickerGroups().length > 1">
-                    <button
-                      type="button"
-                      class="planning-type-picker__tab"
-                      *ngFor="let group of activityTypePickerGroups()"
-                      [class.is-active]="group.id === activeGroup.id"
-                      (click)="setActivityTypePickerGroup(group.id)"
-                    >
-                      <mat-icon [fontIcon]="group.icon"></mat-icon>
-                      <span>{{ group.label }}</span>
-                      <small>{{ group.items.length }}</small>
-                    </button>
-                  </div>
-                  <div class="planning-type-picker__list" role="listbox" aria-label="Aktivitätstyp auswählen">
-                    <button
-                      type="button"
-                      class="planning-type-picker__list-item"
-                      *ngFor="let definition of activeGroup.items; trackBy: trackActivityType"
-                      [class.is-selected]="isActivityTypeSelected(definition.id)"
-                      (click)="selectActivityType(definition.id)"
-                    >
-                      <span class="planning-type-picker__option-title">{{ definition.label }}</span>
-                      <span class="planning-type-picker__option-description">
-                        {{ definition.description ?? 'Ohne Beschreibung' }}
-                      </span>
-                    </button>
-                  </div>
-                </div>
-              } @else {
-                <ng-container *ngTemplateOutlet="fallbackTypeSelect"></ng-container>
-              }
+          <div class="planning-type-summary planning-side-panels__full">
+            <div class="planning-type-summary__row">
+              <span class="planning-type-summary__chip">
+                {{ selectedActivityDefinition()?.label ?? 'Aktivitätstyp wählen' }}
+              </span>
+              <button
+                type="button"
+                class="planning-type-summary__change"
+                (click)="openTypePicker()"
+              >
+                Typ ändern…
+              </button>
             </div>
+          </div>
 
-            <div class="planning-type-editor__fields">
+          <section
+            class="planning-type-quick planning-side-panels__full"
+            *ngIf="isSelectedActivityPending() && quickActivityTypes().length > 0"
+          >
+            <div class="planning-type-quick__label">
+              Typ-Schnellauswahl
+            </div>
+            <div class="planning-type-quick__chips">
+              <button
+                type="button"
+                class="planning-type-quick__chip"
+                *ngFor="let definition of quickActivityTypes(); trackBy: trackActivityType"
+                [class.is-selected]="isActivityTypeSelected(definition.id)"
+                (click)="selectActivityType(definition.id)"
+              >
+                <span class="planning-type-quick__chip-label">
+                  {{ definition.label }}
+                </span>
+              </button>
+              <button
+                type="button"
+                class="planning-type-quick__chip planning-type-quick__chip--all"
+                (click)="openTypePicker()"
+              >
+                Alle Typen…
+              </button>
+            </div>
+          </section>
+
+          <section class="planning-section planning-section--time planning-side-panels__full">
+            <header class="planning-section__header">
+              <div class="planning-section__title">Zeit</div>
+              <div class="planning-section__subtitle">
+                Start, Ende, Dauer und Andocken.
+              </div>
+            </header>
+            <div class="planning-type-editor__fields planning-type-editor__fields--full">
               <div class="planning-attribute-grid">
                 <mat-form-field appearance="outline" class="planning-attribute-grid__item">
                   <mat-label>Start</mat-label>
@@ -444,35 +453,89 @@
                 </mat-form-field>
               </div>
 
-              <div class="planning-attribute-grid__duration" *ngIf="activityForm.value.start && activityForm.value.end">
-                Dauer:
-                <span class="planning-attribute-grid__duration-value">
-                  {{ activityForm.value.start | duration : activityForm.value.end }}
-                </span>
-                <span class="planning-attribute-grid__duration-actions">
-                  <button mat-stroked-button type="button" (click)="adjustFormEndBy(-30)">-30</button>
-                  <button mat-stroked-button type="button" (click)="adjustFormEndBy(-15)">-15</button>
-                  <button mat-stroked-button type="button" (click)="adjustFormEndBy(15)">+15</button>
-                  <button mat-stroked-button type="button" (click)="adjustFormEndBy(30)">+30</button>
-                </span>
+              <div class="planning-time-toolbar">
+                <button
+                  mat-stroked-button
+                  type="button"
+                  class="planning-time-toolbar__btn"
+                  aria-label="An vorherige Aktivität andocken"
+                  (click)="snapFormToPrevious()"
+                >
+                  <mat-icon fontIcon="chevron_left"></mat-icon>
+                </button>
+                <button
+                  mat-stroked-button
+                  type="button"
+                  class="planning-time-toolbar__btn"
+                  (click)="shiftFormBy(-30)"
+                >
+                  -30
+                </button>
+                <button
+                  mat-stroked-button
+                  type="button"
+                  class="planning-time-toolbar__btn"
+                  (click)="shiftFormBy(-5)"
+                >
+                  -5
+                </button>
+                <button
+                  mat-stroked-button
+                  type="button"
+                  class="planning-time-toolbar__btn planning-time-toolbar__btn--gap"
+                  (click)="fillGapForForm()"
+                >
+                  Lücke
+                </button>
+                <button
+                  mat-stroked-button
+                  type="button"
+                  class="planning-time-toolbar__btn"
+                  (click)="shiftFormBy(5)"
+                >
+                  +5
+                </button>
+                <button
+                  mat-stroked-button
+                  type="button"
+                  class="planning-time-toolbar__btn"
+                  (click)="shiftFormBy(10)"
+                >
+                  +10
+                </button>
+                <button
+                  mat-stroked-button
+                  type="button"
+                  class="planning-time-toolbar__btn"
+                  (click)="snapFormToNext()"
+                >
+                  <mat-icon fontIcon="chevron_right"></mat-icon>
+                </button>
               </div>
+            </div>
+          </section>
 
-              <div class="planning-time-tools">
-                <div class="planning-time-tools__row">
-                  <span>Horizontal:</span>
-                  <button mat-stroked-button type="button" (click)="shiftFormBy(-30)">-30</button>
-                  <button mat-stroked-button type="button" (click)="shiftFormBy(-5)">-5</button>
-                  <button mat-stroked-button type="button" (click)="shiftFormBy(5)">+5</button>
-                  <button mat-stroked-button type="button" (click)="shiftFormBy(30)">+30</button>
-                </div>
-                <div class="planning-time-tools__row">
-                  <span>Andocken:</span>
-                  <button mat-stroked-button type="button" (click)="snapFormToPrevious()">« Vorherige</button>
-                  <button mat-stroked-button type="button" (click)="snapFormToNext()">Nächste »</button>
-                  <button mat-stroked-button type="button" (click)="fillGapForForm()">Lücke</button>
-                </div>
+          <section class="planning-section planning-section--details planning-side-panels__full">
+            <header class="planning-section__header planning-section__header--clickable" (click)="toggleActivityDetails()">
+              <div class="planning-section__title">Details</div>
+              <div class="planning-section__subtitle">
+                Von/Nach und Bemerkung.
               </div>
-
+              <button
+                type="button"
+                class="planning-section__toggle"
+                [attr.aria-expanded]="activityDetailsOpen()"
+              >
+                <mat-icon
+                  class="planning-section__toggle-icon"
+                  [fontIcon]="activityDetailsOpen() ? 'expand_less' : 'expand_more'"
+                ></mat-icon>
+              </button>
+            </header>
+            <div
+              class="planning-section__body"
+              [class.is-collapsed]="!activityDetailsOpen()"
+            >
               <mat-form-field
                 appearance="outline"
                 class="planning-type-editor__remark"
@@ -481,53 +544,112 @@
                 <mat-label>Bemerkung</mat-label>
                 <textarea matInput rows="2" formControlName="remark"></textarea>
               </mat-form-field>
+
             </div>
+          </section>
+          <div class="planning-panel__actions planning-side-panels__full">
+            <button
+              mat-button
+              type="button"
+              *ngIf="isSelectedActivityPending()"
+              (click)="resetPendingActivityEdits()"
+            >
+              Rückgängig
+            </button>
+            <button mat-button type="button" (click)="clearSelectedActivity()">
+              {{ isSelectedActivityPending() ? 'Panel schließen' : 'Abbrechen' }}
+            </button>
+            <button mat-button color="warn" type="button" (click)="deleteSelectedActivity()">
+              Löschen
+            </button>
+            <button
+              mat-flat-button
+              color="primary"
+              type="submit"
+              [disabled]="activityForm.invalid || (!isSelectedActivityPending() && activityForm.pristine)"
+            >
+              {{ isSelectedActivityPending() ? 'Anlegen' : 'Speichern' }}
+            </button>
           </div>
-
-          <ng-template #fallbackTypeSelect>
-            <mat-form-field appearance="outline" class="planning-type-editor__fallback">
-              <mat-label>Typ</mat-label>
-              <mat-select formControlName="type">
-                <mat-option *ngFor="let option of activityCreationOptions(); trackBy: trackActivityType" [value]="option.id">
-                  {{ option.label }}
-                </mat-option>
-              </mat-select>
-            </mat-form-field>
-          </ng-template>
         </form>
-        <div class="planning-side-panels__buttons">
-          <button mat-stroked-button type="button" (click)="addParticipantsToActiveBoard()">
-            Teilnehmende Ressourcen hinzufügen
-          </button>
-          <button mat-stroked-button type="button" (click)="openBoardForParticipants()">
-            Neue Plantafel mit Teilnehmern
-          </button>
+
+        <div class="planning-type-overlay" *ngIf="isTypePickerOpen()">
+          <div class="planning-type-overlay__backdrop" (click)="closeTypePicker()"></div>
+          <section class="planning-type-overlay__panel">
+            <header class="planning-type-overlay__header">
+              <div>
+                <div class="planning-type-overlay__title">Aktivitätstyp wählen</div>
+                <div class="planning-type-overlay__subtitle">
+                  Für {{ selected.resource.name }}
+                </div>
+              </div>
+              <button
+                mat-icon-button
+                type="button"
+                aria-label="Typauswahl schließen"
+                (click)="closeTypePicker()"
+              >
+                <mat-icon fontIcon="close"></mat-icon>
+              </button>
+            </header>
+            <div class="planning-type-overlay__content">
+              <ng-template [ngTemplateOutlet]="typePickerContent"></ng-template>
+            </div>
+          </section>
         </div>
 
-        <div class="planning-panel__actions">
-          <button
-            mat-button
-            type="button"
-            *ngIf="isSelectedActivityPending()"
-            (click)="resetPendingActivityEdits()"
-          >
-            Rückgängig
-          </button>
-          <button mat-button type="button" (click)="clearSelectedActivity()">
-            {{ isSelectedActivityPending() ? 'Panel schließen' : 'Abbrechen' }}
-          </button>
-          <button mat-button color="warn" type="button" (click)="deleteSelectedActivity()">
-            Löschen
-          </button>
-          <button
-            mat-flat-button
-            color="primary"
-            type="submit"
-            [disabled]="activityForm.invalid || (!isSelectedActivityPending() && activityForm.pristine)"
-          >
-            {{ isSelectedActivityPending() ? 'Anlegen' : 'Speichern' }}
-          </button>
-        </div>
+        <ng-template #typePickerContent>
+          @if (activeTypePickerGroup(); as activeGroup) {
+            <div class="planning-type-picker">
+              <div class="planning-type-picker__header">
+                <span class="planning-type-picker__title">Typ</span>
+                <span class="planning-type-picker__current">
+                  {{ selectedActivityDefinition()?.label ?? 'Bitte wählen' }}
+                </span>
+              </div>
+              <div class="planning-type-picker__tabs" *ngIf="activityTypePickerGroups().length > 1">
+                <button
+                  type="button"
+                  class="planning-type-picker__tab"
+                  *ngFor="let group of activityTypePickerGroups()"
+                  [class.is-active]="group.id === activeGroup.id"
+                  (click)="setActivityTypePickerGroup(group.id)"
+                >
+                  <mat-icon [fontIcon]="group.icon"></mat-icon>
+                  <span>{{ group.label }}</span>
+                  <small>{{ group.items.length }}</small>
+                </button>
+              </div>
+              <div class="planning-type-picker__list" role="listbox" aria-label="Aktivitätstyp auswählen">
+                <button
+                  type="button"
+                  class="planning-type-picker__list-item"
+                  *ngFor="let definition of activeGroup.items; trackBy: trackActivityType"
+                  [class.is-selected]="isActivityTypeSelected(definition.id)"
+                  (click)="selectActivityTypeFromPicker(definition.id)"
+                >
+                  <span class="planning-type-picker__option-title">{{ definition.label }}</span>
+                  <span class="planning-type-picker__option-description">
+                    {{ definition.description ?? 'Ohne Beschreibung' }}
+                  </span>
+                </button>
+              </div>
+            </div>
+          } @else {
+            <ng-template [ngTemplateOutlet]="fallbackTypeSelect"></ng-template>
+          }
+        </ng-template>
+
+        <ng-template #fallbackTypeSelect>
+          <mat-form-field appearance="outline" class="planning-type-editor__fallback">
+            <mat-label>Typ</mat-label>
+            <mat-select formControlName="type">
+              <mat-option *ngFor="let option of activityCreationOptions(); trackBy: trackActivityType" [value]="option.id">
+                {{ option.label }}
+              </mat-option>
+            </mat-select>
+          </mat-form-field>
+        </ng-template>
       </div>
     </div>
   </section>

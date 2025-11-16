@@ -1,3 +1,5 @@
+import { ActivityParticipantRole } from './activity';
+
 export interface PlanWeekTemplate {
   id: string;
   label: string;
@@ -23,16 +25,21 @@ export interface PlanWeekSlice {
   endIso: string;
 }
 
+export interface PlanWeekActivityParticipant {
+  resourceId: string;
+  role?: ActivityParticipantRole;
+}
+
 export interface PlanWeekActivity {
   id: string;
   templateId: string;
-  resourceId: string;
   title: string;
   startIso: string;
   endIso: string;
   type?: string;
   remark?: string;
   attributes?: Record<string, unknown>;
+  participants: PlanWeekActivityParticipant[];
 }
 
 export interface PlanWeekValidity {
