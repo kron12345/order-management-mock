@@ -1,352 +1,100 @@
-import {
-  ChangeDetectionStrategy,
-  Component,
-  computed,
-  effect,
-  inject,
-  signal,
-} from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import {
-  FormBuilder,
-  FormGroup,
-  ReactiveFormsModule,
-  Validators,
-} from '@angular/forms';
-import { MatListModule } from '@angular/material/list';
-import { MatFormFieldModule } from '@angular/material/form-field';
-import { MatSelectModule } from '@angular/material/select';
-import { MatInputModule } from '@angular/material/input';
-import { MatButtonModule } from '@angular/material/button';
-import { MatIconModule } from '@angular/material/icon';
-import { MatSlideToggleModule } from '@angular/material/slide-toggle';
-import { MATERIAL_IMPORTS } from '../../core/material.imports.imports';
 import { PlanningStoreService } from '../../shared/planning-store.service';
 import { TransferEdge, TransferMode, TransferNode } from '../../shared/planning-types';
+import { CustomAttributeService } from '../../core/services/custom-attribute.service';
+import {
+  AttributeEntityEditorComponent,
+  AttributeEntityRecord,
+  BulkApplyEvent,
+  EntitySaveEvent,
+} from '../../shared/components/attribute-entity-editor/attribute-entity-editor.component';
+import { mergeAttributeEntry } from '../../shared/utils/topology-attribute.helpers';
 
-const uid = () => crypto.randomUUID();
+const DEFAULT_FALLBACK = {
+  fromKind: 'OP',
+  fromRef: '',
+  toKind: 'OP',
+  toRef: '',
+  mode: 'WALK',
+  avgDurationSec: '',
+  distanceM: '',
+  bidirectional: 'false',
+};
+
 const MODES: TransferMode[] = ['WALK', 'SHUTTLE', 'INTERNAL'];
-
-interface NodeOption {
-  label: string;
-  value: string;
-}
 
 @Component({
   selector: 'app-transfer-edge-editor',
   standalone: true,
-  imports: [
-    CommonModule,
-    ReactiveFormsModule,
-    MatListModule,
-    MatFormFieldModule,
-    MatSelectModule,
-    MatInputModule,
-    MatButtonModule,
-    MatIconModule,
-    MatSlideToggleModule,
-    ...MATERIAL_IMPORTS,
-  ],
+  imports: [CommonModule, AttributeEntityEditorComponent],
   template: `
-    <div class="editor">
-      <section class="editor__list">
-        <header>
-          <h2>Transfer Edges</h2>
-          <span>{{ edges().length }} Einträge</span>
-        </header>
-        <mat-selection-list [multiple]="false">
-          @for (edge of edges(); track edge.transferId) {
-            <mat-list-option
-              [selected]="selectedId() === edge.transferId"
-              (click)="select(edge)"
-            >
-              <div mat-line>{{ formatNode(edge.from) }} → {{ formatNode(edge.to) }}</div>
-              <div mat-line class="secondary">{{ edge.mode }} · {{ edge.avgDurationSec || '—' }}s</div>
-            </mat-list-option>
-          }
-        </mat-selection-list>
-        <button mat-stroked-button color="primary" type="button" (click)="createNew()">
-          <mat-icon>add</mat-icon>
-          Neu anlegen
-        </button>
-      </section>
-
-      <section class="editor__detail">
-        <form [formGroup]="form" (ngSubmit)="save()">
-          <div class="form-grid">
-            <mat-form-field appearance="outline">
-              <mat-label>Von - Typ</mat-label>
-              <mat-select formControlName="fromKind" required>
-                <mat-option value="OP">Operational Point</mat-option>
-                <mat-option value="PERSONNEL_SITE">Personnel Site</mat-option>
-                <mat-option value="REPLACEMENT_STOP">Replacement Stop</mat-option>
-              </mat-select>
-            </mat-form-field>
-
-            <mat-form-field appearance="outline">
-              <mat-label>Von - Knoten</mat-label>
-              <mat-select formControlName="fromNode" required>
-                @for (option of fromNodeOptions(); track option.value) {
-                  <mat-option [value]="option.value">{{ option.label }}</mat-option>
-                }
-              </mat-select>
-            </mat-form-field>
-
-            <mat-form-field appearance="outline">
-              <mat-label>Nach - Typ</mat-label>
-              <mat-select formControlName="toKind" required>
-                <mat-option value="OP">Operational Point</mat-option>
-                <mat-option value="PERSONNEL_SITE">Personnel Site</mat-option>
-                <mat-option value="REPLACEMENT_STOP">Replacement Stop</mat-option>
-              </mat-select>
-            </mat-form-field>
-
-            <mat-form-field appearance="outline">
-              <mat-label>Nach - Knoten</mat-label>
-              <mat-select formControlName="toNode" required>
-                @for (option of toNodeOptions(); track option.value) {
-                  <mat-option [value]="option.value">{{ option.label }}</mat-option>
-                }
-              </mat-select>
-            </mat-form-field>
-
-            <mat-form-field appearance="outline">
-              <mat-label>Modus</mat-label>
-              <mat-select formControlName="mode" required>
-                @for (mode of modes; track mode) {
-                  <mat-option [value]="mode">{{ mode }}</mat-option>
-                }
-              </mat-select>
-            </mat-form-field>
-
-            <mat-form-field appearance="outline">
-              <mat-label>Dauer (Sek.)</mat-label>
-              <input type="number" matInput formControlName="avgDurationSec" />
-            </mat-form-field>
-
-            <mat-form-field appearance="outline">
-              <mat-label>Distanz (Meter)</mat-label>
-              <input type="number" matInput formControlName="distanceM" />
-            </mat-form-field>
-
-            <mat-slide-toggle formControlName="bidirectional" color="primary">
-              Bidirektional
-            </mat-slide-toggle>
-          </div>
-
-          <div class="actions">
-            <span class="error" *ngIf="error()">{{ error() }}</span>
-            <button mat-stroked-button type="button" (click)="resetForm()">Zurücksetzen</button>
-            <button mat-flat-button color="primary" type="submit">
-              {{ selectedId() ? 'Speichern' : 'Anlegen' }}
-            </button>
-            <button
-              mat-icon-button
-              color="warn"
-              type="button"
-              (click)="deleteSelected()"
-              [disabled]="!selectedId()"
-            >
-              <mat-icon>delete</mat-icon>
-            </button>
-          </div>
-        </form>
-      </section>
-    </div>
+    <app-attribute-entity-editor
+      [title]="'Transfer Edges'"
+      [entities]="entityRecords()"
+      [attributeDefinitions]="attributeDefinitions()"
+      [defaultFallbackValues]="defaultFallback"
+      [numericKeys]="numericKeys"
+      [detailError]="error()"
+      (saveEntity)="handleSave($event)"
+      (deleteEntities)="handleDelete($event)"
+      (bulkApply)="handleBulkApply($event)"
+    />
   `,
-  styles: [
-    `
-      .editor {
-        display: grid;
-        grid-template-columns: 320px 1fr;
-        gap: 24px;
-        padding: 24px;
-      }
-
-      mat-selection-list {
-        max-height: 320px;
-        overflow: auto;
-        border: 1px solid rgba(0, 0, 0, 0.1);
-        border-radius: 8px;
-      }
-
-      .secondary {
-        font-size: 12px;
-        opacity: 0.7;
-      }
-
-      .editor__detail {
-        padding: 16px;
-        border-radius: 12px;
-        border: 1px solid rgba(0, 0, 0, 0.08);
-        background: rgba(255, 255, 255, 0.9);
-      }
-
-      .form-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-        gap: 16px;
-      }
-
-      .actions {
-        margin-top: 16px;
-        display: flex;
-        gap: 12px;
-        align-items: center;
-      }
-
-      .error {
-        color: #d32f2f;
-        font-size: 12px;
-        flex: 1;
-      }
-
-      @media (max-width: 960px) {
-        .editor {
-          grid-template-columns: 1fr;
-        }
-      }
-    `,
-  ],
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class TransferEdgeEditorComponent {
   private readonly store = inject(PlanningStoreService);
-  private readonly fb = inject(FormBuilder);
+  private readonly customAttributes = inject(CustomAttributeService);
 
-  readonly modes = MODES;
+  readonly attributeDefinitions = computed(() =>
+    this.customAttributes.list('topology-transfer-edges'),
+  );
+  readonly entityRecords = computed<AttributeEntityRecord[]>(() =>
+    this.store.transferEdges().map((edge) => ({
+      id: edge.transferId,
+      label: `${this.describeNode(edge.from)} → ${this.describeNode(edge.to)}`,
+      secondaryLabel: `${edge.mode} · ${edge.avgDurationSec ?? '—'} s`,
+      attributes: edge.attributes ?? [],
+      fallbackValues: {
+        fromKind: edge.from.kind,
+        fromRef: this.extractNodeRef(edge.from),
+        toKind: edge.to.kind,
+        toRef: this.extractNodeRef(edge.to),
+        mode: edge.mode,
+        avgDurationSec: edge.avgDurationSec != null ? String(edge.avgDurationSec) : '',
+        distanceM: edge.distanceM != null ? String(edge.distanceM) : '',
+        bidirectional: edge.bidirectional ? 'true' : 'false',
+      },
+    })),
+  );
 
-  readonly operationalPoints = computed(() =>
-    [...this.store.operationalPoints()].sort((a, b) => a.name.localeCompare(b.name)),
-  );
-  readonly personnelSites = computed(() =>
-    [...this.store.personnelSites()].sort((a, b) => a.name.localeCompare(b.name)),
-  );
-  readonly replacementStops = computed(() =>
-    [...this.store.replacementStops()].sort((a, b) => a.name.localeCompare(b.name)),
-  );
-  readonly edges = computed(() =>
-    [...this.store.transferEdges()].sort((a, b) =>
-      this.formatNode(a.from).localeCompare(this.formatNode(b.from)),
-    ),
-  );
-
-  readonly selectedId = signal<string | null>(null);
+  readonly defaultFallback = DEFAULT_FALLBACK;
+  readonly numericKeys = ['avgDurationSec', 'distanceM'];
   readonly error = signal<string | null>(null);
 
-  readonly form: FormGroup = this.fb.group({
-    fromKind: ['OP', Validators.required],
-    fromNode: ['', Validators.required],
-    toKind: ['OP', Validators.required],
-    toNode: ['', Validators.required],
-    mode: ['WALK', Validators.required],
-    avgDurationSec: [null],
-    distanceM: [null],
-    bidirectional: [true],
-  });
-
-  private readonly syncEffect = effect(
-    () => {
-      const id = this.selectedId();
-      if (!id) {
-        return;
-      }
-      const edge = this.store.transferEdges().find((item) => item.transferId === id);
-      if (!edge) {
-        this.selectedId.set(null);
-        this.resetForm();
-        return;
-      }
-      this.form.patchValue(
-        {
-          fromKind: edge.from.kind,
-          fromNode: this.nodeValue(edge.from),
-          toKind: edge.to.kind,
-          toNode: this.nodeValue(edge.to),
-          mode: edge.mode,
-          avgDurationSec: edge.avgDurationSec ?? null,
-          distanceM: edge.distanceM ?? null,
-          bidirectional: edge.bidirectional,
-        },
-        { emitEvent: false },
-      );
-      this.error.set(null);
-    },
-    { allowSignalWrites: true },
-  );
-
-  select(edge: TransferEdge): void {
-    this.selectedId.set(edge.transferId);
-  }
-
-  createNew(): void {
-    this.selectedId.set(null);
-    this.form.reset({
-      fromKind: 'OP',
-      fromNode: '',
-      toKind: 'OP',
-      toNode: '',
-      mode: 'WALK',
-      avgDurationSec: null,
-      distanceM: null,
-      bidirectional: true,
-    });
-    this.error.set(null);
-  }
-
-  resetForm(): void {
-    const id = this.selectedId();
-    if (!id) {
-      this.createNew();
-      return;
-    }
-    const edge = this.store.transferEdges().find((item) => item.transferId === id);
-    if (edge) {
-      this.form.patchValue(
-        {
-          fromKind: edge.from.kind,
-          fromNode: this.nodeValue(edge.from),
-          toKind: edge.to.kind,
-          toNode: this.nodeValue(edge.to),
-          mode: edge.mode,
-          avgDurationSec: edge.avgDurationSec ?? null,
-          distanceM: edge.distanceM ?? null,
-          bidirectional: edge.bidirectional,
-        },
-        { emitEvent: false },
-      );
-    }
-    this.error.set(null);
-  }
-
-  save(): void {
-    if (this.form.invalid) {
-      this.form.markAllAsTouched();
-      return;
-    }
-    const value = this.form.getRawValue();
-    const fromNode = this.parseNode(value.fromKind, value.fromNode);
-    const toNode = this.parseNode(value.toKind, value.toNode);
-    if (this.nodesEqual(fromNode, toNode)) {
-      this.error.set('Von- und Nach-Knoten müssen unterschiedlich sein.');
+  handleSave(event: EntitySaveEvent): void {
+    const core = this.deriveCoreFields(event.payload.values);
+    if (!core.ok) {
+      this.error.set(core.error);
       return;
     }
     const payload: TransferEdge = {
-      transferId: this.selectedId() ?? uid(),
-      from: fromNode,
-      to: toNode,
-      mode: value.mode,
-      avgDurationSec: value.avgDurationSec != null ? Number(value.avgDurationSec) : undefined,
-      distanceM: value.distanceM != null ? Number(value.distanceM) : undefined,
-      bidirectional: !!value.bidirectional,
+      transferId: event.entityId ?? uid(),
+      from: core.from,
+      to: core.to,
+      mode: core.mode,
+      avgDurationSec: core.avgDurationSec,
+      distanceM: core.distanceM,
+      bidirectional: core.bidirectional,
+      attributes: event.payload.attributes,
     };
 
     try {
-      if (this.selectedId()) {
+      if (event.entityId) {
         this.store.updateTransferEdge(payload.transferId, payload);
       } else {
         this.store.addTransferEdge(payload);
-        this.selectedId.set(payload.transferId);
       }
       this.error.set(null);
     } catch (err) {
@@ -354,71 +102,129 @@ export class TransferEdgeEditorComponent {
     }
   }
 
-  deleteSelected(): void {
-    const id = this.selectedId();
-    if (!id) {
-      return;
-    }
-    this.store.removeTransferEdge(id);
-    this.selectedId.set(null);
-    this.resetForm();
+  handleDelete(ids: string[]): void {
+    ids.forEach((id) => this.store.removeTransferEdge(id));
   }
 
-  formatNode(node: TransferNode): string {
+  handleBulkApply(event: BulkApplyEvent): void {
+    const definitions = this.attributeDefinitions();
+    event.entityIds.forEach((id) => {
+      const edge = this.findEdge(id);
+      if (!edge) {
+        return;
+      }
+      const merged = mergeAttributeEntry(definitions, edge.attributes, {
+        key: event.key,
+        value: event.value,
+        validFrom: event.validFrom || undefined,
+      });
+      this.store.updateTransferEdge(id, { ...edge, attributes: merged });
+    });
+  }
+
+  private deriveCoreFields(values: Record<string, string>):
+    | {
+        ok: true;
+        from: TransferNode;
+        to: TransferNode;
+        mode: TransferMode;
+        avgDurationSec?: number;
+        distanceM?: number;
+        bidirectional: boolean;
+      }
+    | { ok: false; error: string } {
+    const from = this.parseNode(values['fromKind'], values['fromRef']);
+    if (!from.ok) {
+      return from;
+    }
+    const to = this.parseNode(values['toKind'], values['toRef']);
+    if (!to.ok) {
+      return to;
+    }
+    const mode = values['mode']?.trim().toUpperCase() as TransferMode | undefined;
+    if (!mode || !MODES.includes(mode)) {
+      return { ok: false, error: 'Modus ist ungültig.' };
+    }
+    const durationRaw = values['avgDurationSec']?.trim() ?? '';
+    const distanceRaw = values['distanceM']?.trim() ?? '';
+    const avgDurationSec = durationRaw ? Number(durationRaw) : undefined;
+    const distanceM = distanceRaw ? Number(distanceRaw) : undefined;
+    if (durationRaw && !Number.isFinite(avgDurationSec)) {
+      return { ok: false, error: 'Dauer muss numerisch sein.' };
+    }
+    if (distanceRaw && !Number.isFinite(distanceM)) {
+      return { ok: false, error: 'Distanz muss numerisch sein.' };
+    }
+    const bidirectional = this.parseBoolean(values['bidirectional']);
+
+    return {
+      ok: true,
+      from: from.node,
+      to: to.node,
+      mode,
+      avgDurationSec,
+      distanceM,
+      bidirectional,
+    };
+  }
+
+  private parseNode(
+    kindRaw: string | undefined,
+    refRaw: string | undefined,
+  ): { ok: false; error: string } | { ok: true; node: TransferNode } {
+    const kind = (kindRaw ?? '').trim().toUpperCase();
+    const ref = refRaw?.trim();
+    if (!kind || !ref) {
+      return { ok: false, error: 'Knotenangaben sind unvollständig.' };
+    }
+    switch (kind) {
+      case 'OP': {
+        if (!this.findOperationalPointByUniqueId(ref)) {
+          return { ok: false, error: `Operational Point ${ref} existiert nicht.` };
+        }
+        return { ok: true, node: { kind: 'OP', uniqueOpId: ref } };
+      }
+      case 'PERSONNEL_SITE': {
+        if (!this.findPersonnelSite(ref)) {
+          return { ok: false, error: `Personnel Site ${ref} existiert nicht.` };
+        }
+        return { ok: true, node: { kind: 'PERSONNEL_SITE', siteId: ref } };
+      }
+      case 'REPLACEMENT_STOP': {
+        if (!this.findReplacementStop(ref)) {
+          return { ok: false, error: `Replacement Stop ${ref} existiert nicht.` };
+        }
+        return { ok: true, node: { kind: 'REPLACEMENT_STOP', replacementStopId: ref } };
+      }
+      default:
+        return { ok: false, error: `Unbekannter Knotentyp ${kind}.` };
+    }
+  }
+
+  private parseBoolean(value: string | undefined): boolean {
+    if (!value) {
+      return false;
+    }
+    const normalized = value.trim().toLowerCase();
+    return normalized === 'true' || normalized === '1' || normalized === 'yes' || normalized === 'ja';
+  }
+
+  private describeNode(node: TransferNode): string {
     switch (node.kind) {
       case 'OP':
-        return `OP ${node.uniqueOpId}`;
-      case 'PERSONNEL_SITE':
-        return `Site ${node.siteId}`;
-      case 'REPLACEMENT_STOP':
-        return `SEV ${node.replacementStopId}`;
+        return this.findOperationalPointByUniqueId(node.uniqueOpId)?.name ?? node.uniqueOpId;
+      case 'PERSONNEL_SITE': {
+        const site = this.findPersonnelSite(node.siteId);
+        return `Site ${site?.name ?? node.siteId}`;
+      }
+      case 'REPLACEMENT_STOP': {
+        const stop = this.findReplacementStop(node.replacementStopId);
+        return stop?.name ?? node.replacementStopId;
+      }
     }
   }
 
-  fromNodeOptions(): NodeOption[] {
-    return this.buildNodeOptions((this.form.get('fromKind')?.value as string) ?? '');
-  }
-
-  toNodeOptions(): NodeOption[] {
-    return this.buildNodeOptions((this.form.get('toKind')?.value as string) ?? '');
-  }
-
-  private buildNodeOptions(kind: string): NodeOption[] {
-    switch (kind) {
-      case 'OP':
-        return this.operationalPoints().map((op) => ({
-          value: op.uniqueOpId,
-          label: `${op.name} (${op.uniqueOpId})`,
-        }));
-      case 'PERSONNEL_SITE':
-        return this.personnelSites().map((site) => ({
-          value: site.siteId,
-          label: `${site.name}`,
-        }));
-      case 'REPLACEMENT_STOP':
-        return this.replacementStops().map((stop) => ({
-          value: stop.replacementStopId,
-          label: stop.name,
-        }));
-      default:
-        return [];
-    }
-  }
-
-  private parseNode(kind: string, value: string): TransferNode {
-    switch (kind) {
-      case 'OP':
-        return { kind: 'OP', uniqueOpId: value };
-      case 'PERSONNEL_SITE':
-        return { kind: 'PERSONNEL_SITE', siteId: value };
-      case 'REPLACEMENT_STOP':
-        return { kind: 'REPLACEMENT_STOP', replacementStopId: value };
-      default:
-        throw new Error(`Unsupported node kind "${kind}"`);
-    }
-  }
-
-  private nodeValue(node: TransferNode): string {
+  private extractNodeRef(node: TransferNode): string {
     switch (node.kind) {
       case 'OP':
         return node.uniqueOpId;
@@ -429,18 +235,26 @@ export class TransferEdgeEditorComponent {
     }
   }
 
-  private nodesEqual(a: TransferNode, b: TransferNode): boolean {
-    if (a.kind !== b.kind) {
-      return false;
-    }
-    switch (a.kind) {
-      case 'OP':
-        return a.uniqueOpId === (b as { uniqueOpId: string }).uniqueOpId;
-      case 'PERSONNEL_SITE':
-        return a.siteId === (b as { siteId: string }).siteId;
-      case 'REPLACEMENT_STOP':
-        return a.replacementStopId === (b as { replacementStopId: string }).replacementStopId;
-    }
-    return false;
+  private findOperationalPointByUniqueId(uniqueOpId: string) {
+    return this.store.operationalPoints().find((op) => op.uniqueOpId === uniqueOpId);
   }
+
+  private findPersonnelSite(id: string) {
+    return this.store.personnelSites().find((site) => site.siteId === id);
+  }
+
+  private findReplacementStop(id: string) {
+    return this.store.replacementStops().find((stop) => stop.replacementStopId === id);
+  }
+
+  private findEdge(id: string): TransferEdge | null {
+    return this.store.transferEdges().find((edge) => edge.transferId === id) ?? null;
+  }
+}
+
+function uid(): string {
+  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
+    return crypto.randomUUID();
+  }
+  return `tmp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }

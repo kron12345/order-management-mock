@@ -1,4 +1,5 @@
-import { Injectable, Signal, computed, signal } from '@angular/core';
+import { Injectable, Signal, computed, inject, signal } from '@angular/core';
+import { firstValueFrom, forkJoin, Observable } from 'rxjs';
 import {
   OperationalPoint,
   SectionOfLine,
@@ -11,6 +12,7 @@ import {
   TransferNode,
   PlanningEntitySignals,
 } from './planning-types';
+import { TopologyApiService } from '../planning/topology-api.service';
 
 const nowIso = () => new Date().toISOString();
 
@@ -18,6 +20,7 @@ const nowIso = () => new Date().toISOString();
   providedIn: 'root',
 })
 export class PlanningStoreService {
+  private readonly api = inject(TopologyApiService);
   private readonly entities: PlanningEntitySignals = {
     operationalPoints: signal<OperationalPoint[]>([]),
     sectionsOfLine: signal<SectionOfLine[]>([]),
@@ -28,6 +31,9 @@ export class PlanningStoreService {
     opReplacementStopLinks: signal<OpReplacementStopLink[]>([]),
     transferEdges: signal<TransferEdge[]>([]),
   };
+  private readonly initialized = signal(false);
+  private readonly loadingSignal = signal(false);
+  private readonly syncErrorSignal = signal<string | null>(null);
 
   readonly operationalPoints = this.entities.operationalPoints.asReadonly();
   readonly sectionsOfLine = this.entities.sectionsOfLine.asReadonly();
@@ -37,6 +43,8 @@ export class PlanningStoreService {
   readonly replacementEdges = this.entities.replacementEdges.asReadonly();
   readonly opReplacementStopLinks = this.entities.opReplacementStopLinks.asReadonly();
   readonly transferEdges = this.entities.transferEdges.asReadonly();
+  readonly loading = this.loadingSignal.asReadonly();
+  readonly syncError = this.syncErrorSignal.asReadonly();
 
   readonly operationalPointMap: Signal<Map<string, OperationalPoint>> = computed(() => {
     return new Map(this.operationalPoints().map((op) => [op.uniqueOpId, op]));
@@ -46,15 +54,72 @@ export class PlanningStoreService {
     return new Map(this.replacementStops().map((stop) => [stop.replacementStopId, stop]));
   });
 
+  ensureInitialized(): void {
+    if (!this.initialized()) {
+      void this.refreshAllFromApi();
+    }
+  }
+
+  async refreshAllFromApi(): Promise<void> {
+    this.loadingSignal.set(true);
+    try {
+      const data = await firstValueFrom(
+        forkJoin({
+          operationalPoints: this.api.listOperationalPoints(),
+          sectionsOfLine: this.api.listSectionsOfLine(),
+          personnelSites: this.api.listPersonnelSites(),
+          replacementStops: this.api.listReplacementStops(),
+          replacementRoutes: this.api.listReplacementRoutes(),
+          replacementEdges: this.api.listReplacementEdges(),
+          opReplacementStopLinks: this.api.listOpReplacementStopLinks(),
+          transferEdges: this.api.listTransferEdges(),
+        }),
+      );
+      this.setOperationalPoints(data.operationalPoints ?? []);
+      this.setSectionsOfLine(data.sectionsOfLine ?? []);
+      this.setPersonnelSites(data.personnelSites ?? []);
+      this.setReplacementStops(data.replacementStops ?? []);
+      this.setReplacementRoutes(data.replacementRoutes ?? []);
+      this.setReplacementEdges(data.replacementEdges ?? []);
+      this.setOpReplacementStopLinks(data.opReplacementStopLinks ?? []);
+      this.setTransferEdges(data.transferEdges ?? []);
+      this.initialized.set(true);
+      this.syncErrorSignal.set(null);
+    } catch (error) {
+      console.error('[PlanningStoreService] Failed to load topology data', error);
+      this.syncErrorSignal.set(error instanceof Error ? error.message : String(error));
+    } finally {
+      this.loadingSignal.set(false);
+    }
+  }
+
+  async refreshOperationalPointsFromApi(): Promise<void> {
+    await this.loadEntity(
+      this.api.listOperationalPoints(),
+      (items) => this.setOperationalPoints(items ?? []),
+      'operational points',
+    );
+  }
+
+  async refreshSectionsOfLineFromApi(): Promise<void> {
+    await this.loadEntity(
+      this.api.listSectionsOfLine(),
+      (items) => this.setSectionsOfLine(items ?? []),
+      'sections of line',
+    );
+  }
+
   addOperationalPoint(op: OperationalPoint): void {
     this.assertUniqueOpId(op.uniqueOpId, op.opId);
     this.entities.operationalPoints.update((list) => [
       ...list,
       this.withAudit(op, true),
     ]);
+    this.persistOperationalPoints();
   }
 
   updateOperationalPoint(opId: string, patch: Partial<OperationalPoint>): void {
+    let relinked = false;
     this.entities.operationalPoints.update((list) =>
       list.map((item) => {
         if (item.opId !== opId) {
@@ -63,10 +128,19 @@ export class PlanningStoreService {
         if (patch.uniqueOpId && patch.uniqueOpId !== item.uniqueOpId) {
           this.assertUniqueOpId(patch.uniqueOpId, opId);
           this.relinkUniqueOpId(item.uniqueOpId, patch.uniqueOpId);
+          relinked = true;
         }
         return this.withAudit({ ...item, ...patch, opId }, false);
       }),
     );
+    this.persistOperationalPoints();
+    if (relinked) {
+      this.persistSectionsOfLine();
+      this.persistPersonnelSites();
+      this.persistReplacementStops();
+      this.persistOpReplacementStopLinks();
+      this.persistTransferEdges();
+    }
   }
 
   removeOperationalPoint(opId: string): void {
@@ -98,6 +172,12 @@ export class PlanningStoreService {
       list.filter((edge) => !this.transferNodeMatches(edge.from, { kind: 'OP', uniqueOpId: uniqueId })
         && !this.transferNodeMatches(edge.to, { kind: 'OP', uniqueOpId: uniqueId })),
     );
+    this.persistOperationalPoints();
+    this.persistSectionsOfLine();
+    this.persistPersonnelSites();
+    this.persistReplacementStops();
+    this.persistOpReplacementStopLinks();
+    this.persistTransferEdges();
   }
 
   addSectionOfLine(sol: SectionOfLine): void {
@@ -107,6 +187,7 @@ export class PlanningStoreService {
       throw new Error('Section of line cannot start and end at the same operational point.');
     }
     this.entities.sectionsOfLine.update((list) => [...list, this.withAudit(sol, true)]);
+    this.persistSectionsOfLine();
   }
 
   updateSectionOfLine(solId: string, patch: Partial<SectionOfLine>): void {
@@ -124,10 +205,12 @@ export class PlanningStoreService {
         return this.withAudit(merged, false);
       }),
     );
+    this.persistSectionsOfLine();
   }
 
   removeSectionOfLine(solId: string): void {
     this.entities.sectionsOfLine.update((list) => list.filter((item) => item.solId !== solId));
+    this.persistSectionsOfLine();
   }
 
   addPersonnelSite(site: PersonnelSite): void {
@@ -135,6 +218,7 @@ export class PlanningStoreService {
       this.ensureOperationalPointExists(site.uniqueOpId);
     }
     this.entities.personnelSites.update((list) => [...list, this.withAudit(site, true)]);
+    this.persistPersonnelSites();
   }
 
   updatePersonnelSite(siteId: string, patch: Partial<PersonnelSite>): void {
@@ -150,6 +234,7 @@ export class PlanningStoreService {
         return this.withAudit(merged, false);
       }),
     );
+    this.persistPersonnelSites();
   }
 
   removePersonnelSite(siteId: string): void {
@@ -161,6 +246,8 @@ export class PlanningStoreService {
           !this.transferNodeMatches(edge.to, { kind: 'PERSONNEL_SITE', siteId }),
       ),
     );
+    this.persistPersonnelSites();
+    this.persistTransferEdges();
   }
 
   addReplacementStop(stop: ReplacementStop): void {
@@ -168,6 +255,7 @@ export class PlanningStoreService {
       this.ensureOperationalPointExists(stop.nearestUniqueOpId);
     }
     this.entities.replacementStops.update((list) => [...list, this.withAudit(stop, true)]);
+    this.persistReplacementStops();
   }
 
   updateReplacementStop(stopId: string, patch: Partial<ReplacementStop>): void {
@@ -183,6 +271,7 @@ export class PlanningStoreService {
         return this.withAudit(merged, false);
       }),
     );
+    this.persistReplacementStops();
   }
 
   removeReplacementStop(stopId: string): void {
@@ -202,10 +291,15 @@ export class PlanningStoreService {
           !this.transferNodeMatches(edge.to, { kind: 'REPLACEMENT_STOP', replacementStopId: stopId }),
       ),
     );
+    this.persistReplacementStops();
+    this.persistReplacementEdges();
+    this.persistOpReplacementStopLinks();
+    this.persistTransferEdges();
   }
 
   addReplacementRoute(route: ReplacementRoute): void {
     this.entities.replacementRoutes.update((list) => [...list, this.withAudit(route, true)]);
+    this.persistReplacementRoutes();
   }
 
   updateReplacementRoute(routeId: string, patch: Partial<ReplacementRoute>): void {
@@ -216,6 +310,7 @@ export class PlanningStoreService {
           : item,
       ),
     );
+    this.persistReplacementRoutes();
   }
 
   removeReplacementRoute(routeId: string): void {
@@ -225,6 +320,8 @@ export class PlanningStoreService {
     this.entities.replacementEdges.update((list) =>
       list.filter((edge) => edge.replacementRouteId !== routeId),
     );
+    this.persistReplacementRoutes();
+    this.persistReplacementEdges();
   }
 
   addReplacementEdge(edge: ReplacementEdge): void {
@@ -236,6 +333,7 @@ export class PlanningStoreService {
     this.ensureReplacementStopExists(edge.toStopId);
     this.assertUniqueReplacementEdgeSeq(edge.replacementRouteId, edge.seq, edge.replacementEdgeId);
     this.entities.replacementEdges.update((list) => [...list, this.withAudit(edge, true)]);
+    this.persistReplacementEdges();
   }
 
   updateReplacementEdge(edgeId: string, patch: Partial<ReplacementEdge>): void {
@@ -259,12 +357,14 @@ export class PlanningStoreService {
         return this.withAudit(merged, false);
       }),
     );
+    this.persistReplacementEdges();
   }
 
   removeReplacementEdge(edgeId: string): void {
     this.entities.replacementEdges.update((list) =>
       list.filter((item) => item.replacementEdgeId !== edgeId),
     );
+    this.persistReplacementEdges();
   }
 
   addOpReplacementStopLink(link: OpReplacementStopLink): void {
@@ -272,6 +372,7 @@ export class PlanningStoreService {
     this.ensureReplacementStopExists(link.replacementStopId);
     this.assertUniqueOpReplacementLink(link.uniqueOpId, link.replacementStopId, link.linkId);
     this.entities.opReplacementStopLinks.update((list) => [...list, this.withAudit(link, true)]);
+    this.persistOpReplacementStopLinks();
   }
 
   updateOpReplacementStopLink(linkId: string, patch: Partial<OpReplacementStopLink>): void {
@@ -291,12 +392,14 @@ export class PlanningStoreService {
         return this.withAudit(merged, false);
       }),
     );
+    this.persistOpReplacementStopLinks();
   }
 
   removeOpReplacementStopLink(linkId: string): void {
     this.entities.opReplacementStopLinks.update((list) =>
       list.filter((item) => item.linkId !== linkId),
     );
+    this.persistOpReplacementStopLinks();
   }
 
   addTransferEdge(edge: TransferEdge): void {
@@ -306,6 +409,7 @@ export class PlanningStoreService {
     this.validateTransferNode(edge.from);
     this.validateTransferNode(edge.to);
     this.entities.transferEdges.update((list) => [...list, this.withAudit(edge, true)]);
+    this.persistTransferEdges();
   }
 
   updateTransferEdge(transferId: string, patch: Partial<TransferEdge>): void {
@@ -323,18 +427,151 @@ export class PlanningStoreService {
         return this.withAudit(merged, false);
       }),
     );
+    this.persistTransferEdges();
   }
 
   removeTransferEdge(transferId: string): void {
     this.entities.transferEdges.update((list) =>
       list.filter((item) => item.transferId !== transferId),
     );
+    this.persistTransferEdges();
   }
 
   clear(): void {
     Object.values(this.entities).forEach((sig) => {
       sig.set([]);
     });
+    this.initialized.set(false);
+  }
+
+  private setOperationalPoints(items: OperationalPoint[]): void {
+    this.entities.operationalPoints.set(this.cloneList(items));
+  }
+
+  private setSectionsOfLine(items: SectionOfLine[]): void {
+    this.entities.sectionsOfLine.set(this.cloneList(items));
+  }
+
+  private setPersonnelSites(items: PersonnelSite[]): void {
+    this.entities.personnelSites.set(this.cloneList(items));
+  }
+
+  private setReplacementStops(items: ReplacementStop[]): void {
+    this.entities.replacementStops.set(this.cloneList(items));
+  }
+
+  private setReplacementRoutes(items: ReplacementRoute[]): void {
+    this.entities.replacementRoutes.set(this.cloneList(items));
+  }
+
+  private setReplacementEdges(items: ReplacementEdge[]): void {
+    this.entities.replacementEdges.set(this.cloneList(items));
+  }
+
+  private setOpReplacementStopLinks(items: OpReplacementStopLink[]): void {
+    this.entities.opReplacementStopLinks.set(this.cloneList(items));
+  }
+
+  private setTransferEdges(items: TransferEdge[]): void {
+    this.entities.transferEdges.set(this.cloneList(items));
+  }
+
+  private cloneList<T>(items: T[]): T[] {
+    return items.map((item) => ({ ...(item as Record<string, unknown>) }) as T);
+  }
+
+  private async loadEntity<T>(
+    request$: Observable<T[]>,
+    setter: (items: T[]) => void,
+    label: string,
+  ): Promise<void> {
+    try {
+      const items = await firstValueFrom(request$);
+      setter(items ?? []);
+      this.syncErrorSignal.set(null);
+    } catch (error) {
+      console.error(`[PlanningStoreService] Failed to load ${label}`, error);
+      this.syncErrorSignal.set(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  private async persistEntity<T>(
+    request$: Observable<T[]>,
+    setter: (items: T[]) => void,
+    label: string,
+  ): Promise<void> {
+    try {
+      const items = await firstValueFrom(request$);
+      setter(items ?? []);
+      this.syncErrorSignal.set(null);
+    } catch (error) {
+      console.error(`[PlanningStoreService] Failed to save ${label}`, error);
+      this.syncErrorSignal.set(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  private persistOperationalPoints(): void {
+    void this.persistEntity(
+      this.api.saveOperationalPoints(this.entities.operationalPoints()),
+      (items) => this.setOperationalPoints(items),
+      'operational points',
+    );
+  }
+
+  private persistSectionsOfLine(): void {
+    void this.persistEntity(
+      this.api.saveSectionsOfLine(this.entities.sectionsOfLine()),
+      (items) => this.setSectionsOfLine(items),
+      'sections of line',
+    );
+  }
+
+  private persistPersonnelSites(): void {
+    void this.persistEntity(
+      this.api.savePersonnelSites(this.entities.personnelSites()),
+      (items) => this.setPersonnelSites(items),
+      'personnel sites',
+    );
+  }
+
+  private persistReplacementStops(): void {
+    void this.persistEntity(
+      this.api.saveReplacementStops(this.entities.replacementStops()),
+      (items) => this.setReplacementStops(items),
+      'replacement stops',
+    );
+  }
+
+  private persistReplacementRoutes(): void {
+    void this.persistEntity(
+      this.api.saveReplacementRoutes(this.entities.replacementRoutes()),
+      (items) => this.setReplacementRoutes(items),
+      'replacement routes',
+    );
+  }
+
+  private persistReplacementEdges(): void {
+    void this.persistEntity(
+      this.api.saveReplacementEdges(this.entities.replacementEdges()),
+      (items) => this.setReplacementEdges(items),
+      'replacement edges',
+    );
+  }
+
+  private persistOpReplacementStopLinks(): void {
+    void this.persistEntity(
+      this.api.saveOpReplacementStopLinks(this.entities.opReplacementStopLinks()),
+      (items) => this.setOpReplacementStopLinks(items),
+      'OP ↔ Replacement stop links',
+    );
+  }
+
+  private persistTransferEdges(): void {
+    void this.persistEntity(
+      this.api.saveTransferEdges(this.entities.transferEdges()),
+      (items) => this.setTransferEdges(items),
+      'transfer edges',
+    );
   }
 
   private ensureOperationalPointExists(uniqueOpId: string): void {

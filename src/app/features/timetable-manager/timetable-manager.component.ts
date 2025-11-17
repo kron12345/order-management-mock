@@ -5,6 +5,7 @@ import { MATERIAL_IMPORTS } from '../../core/material.imports.imports';
 import {
   TimetableHubRecord,
   TimetableHubRouteMetadata,
+  TimetableHubSection,
   TimetableHubSectionKey,
   TimetableHubService,
   TimetableHubStopSummary,
@@ -14,6 +15,8 @@ import { debounceTime, distinctUntilChanged } from 'rxjs';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute } from '@angular/router';
 import { TimetableYearService } from '../../core/services/timetable-year.service';
+import { TimetableYearBounds } from '../../core/models/timetable-year.model';
+import { TimetableService } from '../../core/services/timetable.service';
 import { MatDialog } from '@angular/material/dialog';
 import {
   TimetableTestTrainDialogComponent,
@@ -34,14 +37,23 @@ export class TimetableManagerComponent {
   private readonly route = inject(ActivatedRoute);
   private readonly yearService = inject(TimetableYearService);
   private readonly dialog = inject(MatDialog);
+  private readonly timetableService = inject(TimetableService);
 
   readonly searchControl = new FormControl('', { nonNullable: true });
   private readonly searchTerm = signal('');
+  readonly selectedYearLabel = signal('');
+  private readonly activeGroupKey = signal<string | null>(null);
+  private readonly expandedStops = signal<Set<string>>(new Set());
+  readonly selectedStop = signal<TimetableHubStopSummary | null>(null);
 
   readonly records = computed(() => this.hubService.records());
   readonly filteredRecords = computed(() => {
     const term = this.searchTerm().trim().toLowerCase();
-    const items = this.records();
+    const selectedYear = this.selectedYearLabel().trim();
+    let items = this.records();
+    if (!term && selectedYear) {
+      items = items.filter((record) => record.timetableYearLabel === selectedYear);
+    }
     if (!term) {
       return items;
     }
@@ -52,16 +64,133 @@ export class TimetableManagerComponent {
   });
   readonly activeRecord = signal<TimetableHubRecord | null>(null);
   readonly activeSection = signal<TimetableHubSectionKey>('commercial');
+  private readonly collapsedGroups = signal<Set<string>>(new Set());
+
+  readonly activeGroupRecord = computed<TimetableHubRecord | null>(() => {
+    const groupKey = this.activeGroupKey();
+    if (!groupKey) {
+      return null;
+    }
+    const groups = this.groupedRecords();
+    const group = groups.find((entry) => entry.headRefTrainId === groupKey);
+    if (!group || !group.records.length) {
+      return null;
+    }
+    const calendarDays = [...group.calendarDays].sort();
+    const yearLabel = group.timetableYearLabel || this.yearService.defaultYearBounds().label;
+    const yearBounds = this.yearService.getYearByLabel(yearLabel);
+    const calendarBitmap = this.buildGroupYearBitmap(yearBounds, calendarDays);
+    const calendarRangeLabel = `${yearBounds.startIso} – ${yearBounds.endIso}`;
+    const base = group.records[0];
+    const buildSection = (key: TimetableHubSectionKey): TimetableHubSection => {
+      const stops = this.aggregateSectionStops(group.records, key);
+      const labels: Record<TimetableHubSectionKey, string> = {
+        commercial: 'Kommerzieller Fahrplan (Aggregat)',
+        operational: 'Betrieblicher Fahrplan (Aggregat)',
+        actual: 'Ist-Fahrdaten (Aggregat)',
+      };
+      const descriptions: Record<TimetableHubSectionKey, string> = {
+        commercial:
+          'Aggregierte Sicht über alle Varianten. Zeigt die kommerziellen Halte der Varianten kombiniert.',
+        operational:
+          'Aggregierte Sicht über alle Varianten. Enthält alle betrieblichen Halte aus den Varianten.',
+        actual: 'Aggregierte Ist-Daten, sofern vorhanden.',
+      };
+      return {
+        key,
+        label: labels[key],
+        description: descriptions[key],
+        stops,
+      };
+    };
+    return {
+      refTrainId: group.headRefTrainId,
+      trainNumber: base.trainNumber,
+      title: base.title,
+      timetableYearLabel: yearLabel,
+      calendarDays,
+      calendarBitmap,
+      calendarRangeLabel,
+      vehicles: base.vehicles,
+      technical: base.technical,
+      routeMetadata: base.routeMetadata,
+      commercial: buildSection('commercial'),
+      operational: buildSection('operational'),
+      actual: buildSection('actual'),
+    };
+  });
+
+  readonly activeDisplayRecord = computed<TimetableHubRecord | null>(() => {
+    const groupRecord = this.activeGroupRecord();
+    if (groupRecord) {
+      return groupRecord;
+    }
+    return this.activeRecord();
+  });
+
+  readonly isAggregateView = computed(() => this.activeGroupRecord() !== null);
+
+  openVariantDialog(base: TimetableHubRecord) {
+    const ref = this.dialog.open(TimetableTestTrainDialogComponent, {
+      width: '720px',
+      data: {
+        yearOptions: this.yearOptions(),
+        sectionTabs: this.sectionTabs,
+        defaultYearLabel:
+          base.timetableYearLabel ||
+          this.selectedYearLabel() ||
+          this.yearService.defaultYearBounds().label,
+        initialTrainNumber: base.trainNumber,
+        initialTitle: base.title,
+      },
+    });
+    ref
+      .afterClosed()
+      .pipe(takeUntilDestroyed())
+      .subscribe((result?: TimetableTestTrainDialogResult) => {
+        if (result) {
+          this.createVariantFromDialog(base, result);
+        }
+      });
+  }
+
+  readonly groupedRecords = computed(() => {
+    const items = this.filteredRecords();
+    const groups = new Map<
+      string,
+      { headRefTrainId: string; records: TimetableHubRecord[]; calendarDays: Set<string> }
+    >();
+    items.forEach((record) => {
+      const key = this.groupKey(record.refTrainId);
+      let group = groups.get(key);
+      if (!group) {
+        group = { headRefTrainId: key, records: [], calendarDays: new Set<string>() };
+        groups.set(key, group);
+      }
+      group.records.push(record);
+      record.calendarDays.forEach((day) => group.calendarDays.add(day));
+    });
+    return Array.from(groups.values())
+      .map((group) => ({
+        headRefTrainId: group.headRefTrainId,
+        records: group.records.sort((a, b) => a.refTrainId.localeCompare(b.refTrainId)),
+        calendarDays: Array.from(group.calendarDays).sort(),
+        timetableYearLabel: group.records[0]?.timetableYearLabel ?? '',
+      }))
+      .sort((a, b) => a.headRefTrainId.localeCompare(b.headRefTrainId));
+  });
 
   readonly sectionTabs: { key: TimetableHubSectionKey; label: string }[] = [
-    { key: 'commercial', label: 'Kommerzieller Fahrplan' },
-    { key: 'operational', label: 'Betrieblicher Fahrplan' },
+    { key: 'commercial', label: 'Planfahrplan' },
     { key: 'actual', label: 'Ist-Fahrdaten' },
   ];
   constructor() {
     this.searchControl.valueChanges
       .pipe(debounceTime(150), distinctUntilChanged(), takeUntilDestroyed())
       .subscribe((value) => this.searchTerm.set(value));
+
+    const defaultYearLabel = this.yearService.defaultYearBounds().label;
+    this.selectedYearLabel.set(defaultYearLabel);
 
     const initialSearch = this.route.snapshot.queryParamMap.get('search');
     if (initialSearch) {
@@ -72,6 +201,10 @@ export class TimetableManagerComponent {
     effect(() => {
       const list = this.filteredRecords();
       const current = this.activeRecord();
+      const groupKey = this.activeGroupKey();
+      if (groupKey) {
+        return;
+      }
       if (!list.length) {
         this.activeRecord.set(null);
         return;
@@ -87,8 +220,23 @@ export class TimetableManagerComponent {
     if (this.activeRecord()?.refTrainId === record.refTrainId) {
       return;
     }
+    this.activeGroupKey.set(null);
     this.activeRecord.set(record);
     this.activeSection.set('commercial');
+    this.selectedStop.set(null);
+  }
+
+  selectStop(record: TimetableHubRecord, stop: TimetableHubStopSummary) {
+    const currentRecord = this.activeRecord();
+    const currentStop = this.selectedStop();
+    if (currentRecord?.refTrainId === record.refTrainId && currentStop?.sequence === stop.sequence) {
+      this.selectedStop.set(null);
+      return;
+    }
+    this.activeGroupKey.set(null);
+    this.activeRecord.set(record);
+    this.activeSection.set('commercial');
+    this.selectedStop.set(stop);
   }
 
   selectSection(section: TimetableHubSectionKey) {
@@ -101,6 +249,55 @@ export class TimetableManagerComponent {
     }
     this.searchControl.setValue('');
     this.searchTerm.set('');
+  }
+
+  setSelectedYear(label: string) {
+    if (!label || this.selectedYearLabel() === label) {
+      return;
+    }
+    this.selectedYearLabel.set(label);
+  }
+
+  isGroupExpanded(key: string): boolean {
+    return this.collapsedGroups().has(key);
+  }
+
+  toggleGroup(key: string) {
+    const current = new Set(this.collapsedGroups());
+    if (current.has(key)) {
+      current.delete(key);
+    } else {
+      current.add(key);
+    }
+    this.collapsedGroups.set(current);
+    this.activeGroupKey.set(key);
+    this.activeRecord.set(null);
+    this.selectedStop.set(null);
+    this.activeSection.set('commercial');
+  }
+
+  isRecordStopsExpanded(record: TimetableHubRecord): boolean {
+    return this.expandedStops().has(record.refTrainId);
+  }
+
+  toggleRecordStops(record: TimetableHubRecord, event?: MouseEvent) {
+    event?.stopPropagation();
+    const current = new Set(this.expandedStops());
+    const key = record.refTrainId;
+    if (current.has(key)) {
+      current.delete(key);
+    } else {
+      current.add(key);
+    }
+    this.expandedStops.set(current);
+  }
+
+  private groupKey(refTrainId: string): string {
+    const match = /^(.+?)([A-Z])$/.exec(refTrainId);
+    if (match) {
+      return match[1];
+    }
+    return refTrainId;
   }
 
   trackRecord(_: number, record: TimetableHubRecord): string {
@@ -116,7 +313,7 @@ export class TimetableManagerComponent {
   }
 
   activeSectionData = computed(() => {
-    const record = this.activeRecord();
+    const record = this.activeDisplayRecord();
     if (!record) {
       return null;
     }
@@ -143,7 +340,7 @@ export class TimetableManagerComponent {
     return '—';
   }
 
-  private formatClock(value: string | undefined): string {
+  formatClock(value: string | undefined): string {
     if (!value) {
       return '—';
     }
@@ -157,7 +354,46 @@ export class TimetableManagerComponent {
     return date.toISOString().slice(11, 16);
   }
 
+  trainAttributes(record: TimetableHubRecord | null): { label: string; value: string }[] {
+    if (!record) {
+      return [];
+    }
+    const timetable = this.timetableService.getByRefTrainId(record.refTrainId);
+    const rows: { label: string; value: string }[] = [];
+    rows.push({ label: 'RefTrainID', value: record.refTrainId });
+    rows.push({ label: 'Zugnummer', value: record.trainNumber });
+    rows.push({ label: 'Titel', value: record.title });
+    rows.push({ label: 'Fahrplanjahr', value: record.timetableYearLabel });
+    rows.push({ label: 'Fahrtage (Anzahl)', value: `${record.calendarDays.length}` });
+    rows.push({ label: 'Kalenderbereich', value: record.calendarRangeLabel });
+    if (timetable) {
+      rows.push({ label: 'OPN', value: timetable.opn });
+      rows.push({ label: 'Verantwortliche EVU', value: timetable.responsibleRu });
+      rows.push({ label: 'Status (Phase)', value: timetable.status });
+      if (timetable.source?.type) {
+        rows.push({ label: 'Quelle', value: timetable.source.type });
+      }
+      if (timetable.source?.pathRequestId) {
+        rows.push({ label: 'Path Request ID', value: timetable.source.pathRequestId });
+      }
+      if (timetable.source?.frameworkAgreementId) {
+        rows.push({ label: 'Rahmenvertrag-ID', value: timetable.source.frameworkAgreementId });
+      }
+      if (timetable.source?.externalSystem) {
+        rows.push({ label: 'Externes System', value: timetable.source.externalSystem });
+      }
+      if (timetable.source?.referenceDocumentId) {
+        rows.push({ label: 'Referenzdokument', value: timetable.source.referenceDocumentId });
+      }
+    }
+    return rows.filter((row) => row.value && row.value.toString().trim().length > 0);
+  }
+
   yearOptions(): string[] {
+    const managed = this.yearService.managedYearBounds();
+    if (managed.length) {
+      return managed.map((year) => year.label);
+    }
     const labels = new Set<string>();
     this.records().forEach((record) => labels.add(record.timetableYearLabel));
     if (!labels.size) {
@@ -172,7 +408,7 @@ export class TimetableManagerComponent {
       data: {
         yearOptions: this.yearOptions(),
         sectionTabs: this.sectionTabs,
-        defaultYearLabel: this.yearService.defaultYearBounds().label,
+        defaultYearLabel: this.selectedYearLabel() || this.yearService.defaultYearBounds().label,
       },
     });
     ref
@@ -203,10 +439,108 @@ export class TimetableManagerComponent {
     return result;
   }
 
+  private createVariantFromDialog(
+    base: TimetableHubRecord,
+    result: TimetableTestTrainDialogResult,
+  ) {
+    const calendarDays = this.expandDateRange(result.calendarStart, result.calendarEnd);
+    if (!calendarDays.length) {
+      return;
+    }
+    const stops = this.buildStopsFromDialog(result.stops, calendarDays[0]);
+    if (!stops.length) {
+      return;
+    }
+    const refTrainId = this.generateVariantRefTrainId(base.refTrainId, result.timetableYearLabel);
+    this.hubService.registerPlanUpdate({
+      refTrainId,
+      trainNumber: result.trainNumber.trim(),
+      title: result.title.trim(),
+      timetableYearLabel: result.timetableYearLabel,
+      calendarDays,
+      section: result.section,
+      stops,
+      notes: 'Variante erstellt im Fahrplanmanager',
+      technical: result.technical,
+      routeMetadata: result.routeMetadata,
+    });
+    const newlyCreated = this.hubService.findByRefTrainId(refTrainId);
+    if (newlyCreated) {
+      this.selectRecord(newlyCreated);
+      this.activeSection.set(result.section);
+      this.searchControl.setValue(refTrainId);
+      this.searchTerm.set(refTrainId);
+    }
+  }
+
+  private buildGroupYearBitmap(
+    yearBounds: TimetableYearBounds,
+    activeDates: readonly string[],
+  ): string {
+    const active = new Set(activeDates);
+    const result: string[] = [];
+    const cursor = new Date(yearBounds.start);
+    const end = new Date(yearBounds.end);
+    while (cursor.getTime() <= end.getTime()) {
+      const iso = cursor.toISOString().slice(0, 10);
+      result.push(active.has(iso) ? '1' : '0');
+      cursor.setDate(cursor.getDate() + 1);
+    }
+    return result.join('');
+  }
+
+  private aggregateSectionStops(
+    records: TimetableHubRecord[],
+    key: TimetableHubSectionKey,
+  ): TimetableHubStopSummary[] {
+    const allStops: TimetableHubStopSummary[] = [];
+    records.forEach((record) => {
+      record[key].stops.forEach((stop) => {
+        allStops.push({ ...stop });
+      });
+    });
+    return allStops.sort((a, b) => a.sequence - b.sequence);
+  }
+
   private generateRefTrainId(yearLabel: string): string {
     const yearDigits = yearLabel.replace(/\D/g, '').slice(0, 4) || '0000';
     const random = Math.random().toString(36).slice(2, 6).toUpperCase();
     return `TT-${yearDigits}-${random}`;
+  }
+
+  private generateVariantRefTrainId(
+    baseRefTrainId: string,
+    yearLabel: string,
+  ): string {
+    const root = this.groupKey(baseRefTrainId);
+    const records = this.records();
+    const groupIds = records
+      .map((record) => record.refTrainId)
+      .filter((id) => this.groupKey(id) === root);
+    let maxCode = 64;
+    groupIds.forEach((id) => {
+      const match = /^.+?([A-Z])$/.exec(id);
+      if (match) {
+        const code = match[1].charCodeAt(0);
+        if (code > maxCode) {
+          maxCode = code;
+        }
+      }
+    });
+    let suffix = 'A';
+    if (maxCode >= 65) {
+      const nextCode = maxCode + 1;
+      if (nextCode <= 90) {
+        suffix = String.fromCharCode(nextCode);
+      } else {
+        return this.generateRefTrainId(yearLabel);
+      }
+    }
+    const candidate = `${root}${suffix}`;
+    if (!records.some((record) => record.refTrainId === candidate)) {
+      return candidate;
+    }
+    return this.generateRefTrainId(yearLabel);
   }
 
   hasTechnicalData(record: TimetableHubRecord | null): boolean {
@@ -308,6 +642,10 @@ export class TimetableManagerComponent {
       type: stop.type,
       arrivalTime: this.combineDateWithTime(referenceDay, stop.arrivalTime),
       departureTime: this.combineDateWithTime(referenceDay, stop.departureTime),
+      commercialArrivalTime: this.combineDateWithTime(referenceDay, stop.arrivalTime),
+      commercialDepartureTime: this.combineDateWithTime(referenceDay, stop.departureTime),
+      operationalArrivalTime: this.combineDateWithTime(referenceDay, stop.arrivalTime),
+      operationalDepartureTime: this.combineDateWithTime(referenceDay, stop.departureTime),
       holdReason: 'Planhalt',
       responsibleRu: 'TTT',
       vehicleInfo: 'n/a',

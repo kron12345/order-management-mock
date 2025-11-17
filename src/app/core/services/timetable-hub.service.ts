@@ -13,6 +13,11 @@ export interface TimetableHubStopSummary {
   type: 'origin' | 'intermediate' | 'destination';
   arrivalTime?: string;
   departureTime?: string;
+  commercialArrivalTime?: string;
+  commercialDepartureTime?: string;
+  operationalArrivalTime?: string;
+  operationalDepartureTime?: string;
+  hasRollingStockChange?: boolean;
   holdReason: string;
   responsibleRu: string;
   vehicleInfo: string;
@@ -111,7 +116,7 @@ export class TimetableHubService {
         timetableYearLabel: this.timetableYearService.getYearBounds(tt.calendar.validFrom).label,
         calendarDays: this.expandCalendarDays(tt.calendar.validFrom, tt.calendar.validTo ?? tt.calendar.validFrom, tt.calendar.daysBitmap ?? '1111111'),
         section: 'commercial',
-        stops: this.toStopSummaries(tt.stops),
+        stops: this.toStopSummaries(tt.stops, tt.rollingStock),
         notes: tt.notes,
         vehicles: tt.rollingStock,
         technical: this.technicalFromRollingStock(tt.rollingStock),
@@ -216,11 +221,21 @@ export class TimetableHubService {
     };
   }
 
-  private toStopSummaries(stops: Timetable['stops']): TimetableHubStopSummary[] {
+  private toStopSummaries(
+    stops: Timetable['stops'],
+    rollingStock?: TimetableRollingStock,
+  ): TimetableHubStopSummary[] {
+    const changeStopIds = new Set<string>(
+      (rollingStock?.operations ?? []).map((op) => op.stopId),
+    );
     let lastHold = 'Regulärer Halt';
     let lastResponsible = 'TTT';
     let lastVehicles = 'n/a';
     return stops.map((stop) => {
+      const commercialArrivalTime = stop.commercial.arrivalTime;
+      const commercialDepartureTime = stop.commercial.departureTime;
+      const operationalArrivalTime = stop.operational.arrivalTime;
+      const operationalDepartureTime = stop.operational.departureTime;
       const holdReason = stop.notes?.trim() || lastHold;
       const responsible = lastResponsible;
       const vehicles = stop.activities?.length ? stop.activities.join(', ') : lastVehicles;
@@ -231,8 +246,13 @@ export class TimetableHubService {
         sequence: stop.sequence,
         locationName: stop.locationName ?? stop.locationCode ?? 'Unbekannt',
         type: stop.type,
-        arrivalTime: stop.commercial.arrivalTime ?? stop.operational.arrivalTime,
-        departureTime: stop.commercial.departureTime ?? stop.operational.departureTime,
+        arrivalTime: commercialArrivalTime ?? operationalArrivalTime,
+        departureTime: commercialDepartureTime ?? operationalDepartureTime,
+        commercialArrivalTime,
+        commercialDepartureTime,
+        operationalArrivalTime,
+        operationalDepartureTime,
+        hasRollingStockChange: changeStopIds.has(stop.id),
         holdReason,
         responsibleRu: responsible,
         vehicleInfo: vehicles,

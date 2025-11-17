@@ -21,6 +21,8 @@ export interface TimetableTestTrainDialogData {
   yearOptions: string[];
   sectionTabs: { key: TimetableHubSectionKey; label: string }[];
   defaultYearLabel: string;
+  initialTrainNumber?: string;
+  initialTitle?: string;
 }
 
 export interface TimetableTestTrainDialogResult {
@@ -84,10 +86,10 @@ export class TimetableTestTrainDialogComponent {
   private readonly defaultDate = new Date().toISOString().slice(0, 10);
 
   readonly form = this.fb.group<TestTrainFormModel>({
-    trainNumber: this.fb.nonNullable.control('', {
+    trainNumber: this.fb.nonNullable.control(this.data.initialTrainNumber ?? '', {
       validators: [Validators.required, Validators.maxLength(40)],
     }),
-    title: this.fb.nonNullable.control('', {
+    title: this.fb.nonNullable.control(this.data.initialTitle ?? '', {
       validators: [Validators.required, Validators.maxLength(120)],
     }),
     timetableYearLabel: this.fb.nonNullable.control(this.data.defaultYearLabel, {

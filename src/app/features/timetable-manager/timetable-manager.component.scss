@@ -11,7 +11,17 @@
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 12px;
+}
+
+.timetable-hub__toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.timetable-hub__year {
+  flex: 1 1 auto;
 }
 
 .timetable-hub__search {
@@ -28,6 +38,109 @@
   gap: 8px;
   max-height: calc(100vh - 220px);
   overflow-y: auto;
+}
+
+.timetable-hub__record {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.timetable-hub__record-header {
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+
+  .timetable-hub__list-item {
+    flex: 1 1 auto;
+  }
+}
+
+.timetable-hub__stops-toggle {
+  flex-shrink: 0;
+}
+
+.timetable-hub__stops {
+  margin-left: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.timetable-hub__stop-item {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 40px minmax(120px, 1fr) 120px 32px;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: transparent;
+  text-align: left;
+  font-size: 0.85rem;
+
+  &--active {
+    border-color: var(--mat-primary);
+    background: rgba(25, 118, 210, 0.06);
+  }
+}
+
+.stop-item__seq {
+  color: rgba(0, 0, 0, 0.6);
+}
+
+.stop-item__time {
+  font-family: monospace;
+  font-size: 0.8rem;
+}
+
+.stop-item__rolling-stock {
+  font-size: 18px;
+  height: 18px;
+  width: 18px;
+  color: var(--mat-primary);
+}
+
+.timetable-hub__group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.timetable-hub__group-header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  text-align: left;
+
+  &:hover {
+    background: rgba(0, 0, 0, 0.02);
+  }
+}
+
+.timetable-hub__group-toggle {
+  font-size: 20px;
+}
+
+.timetable-hub__group-header-content {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.group-header__title {
+  font-weight: 600;
+}
+
+.group-header__subtitle {
+  font-size: 0.8rem;
+  color: rgba(0, 0, 0, 0.6);
 }
 
 .timetable-hub__list-item {
@@ -106,6 +219,16 @@
     margin: 4px 0 0;
     color: rgba(0, 0, 0, 0.6);
   }
+}
+
+.timetable-hub__header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.timetable-hub__variant-button {
+  margin-top: -4px;
 }
 
 .calendar-card {
@@ -190,11 +313,41 @@
   &__header,
   &__row {
     display: grid;
-    grid-template-columns: 50px minmax(140px, 2fr) 130px 130px 150px 150px 150px;
     gap: 12px;
     padding: 8px 12px;
     align-items: center;
-    min-width: 840px;
+  }
+
+  &--plan {
+    .stop-table__header,
+    .stop-table__row {
+      grid-template-columns:
+        50px
+        minmax(140px, 2fr)
+        90px
+        90px
+        90px
+        90px
+        150px
+        150px
+        150px;
+      min-width: 980px;
+    }
+  }
+
+  &--actual {
+    .stop-table__header,
+    .stop-table__row {
+      grid-template-columns:
+        50px
+        minmax(140px, 2fr)
+        110px
+        110px
+        150px
+        150px
+        150px;
+      min-width: 840px;
+    }
   }
 
   &__header {
@@ -227,6 +380,24 @@
 
     small {
       color: rgba(0, 0, 0, 0.6);
+    }
+  }
+}
+
+.attributes-card {
+  .attributes-table {
+    width: 100%;
+    border-collapse: collapse;
+
+    td {
+      padding: 4px 8px;
+      border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+    }
+
+    td:first-child {
+      width: 160px;
+      font-weight: 500;
+      color: rgba(0, 0, 0, 0.7);
     }
   }
 }

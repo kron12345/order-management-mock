@@ -1,9 +1,8 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { MatTabsModule } from '@angular/material/tabs';
 import { MATERIAL_IMPORTS } from '../core/material.imports.imports';
 import { PlanningStoreService } from '../shared/planning-store.service';
-import { loadMockData } from '../shared/planning-mocks';
 import { OperationalPointEditorComponent } from './components/operational-point-editor.component';
 import { SectionOfLineEditorComponent } from './components/section-of-line-editor.component';
 import { PersonnelSiteEditorComponent } from './components/personnel-site-editor.component';
@@ -78,12 +77,8 @@ import { TransferEdgeEditorComponent } from './components/transfer-edge-editor.c
 })
 export class PlanningMasterComponent implements OnInit {
   private readonly store = inject(PlanningStoreService);
-  private readonly initialized = signal(false);
 
   ngOnInit(): void {
-    if (!this.initialized() && this.store.operationalPoints().length === 0) {
-      loadMockData(this.store);
-      this.initialized.set(true);
-    }
+    this.store.ensureInitialized();
   }
 }

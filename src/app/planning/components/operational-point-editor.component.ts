@@ -1,318 +1,163 @@
-import {
-  ChangeDetectionStrategy,
-  Component,
-  computed,
-  effect,
-  inject,
-  signal,
-} from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import {
-  FormBuilder,
-  FormGroup,
-  ReactiveFormsModule,
-  Validators,
-} from '@angular/forms';
-import { MatListModule } from '@angular/material/list';
-import { MatFormFieldModule } from '@angular/material/form-field';
-import { MatInputModule } from '@angular/material/input';
-import { MatSelectModule } from '@angular/material/select';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
-import { MATERIAL_IMPORTS } from '../../core/material.imports.imports';
+import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
+import { firstValueFrom } from 'rxjs';
 import { PlanningStoreService } from '../../shared/planning-store.service';
-import { OpType, OperationalPoint } from '../../shared/planning-types';
+import { OperationalPoint } from '../../shared/planning-types';
+import { CustomAttributeService } from '../../core/services/custom-attribute.service';
+import {
+  AttributeActionEvent,
+  AttributeEntityEditorComponent,
+  AttributeEntityRecord,
+  BulkApplyEvent,
+  EntitySaveEvent,
+} from '../../shared/components/attribute-entity-editor/attribute-entity-editor.component';
+import { isTemporalAttribute, mergeAttributeEntry } from '../../shared/utils/topology-attribute.helpers';
+import { TopologyApiService } from '../topology-api.service';
 
-const uid = () => crypto.randomUUID();
-
-const OP_TYPES: OpType[] = ['STATION', 'JUNCTION', 'BORDER_POINT', 'SIDING_AREA'];
+const DEFAULT_FALLBACK = {
+  uniqueOpId: '',
+  name: '',
+  countryCode: '',
+  opType: '',
+  lat: '',
+  lng: '',
+};
 
 @Component({
   selector: 'app-operational-point-editor',
   standalone: true,
   imports: [
     CommonModule,
-    ReactiveFormsModule,
-    MatListModule,
-    MatFormFieldModule,
-    MatInputModule,
-    MatSelectModule,
     MatButtonModule,
     MatIconModule,
-    ...MATERIAL_IMPORTS,
+    MatProgressSpinnerModule,
+    AttributeEntityEditorComponent,
   ],
   template: `
-    <div class="editor">
-      <section class="editor__list">
-        <header>
-          <h2>Operational Points</h2>
-          <span>{{ operationalPoints().length }} Einträge</span>
-        </header>
-        <mat-selection-list [multiple]="false">
-          @for (op of operationalPoints(); track op.opId) {
-            <mat-list-option
-              [selected]="selectedId() === op.opId"
-              (click)="select(op)"
-              role="button"
-            >
-              <div mat-line>{{ op.name }}</div>
-              <div mat-line class="secondary">{{ op.uniqueOpId }} · {{ op.opType }}</div>
-            </mat-list-option>
-          }
-        </mat-selection-list>
-
-        <button mat-stroked-button color="primary" type="button" (click)="createNew()">
-          <mat-icon>add</mat-icon>
-          Neu anlegen
+    <section class="topology-editor">
+      <header class="topology-editor__toolbar">
+        <button
+          mat-stroked-button
+          color="primary"
+          type="button"
+          (click)="triggerOperationalPointImport()"
+          [disabled]="importState() === 'running'"
+        >
+          <mat-icon fontIcon="cloud_download"></mat-icon>
+          Importieren
+          <mat-progress-spinner
+            *ngIf="importState() === 'running'"
+            diameter="16"
+            mode="indeterminate"
+          ></mat-progress-spinner>
         </button>
-      </section>
+        <button
+          mat-button
+          type="button"
+          *ngIf="canToggleConsole()"
+          (click)="toggleImportConsole()"
+          [disabled]="importState() === 'running'"
+        >
+          {{ importConsoleOpen() ? 'Konsole schließen' : 'Konsole anzeigen' }}
+        </button>
+      </header>
 
-      <section class="editor__detail">
-        <form [formGroup]="form" (ngSubmit)="save()">
-          <div class="form-grid">
-            <mat-form-field appearance="outline">
-              <mat-label>Unique OP ID</mat-label>
-              <input matInput formControlName="uniqueOpId" required />
-              <mat-error>Unique OP ID ist erforderlich.</mat-error>
-            </mat-form-field>
+      <div class="topology-editor__console" *ngIf="importConsoleVisible()">
+        <header>
+          <span>Import-Log</span>
+          <button
+            mat-icon-button
+            type="button"
+            (click)="hideImportConsole()"
+            [disabled]="importState() === 'running'"
+          >
+            <mat-icon>close</mat-icon>
+          </button>
+        </header>
+        <pre>{{ importLogs().join('\n') }}</pre>
+      </div>
 
-            <mat-form-field appearance="outline">
-              <mat-label>Name</mat-label>
-              <input matInput formControlName="name" required />
-            </mat-form-field>
-
-            <mat-form-field appearance="outline">
-              <mat-label>Land</mat-label>
-              <input matInput formControlName="countryCode" maxlength="2" required />
-              <mat-hint>ISO-2 (z. B. DE)</mat-hint>
-            </mat-form-field>
-
-            <mat-form-field appearance="outline">
-              <mat-label>Typ</mat-label>
-              <mat-select formControlName="opType" required>
-                @for (type of opTypes; track type) {
-                  <mat-option [value]="type">{{ type }}</mat-option>
-                }
-              </mat-select>
-            </mat-form-field>
-
-            <mat-form-field appearance="outline">
-              <mat-label>Latitude</mat-label>
-              <input type="number" matInput formControlName="lat" />
-            </mat-form-field>
-
-            <mat-form-field appearance="outline">
-              <mat-label>Longitude</mat-label>
-              <input type="number" matInput formControlName="lng" />
-            </mat-form-field>
-          </div>
-
-          <div class="actions">
-            <span class="error" *ngIf="error()">{{ error() }}</span>
-            <button mat-stroked-button type="button" (click)="resetForm()">Zurücksetzen</button>
-            <button mat-flat-button color="primary" type="submit">
-              {{ selectedId() ? 'Speichern' : 'Anlegen' }}
-            </button>
-            <button
-              mat-icon-button
-              color="warn"
-              type="button"
-              (click)="deleteSelected()"
-              [disabled]="!selectedId()"
-              matTooltip="Löschen"
-            >
-              <mat-icon>delete</mat-icon>
-            </button>
-          </div>
-        </form>
-      </section>
-    </div>
+      <app-attribute-entity-editor
+        [title]="'Operational Points'"
+        [entities]="entityRecords()"
+        [attributeDefinitions]="attributeDefinitions()"
+        [defaultFallbackValues]="defaultFallback"
+        [numericKeys]="numericKeys"
+        [actionKeys]="actionKeys"
+        [detailError]="error()"
+        (saveEntity)="handleSave($event)"
+        (deleteEntities)="handleDelete($event)"
+        (bulkApply)="handleBulkApply($event)"
+        (actionTriggered)="handleAction($event)"
+      />
+    </section>
   `,
-  styles: [
-    `
-      .editor {
-        display: grid;
-        grid-template-columns: 320px 1fr;
-        gap: 24px;
-        padding: 24px;
-      }
-
-      .editor__list {
-        display: flex;
-        flex-direction: column;
-        gap: 16px;
-      }
-
-      .editor__list header {
-        display: flex;
-        justify-content: space-between;
-        align-items: baseline;
-      }
-
-      mat-selection-list {
-        max-height: 320px;
-        overflow: auto;
-        border: 1px solid rgba(0, 0, 0, 0.1);
-        border-radius: 8px;
-      }
-
-      .secondary {
-        font-size: 12px;
-        opacity: 0.7;
-      }
-
-      .editor__detail {
-        padding: 16px;
-        border-radius: 12px;
-        border: 1px solid rgba(0, 0, 0, 0.08);
-        background: rgba(255, 255, 255, 0.9);
-      }
-
-      .form-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-        gap: 16px;
-      }
-
-      .actions {
-        margin-top: 16px;
-        display: flex;
-        gap: 12px;
-        align-items: center;
-      }
-
-      .error {
-        color: #d32f2f;
-        font-size: 12px;
-        flex: 1;
-      }
-
-      @media (max-width: 960px) {
-        .editor {
-          grid-template-columns: 1fr;
-        }
-      }
-    `,
-  ],
+  styleUrl: './operational-point-editor.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class OperationalPointEditorComponent {
   private readonly store = inject(PlanningStoreService);
-  private readonly fb = inject(FormBuilder);
+  private readonly customAttributes = inject(CustomAttributeService);
+  private readonly topologyApi = inject(TopologyApiService);
 
-  readonly opTypes = OP_TYPES;
-
-  readonly operationalPoints = computed(() =>
-    [...this.store.operationalPoints()].sort((a, b) => a.name.localeCompare(b.name)),
+  readonly attributeDefinitions = computed(() =>
+    this.customAttributes.list('topology-operational-points'),
+  );
+  readonly entityRecords = computed<AttributeEntityRecord[]>(() =>
+    this.store.operationalPoints().map((op) => ({
+      id: op.opId,
+      label: op.name,
+      secondaryLabel: `${op.uniqueOpId} · ${op.countryCode}`,
+      attributes: op.attributes ?? [],
+      fallbackValues: {
+        uniqueOpId: op.uniqueOpId,
+        name: op.name,
+        countryCode: op.countryCode,
+        opType: op.opType,
+        lat: String(op.position.lat ?? ''),
+        lng: String(op.position.lng ?? ''),
+      },
+    })),
   );
 
-  readonly form: FormGroup = this.fb.group({
-    uniqueOpId: ['', Validators.required],
-    name: ['', Validators.required],
-    countryCode: ['DE', [Validators.required, Validators.minLength(2), Validators.maxLength(2)]],
-    opType: ['STATION', Validators.required],
-    lat: [52.5, Validators.required],
-    lng: [13.4, Validators.required],
-  });
-
-  readonly selectedId = signal<string | null>(null);
+  readonly defaultFallback = DEFAULT_FALLBACK;
+  readonly numericKeys = ['lat', 'lng'];
+  readonly actionKeys = ['lat', 'lng'];
   readonly error = signal<string | null>(null);
-
-  private readonly syncEffect = effect(
-    () => {
-      const id = this.selectedId();
-      if (!id) {
-        return;
-      }
-      const op = this.store.operationalPoints().find((item) => item.opId === id);
-      if (!op) {
-        this.selectedId.set(null);
-        this.resetForm();
-        return;
-      }
-      this.form.patchValue(
-        {
-          uniqueOpId: op.uniqueOpId,
-          name: op.name,
-          countryCode: op.countryCode,
-          opType: op.opType,
-          lat: op.position.lat,
-          lng: op.position.lng,
-        },
-        { emitEvent: false },
-      );
-      this.error.set(null);
-    },
-    { allowSignalWrites: true },
+  readonly importLogs = signal<string[]>([]);
+  readonly importState = signal<'idle' | 'running' | 'success' | 'error'>('idle');
+  readonly importConsoleOpen = signal(false);
+  readonly importConsoleVisible = computed(
+    () => this.importState() === 'running' || this.importConsoleOpen(),
+  );
+  readonly canToggleConsole = computed(
+    () => this.importLogs().length > 0 || this.importState() !== 'idle',
   );
 
-  select(op: OperationalPoint): void {
-    this.selectedId.set(op.opId);
-  }
-
-  createNew(): void {
-    this.selectedId.set(null);
-    this.form.reset({
-      uniqueOpId: '',
-      name: '',
-      countryCode: 'DE',
-      opType: 'STATION',
-      lat: 0,
-      lng: 0,
-    });
-    this.error.set(null);
-  }
-
-  resetForm(): void {
-    if (this.selectedId()) {
-      const op = this.store.operationalPoints().find((item) => item.opId === this.selectedId());
-      if (op) {
-        this.form.patchValue(
-          {
-            uniqueOpId: op.uniqueOpId,
-            name: op.name,
-            countryCode: op.countryCode,
-            opType: op.opType,
-            lat: op.position.lat,
-            lng: op.position.lng,
-          },
-          { emitEvent: false },
-        );
-      }
-    } else {
-      this.form.reset({
-        uniqueOpId: '',
-        name: '',
-        countryCode: 'DE',
-        opType: 'STATION',
-        lat: 0,
-        lng: 0,
-      });
-    }
-    this.error.set(null);
-  }
-
-  save(): void {
-    if (this.form.invalid) {
-      this.form.markAllAsTouched();
+  handleSave(event: EntitySaveEvent): void {
+    const core = this.deriveCoreFields(event.payload.values);
+    if (!core.ok) {
+      this.error.set(core.error);
       return;
     }
-    const value = this.form.getRawValue();
     const payload: OperationalPoint = {
-      opId: this.selectedId() ?? uid(),
-      uniqueOpId: value.uniqueOpId.trim(),
-      name: value.name.trim(),
-      countryCode: value.countryCode.trim().toUpperCase(),
-      opType: value.opType,
-      position: { lat: Number(value.lat), lng: Number(value.lng) },
+      opId: event.entityId ?? uid(),
+      uniqueOpId: core.uniqueOpId,
+      name: core.name,
+      countryCode: core.countryCode,
+      opType: core.opType,
+      position: { lat: core.lat, lng: core.lng },
+      attributes: event.payload.attributes,
     };
 
     try {
-      if (this.selectedId()) {
+      if (event.entityId) {
         this.store.updateOperationalPoint(payload.opId, payload);
       } else {
         this.store.addOperationalPoint(payload);
-        this.selectedId.set(payload.opId);
       }
       this.error.set(null);
     } catch (err) {
@@ -320,13 +165,149 @@ export class OperationalPointEditorComponent {
     }
   }
 
-  deleteSelected(): void {
-    const id = this.selectedId();
-    if (!id) {
+  handleDelete(ids: string[]): void {
+    ids.forEach((id) => this.store.removeOperationalPoint(id));
+  }
+
+  handleBulkApply(event: BulkApplyEvent): void {
+    const definitions = this.attributeDefinitions();
+    event.entityIds.forEach((id) => {
+      const op = this.findOperationalPoint(id);
+      if (!op) {
+        return;
+      }
+      const merged = mergeAttributeEntry(definitions, op.attributes, {
+        key: event.key,
+        value: event.value,
+        validFrom: event.validFrom || undefined,
+      });
+      this.store.updateOperationalPoint(id, {
+        ...op,
+        attributes: merged,
+      });
+    });
+  }
+
+  async triggerOperationalPointImport(): Promise<void> {
+    if (this.importState() === 'running') {
       return;
     }
-    this.store.removeOperationalPoint(id);
-    this.selectedId.set(null);
-    this.resetForm();
+    this.importState.set('running');
+    this.importLogs.set(['Import gestartet …']);
+    this.importConsoleOpen.set(true);
+    try {
+      const logs = await firstValueFrom(this.topologyApi.importOperationalPoints());
+      const normalized = this.normalizeLogs(logs);
+      this.importLogs.set(['Import gestartet …', ...normalized, 'Import abgeschlossen.']);
+      this.importState.set('success');
+      await this.store.refreshOperationalPointsFromApi();
+    } catch (error) {
+      this.importLogs.update((lines) => [...lines, `Fehler: ${this.describeError(error)}`]);
+      this.importState.set('error');
+    }
   }
+
+  toggleImportConsole(): void {
+    if (this.importState() === 'running') {
+      return;
+    }
+    this.importConsoleOpen.set(!this.importConsoleOpen());
+  }
+
+  hideImportConsole(): void {
+    if (this.importState() === 'running') {
+      return;
+    }
+    this.importConsoleOpen.set(false);
+  }
+
+  handleAction(event: AttributeActionEvent): void {
+    if (event.key !== 'lat' && event.key !== 'lng') {
+      return;
+    }
+    const lat = event.values['lat'];
+    const lng = event.values['lng'];
+    if (!this.isValidNumber(lat) || !this.isValidNumber(lng)) {
+      this.error.set('Bitte gültige Koordinaten eingeben.');
+      return;
+    }
+    window.open(`https://www.openstreetmap.org/?mlat=${lat}&mlon=${lng}&zoom=16`, '_blank');
+  }
+
+  private deriveCoreFields(values: Record<string, string>):
+    | {
+        ok: true;
+        uniqueOpId: string;
+        name: string;
+        countryCode: string;
+        opType: string;
+        lat: number;
+        lng: number;
+      }
+    | { ok: false; error: string } {
+    const uniqueOpId = values['uniqueOpId']?.trim();
+    if (!uniqueOpId) {
+      return { ok: false, error: 'Unique OP ID ist erforderlich.' };
+    }
+    const name = values['name']?.trim();
+    if (!name) {
+      return { ok: false, error: 'Name ist erforderlich.' };
+    }
+    const countryCode = values['countryCode']?.trim();
+    if (!countryCode) {
+      return { ok: false, error: 'Country Code ist erforderlich.' };
+    }
+    const opType = values['opType']?.trim();
+    if (!opType) {
+      return { ok: false, error: 'OP-Typ ist erforderlich.' };
+    }
+    const latRaw = values['lat']?.trim() ?? '';
+    const lngRaw = values['lng']?.trim() ?? '';
+    const lat = Number(latRaw);
+    const lng = Number(lngRaw);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+      return { ok: false, error: 'Latitude und Longitude müssen numerisch sein.' };
+    }
+
+    return {
+      ok: true,
+      uniqueOpId,
+      name,
+      countryCode,
+      opType,
+      lat,
+      lng,
+    };
+  }
+
+  private isValidNumber(value: string | undefined): boolean {
+    if (value == null || value === '') {
+      return false;
+    }
+    return Number.isFinite(Number(value));
+  }
+
+  private normalizeLogs(logs: string[] | undefined): string[] {
+    if (!logs || logs.length === 0) {
+      return ['Keine Rückmeldungen vom Backend.'];
+    }
+    return logs
+      .map((line) => line?.toString().trim())
+      .filter((line): line is string => !!line && line.length > 0);
+  }
+
+  private describeError(error: unknown): string {
+    return error instanceof Error ? error.message : String(error ?? 'Unbekannter Fehler');
+  }
+
+  private findOperationalPoint(id: string): OperationalPoint | null {
+    return this.store.operationalPoints().find((entry) => entry.opId === id) ?? null;
+  }
+}
+
+function uid(): string {
+  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
+    return crypto.randomUUID();
+  }
+  return `tmp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }

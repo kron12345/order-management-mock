@@ -1,29 +1,28 @@
-import {
-  ChangeDetectionStrategy,
-  Component,
-  computed,
-  effect,
-  inject,
-  signal,
-} from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import {
-  FormBuilder,
-  FormGroup,
-  ReactiveFormsModule,
-  Validators,
-} from '@angular/forms';
-import { MatListModule } from '@angular/material/list';
-import { MatFormFieldModule } from '@angular/material/form-field';
-import { MatSelectModule } from '@angular/material/select';
-import { MatInputModule } from '@angular/material/input';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
-import { MATERIAL_IMPORTS } from '../../core/material.imports.imports';
+import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
+import { firstValueFrom } from 'rxjs';
 import { PlanningStoreService } from '../../shared/planning-store.service';
 import { SectionOfLine, SolNature } from '../../shared/planning-types';
+import { CustomAttributeService } from '../../core/services/custom-attribute.service';
+import {
+  AttributeEntityEditorComponent,
+  AttributeEntityRecord,
+  BulkApplyEvent,
+  EntitySaveEvent,
+} from '../../shared/components/attribute-entity-editor/attribute-entity-editor.component';
+import { mergeAttributeEntry } from '../../shared/utils/topology-attribute.helpers';
+import { TopologyApiService } from '../topology-api.service';
 
-const uid = () => crypto.randomUUID();
+const DEFAULT_FALLBACK = {
+  startUniqueOpId: '',
+  endUniqueOpId: '',
+  lengthKm: '',
+  nature: 'REGULAR',
+};
+
 const SOL_NATURES: SolNature[] = ['REGULAR', 'LINK'];
 
 @Component({
@@ -31,267 +30,127 @@ const SOL_NATURES: SolNature[] = ['REGULAR', 'LINK'];
   standalone: true,
   imports: [
     CommonModule,
-    ReactiveFormsModule,
-    MatListModule,
-    MatFormFieldModule,
-    MatSelectModule,
-    MatInputModule,
     MatButtonModule,
     MatIconModule,
-    ...MATERIAL_IMPORTS,
+    MatProgressSpinnerModule,
+    AttributeEntityEditorComponent,
   ],
   template: `
-    <div class="editor">
-      <section class="editor__list">
-        <header>
-          <h2>Sections of Line</h2>
-          <span>{{ sections().length }} Einträge</span>
-        </header>
-        <mat-selection-list [multiple]="false">
-          @for (sol of sections(); track sol.solId) {
-            <mat-list-option
-              [selected]="selectedId() === sol.solId"
-              (click)="select(sol)"
-            >
-              <div mat-line>{{ sol.startUniqueOpId }} → {{ sol.endUniqueOpId }}</div>
-              <div mat-line class="secondary">{{ sol.nature }} · {{ sol.lengthKm || '—' }} km</div>
-            </mat-list-option>
-          }
-        </mat-selection-list>
-        <button mat-stroked-button color="primary" type="button" (click)="createNew()">
-          <mat-icon>add</mat-icon>
-          Neu anlegen
+    <section class="topology-editor">
+      <header class="topology-editor__toolbar">
+        <button
+          mat-stroked-button
+          color="primary"
+          type="button"
+          (click)="triggerSectionImport()"
+          [disabled]="importState() === 'running'"
+        >
+          <mat-icon fontIcon="cloud_download"></mat-icon>
+          Importieren
+          <mat-progress-spinner
+            *ngIf="importState() === 'running'"
+            diameter="16"
+            mode="indeterminate"
+          ></mat-progress-spinner>
         </button>
-      </section>
+        <button
+          mat-button
+          type="button"
+          *ngIf="canToggleConsole()"
+          (click)="toggleImportConsole()"
+          [disabled]="importState() === 'running'"
+        >
+          {{ importConsoleOpen() ? 'Konsole schließen' : 'Konsole anzeigen' }}
+        </button>
+      </header>
 
-      <section class="editor__detail">
-        <form [formGroup]="form" (ngSubmit)="save()">
-          <div class="form-grid">
-            <mat-form-field appearance="outline">
-              <mat-label>Start OP</mat-label>
-              <mat-select formControlName="startUniqueOpId" required>
-                @for (op of operationalPoints(); track op.uniqueOpId) {
-                  <mat-option [value]="op.uniqueOpId">{{ op.name }} ({{ op.uniqueOpId }})</mat-option>
-                }
-              </mat-select>
-            </mat-form-field>
+      <div class="topology-editor__console" *ngIf="importConsoleVisible()">
+        <header>
+          <span>Import-Log</span>
+          <button
+            mat-icon-button
+            type="button"
+            (click)="hideImportConsole()"
+            [disabled]="importState() === 'running'"
+          >
+            <mat-icon>close</mat-icon>
+          </button>
+        </header>
+        <pre>{{ importLogs().join('\n') }}</pre>
+      </div>
 
-            <mat-form-field appearance="outline">
-              <mat-label>Ende OP</mat-label>
-              <mat-select formControlName="endUniqueOpId" required>
-                @for (op of operationalPoints(); track op.uniqueOpId) {
-                  <mat-option [value]="op.uniqueOpId">{{ op.name }} ({{ op.uniqueOpId }})</mat-option>
-                }
-              </mat-select>
-            </mat-form-field>
-
-            <mat-form-field appearance="outline">
-              <mat-label>Länge (km)</mat-label>
-              <input type="number" matInput formControlName="lengthKm" />
-            </mat-form-field>
-
-            <mat-form-field appearance="outline">
-              <mat-label>Nature</mat-label>
-              <mat-select formControlName="nature" required>
-                @for (nature of solNatures; track nature) {
-                  <mat-option [value]="nature">{{ nature }}</mat-option>
-                }
-              </mat-select>
-            </mat-form-field>
-          </div>
-
-          <div class="actions">
-            <span class="error" *ngIf="error()">{{ error() }}</span>
-            <button mat-stroked-button type="button" (click)="resetForm()">Zurücksetzen</button>
-            <button mat-flat-button color="primary" type="submit">
-              {{ selectedId() ? 'Speichern' : 'Anlegen' }}
-            </button>
-            <button
-              mat-icon-button
-              color="warn"
-              type="button"
-              (click)="deleteSelected()"
-              [disabled]="!selectedId()"
-            >
-              <mat-icon>delete</mat-icon>
-            </button>
-          </div>
-        </form>
-      </section>
-    </div>
+      <app-attribute-entity-editor
+        [title]="'Sections of Line'"
+        [entities]="entityRecords()"
+        [attributeDefinitions]="attributeDefinitions()"
+        [defaultFallbackValues]="defaultFallback"
+        [numericKeys]="numericKeys"
+        [detailError]="error()"
+        (saveEntity)="handleSave($event)"
+        (deleteEntities)="handleDelete($event)"
+        (bulkApply)="handleBulkApply($event)"
+      />
+    </section>
   `,
-  styles: [
-    `
-      .editor {
-        display: grid;
-        grid-template-columns: 320px 1fr;
-        gap: 24px;
-        padding: 24px;
-      }
-
-      .editor__list {
-        display: flex;
-        flex-direction: column;
-        gap: 16px;
-      }
-
-      mat-selection-list {
-        max-height: 320px;
-        overflow: auto;
-        border: 1px solid rgba(0, 0, 0, 0.1);
-        border-radius: 8px;
-      }
-
-      .secondary {
-        font-size: 12px;
-        opacity: 0.7;
-      }
-
-      .editor__detail {
-        padding: 16px;
-        border-radius: 12px;
-        border: 1px solid rgba(0, 0, 0, 0.08);
-        background: rgba(255, 255, 255, 0.9);
-      }
-
-      .form-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-        gap: 16px;
-      }
-
-      .actions {
-        margin-top: 16px;
-        display: flex;
-        gap: 12px;
-        align-items: center;
-      }
-
-      .error {
-        color: #d32f2f;
-        font-size: 12px;
-        flex: 1;
-      }
-
-      @media (max-width: 960px) {
-        .editor {
-          grid-template-columns: 1fr;
-        }
-      }
-    `,
-  ],
+  styleUrl: './section-of-line-editor.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class SectionOfLineEditorComponent {
   private readonly store = inject(PlanningStoreService);
-  private readonly fb = inject(FormBuilder);
+  private readonly customAttributes = inject(CustomAttributeService);
+  private readonly topologyApi = inject(TopologyApiService);
 
-  readonly solNatures = SOL_NATURES;
-  readonly operationalPoints = computed(() =>
-    [...this.store.operationalPoints()].sort((a, b) => a.name.localeCompare(b.name)),
+  readonly attributeDefinitions = computed(() =>
+    this.customAttributes.list('topology-sections-of-line'),
   );
-  readonly sections = computed(() =>
-    [...this.store.sectionsOfLine()].sort((a, b) =>
-      a.startUniqueOpId.localeCompare(b.startUniqueOpId),
-    ),
+  readonly entityRecords = computed<AttributeEntityRecord[]>(() =>
+    this.store.sectionsOfLine().map((sol) => ({
+      id: sol.solId,
+      label: `${sol.startUniqueOpId} → ${sol.endUniqueOpId}`,
+      secondaryLabel: `${sol.nature} · ${sol.lengthKm ?? '—'} km`,
+      attributes: sol.attributes ?? [],
+      fallbackValues: {
+        startUniqueOpId: sol.startUniqueOpId,
+        endUniqueOpId: sol.endUniqueOpId,
+        lengthKm: sol.lengthKm != null ? String(sol.lengthKm) : '',
+        nature: sol.nature,
+      },
+    })),
   );
 
-  readonly selectedId = signal<string | null>(null);
+  readonly defaultFallback = DEFAULT_FALLBACK;
+  readonly numericKeys = ['lengthKm'];
   readonly error = signal<string | null>(null);
-
-  readonly form: FormGroup = this.fb.group({
-    startUniqueOpId: ['', Validators.required],
-    endUniqueOpId: ['', Validators.required],
-    lengthKm: [null],
-    nature: ['REGULAR', Validators.required],
-  });
-
-  private readonly syncEffect = effect(
-    () => {
-      const id = this.selectedId();
-      if (!id) {
-        return;
-      }
-      const sol = this.store.sectionsOfLine().find((item) => item.solId === id);
-      if (!sol) {
-        this.selectedId.set(null);
-        this.resetForm();
-        return;
-      }
-      this.form.patchValue(
-        {
-          startUniqueOpId: sol.startUniqueOpId,
-          endUniqueOpId: sol.endUniqueOpId,
-          lengthKm: sol.lengthKm ?? null,
-          nature: sol.nature,
-        },
-        { emitEvent: false },
-      );
-      this.error.set(null);
-    },
-    { allowSignalWrites: true },
+  readonly importLogs = signal<string[]>([]);
+  readonly importState = signal<'idle' | 'running' | 'success' | 'error'>('idle');
+  readonly importConsoleOpen = signal(false);
+  readonly importConsoleVisible = computed(
+    () => this.importState() === 'running' || this.importConsoleOpen(),
+  );
+  readonly canToggleConsole = computed(
+    () => this.importLogs().length > 0 || this.importState() !== 'idle',
   );
 
-  select(sol: SectionOfLine): void {
-    this.selectedId.set(sol.solId);
-  }
-
-  createNew(): void {
-    this.selectedId.set(null);
-    this.form.reset({
-      startUniqueOpId: '',
-      endUniqueOpId: '',
-      lengthKm: null,
-      nature: 'REGULAR',
-    });
-    this.error.set(null);
-  }
-
-  resetForm(): void {
-    const id = this.selectedId();
-    if (!id) {
-      this.createNew();
-      return;
-    }
-    const sol = this.store.sectionsOfLine().find((item) => item.solId === id);
-    if (sol) {
-      this.form.patchValue(
-        {
-          startUniqueOpId: sol.startUniqueOpId,
-          endUniqueOpId: sol.endUniqueOpId,
-          lengthKm: sol.lengthKm ?? null,
-          nature: sol.nature,
-        },
-        { emitEvent: false },
-      );
-    }
-    this.error.set(null);
-  }
-
-  save(): void {
-    if (this.form.invalid) {
-      this.form.markAllAsTouched();
-      return;
-    }
-    const value = this.form.getRawValue();
-    if (value.startUniqueOpId === value.endUniqueOpId) {
-      this.error.set('Start und Ende dürfen nicht identisch sein.');
+  handleSave(event: EntitySaveEvent): void {
+    const core = this.deriveCoreFields(event.payload.values);
+    if (!core.ok) {
+      this.error.set(core.error);
       return;
     }
     const payload: SectionOfLine = {
-      solId: this.selectedId() ?? uid(),
-      startUniqueOpId: value.startUniqueOpId,
-      endUniqueOpId: value.endUniqueOpId,
-      lengthKm: value.lengthKm != null ? Number(value.lengthKm) : undefined,
-      nature: value.nature,
+      solId: event.entityId ?? uid(),
+      startUniqueOpId: core.startUniqueOpId,
+      endUniqueOpId: core.endUniqueOpId,
+      lengthKm: core.lengthKm,
+      nature: core.nature,
+      attributes: event.payload.attributes,
     };
 
     try {
-      if (this.selectedId()) {
+      if (event.entityId) {
         this.store.updateSectionOfLine(payload.solId, payload);
       } else {
         this.store.addSectionOfLine(payload);
-        this.selectedId.set(payload.solId);
       }
       this.error.set(null);
     } catch (err) {
@@ -299,14 +158,123 @@ export class SectionOfLineEditorComponent {
     }
   }
 
-  deleteSelected(): void {
-    const id = this.selectedId();
-    if (!id) {
+  handleDelete(ids: string[]): void {
+    ids.forEach((id) => this.store.removeSectionOfLine(id));
+  }
+
+  handleBulkApply(event: BulkApplyEvent): void {
+    const definitions = this.attributeDefinitions();
+    event.entityIds.forEach((id) => {
+      const sol = this.findSection(id);
+      if (!sol) {
+        return;
+      }
+      const merged = mergeAttributeEntry(definitions, sol.attributes, {
+        key: event.key,
+        value: event.value,
+        validFrom: event.validFrom || undefined,
+      });
+      this.store.updateSectionOfLine(id, { ...sol, attributes: merged });
+    });
+  }
+
+  async triggerSectionImport(): Promise<void> {
+    if (this.importState() === 'running') {
       return;
     }
-    this.store.removeSectionOfLine(id);
-    this.selectedId.set(null);
-    this.resetForm();
+    this.importState.set('running');
+    this.importLogs.set(['Import gestartet …']);
+    this.importConsoleOpen.set(true);
+    try {
+      const logs = await firstValueFrom(this.topologyApi.importSectionsOfLine());
+      const normalized = this.normalizeLogs(logs);
+      this.importLogs.set(['Import gestartet …', ...normalized, 'Import abgeschlossen.']);
+      this.importState.set('success');
+      await this.store.refreshSectionsOfLineFromApi();
+    } catch (error) {
+      this.importLogs.update((lines) => [...lines, `Fehler: ${this.describeError(error)}`]);
+      this.importState.set('error');
+    }
+  }
+
+  toggleImportConsole(): void {
+    if (this.importState() === 'running') {
+      return;
+    }
+    this.importConsoleOpen.set(!this.importConsoleOpen());
+  }
+
+  hideImportConsole(): void {
+    if (this.importState() === 'running') {
+      return;
+    }
+    this.importConsoleOpen.set(false);
+  }
+
+  private deriveCoreFields(values: Record<string, string>):
+    | {
+        ok: true;
+        startUniqueOpId: string;
+        endUniqueOpId: string;
+        lengthKm?: number;
+        nature: SolNature;
+      }
+    | { ok: false; error: string } {
+    const startUniqueOpId = values['startUniqueOpId']?.trim();
+    const endUniqueOpId = values['endUniqueOpId']?.trim();
+    if (!startUniqueOpId || !endUniqueOpId) {
+      return { ok: false, error: 'Start- und End-OP müssen gesetzt sein.' };
+    }
+    if (!this.findOperationalPointByUniqueId(startUniqueOpId)) {
+      return { ok: false, error: 'Start-OP existiert nicht.' };
+    }
+    if (!this.findOperationalPointByUniqueId(endUniqueOpId)) {
+      return { ok: false, error: 'End-OP existiert nicht.' };
+    }
+    const natureRaw = values['nature']?.trim().toUpperCase() as SolNature | undefined;
+    if (!natureRaw || !SOL_NATURES.includes(natureRaw)) {
+      return { ok: false, error: 'Nature ist ungültig.' };
+    }
+    const lengthRaw = values['lengthKm']?.trim() ?? '';
+    const length = lengthRaw ? Number(lengthRaw) : undefined;
+    if (lengthRaw && !Number.isFinite(length)) {
+      return { ok: false, error: 'Länge muss numerisch sein.' };
+    }
+
+    return {
+      ok: true,
+      startUniqueOpId,
+      endUniqueOpId,
+      lengthKm: length,
+      nature: natureRaw,
+    };
+  }
+
+  private normalizeLogs(logs: string[] | undefined): string[] {
+    if (!logs || logs.length === 0) {
+      return ['Keine Rückmeldungen vom Backend.'];
+    }
+    return logs
+      .map((line) => line?.toString().trim())
+      .filter((line): line is string => !!line && line.length > 0);
+  }
+
+  private describeError(error: unknown): string {
+    return error instanceof Error ? error.message : String(error ?? 'Unbekannter Fehler');
+  }
+
+  private findOperationalPointByUniqueId(uniqueOpId: string) {
+    return this.store.operationalPoints().find((op) => op.uniqueOpId === uniqueOpId);
+  }
+
+  private findSection(id: string): SectionOfLine | null {
+    return this.store.sectionsOfLine().find((entry) => entry.solId === id) ?? null;
   }
 }
 
+function uid(): string {
+  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
+    return crypto.randomUUID();
+  }
+  return `tmp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}

@@ -64,6 +64,13 @@
                   </mat-select>
                 </mat-form-field>
 
+                <div class="attribute-card__toggles">
+                  <mat-slide-toggle formControlName="temporal">
+                    Zeitabhängig (mit Gültigkeiten)
+                  </mat-slide-toggle>
+                  <mat-slide-toggle formControlName="required">Pflichtfeld</mat-slide-toggle>
+                </div>
+
                 <mat-form-field appearance="outline" class="attribute-card__description">
                   <mat-label>Beschreibung (optional)</mat-label>
                   <textarea matInput rows="2" formControlName="description"></textarea>
@@ -82,6 +89,9 @@
                 <p *ngIf="definition.description">{{ definition.description }}</p>
                 <div class="attribute-card__meta">
                   <span class="attribute-card__chip">{{ attributeTypeLabel(definition.type) }}</span>
+                  <span class="attribute-card__chip attribute-card__chip--required" *ngIf="definition.required">
+                    Pflichtfeld
+                  </span>
                   <code class="attribute-card__key">{{ definition.key }}</code>
                 </div>
               </div>
@@ -139,6 +149,13 @@
             <mat-option value="time">Zeit</mat-option>
           </mat-select>
         </mat-form-field>
+
+        <div class="create-form__toggles">
+          <mat-slide-toggle formControlName="temporal">
+            Zeitabhängig (mit Gültigkeiten)
+          </mat-slide-toggle>
+          <mat-slide-toggle formControlName="required">Pflichtfeld</mat-slide-toggle>
+        </div>
 
         <mat-form-field appearance="outline" class="create-form__description">
           <mat-label>Beschreibung (optional)</mat-label>

@@ -23,6 +23,10 @@ export function loadMockData(store: PlanningStoreService): void {
     opType: 'STATION',
     position: { lat: 52.525, lng: 13.369 },
     createdAt: new Date().toISOString(),
+    attributes: [
+      { key: 'region', value: 'Berlin', validFrom: '2024-01-01' },
+      { key: 'category', value: 'Hauptbahnhof' },
+    ],
   };
 
   const opB: OperationalPoint = {
@@ -33,6 +37,7 @@ export function loadMockData(store: PlanningStoreService): void {
     opType: 'JUNCTION',
     position: { lat: 52.548, lng: 13.388 },
     createdAt: new Date().toISOString(),
+    attributes: [{ key: 'region', value: 'Berlin' }],
   };
 
   const section: SectionOfLine = {
@@ -46,6 +51,7 @@ export function loadMockData(store: PlanningStoreService): void {
       { lat: 52.535, lng: 13.38 },
       { lat: opB.position.lat, lng: opB.position.lng },
     ],
+    attributes: [{ key: 'track-owner', value: 'DB Netz' }],
   };
 
   const site: PersonnelSite = {
@@ -54,6 +60,7 @@ export function loadMockData(store: PlanningStoreService): void {
     name: 'Crew Center Hbf',
     uniqueOpId: opA.uniqueOpId,
     position: { lat: 52.524, lng: 13.367 },
+    attributes: [{ key: 'floor', value: '2', validFrom: '2024-06-01' }],
   };
 
   const replStopA: ReplacementStop = {
@@ -62,6 +69,7 @@ export function loadMockData(store: PlanningStoreService): void {
     stopCode: 'SEV-HBF',
     position: { lat: 52.526, lng: 13.368 },
     nearestUniqueOpId: opA.uniqueOpId,
+    attributes: [{ key: 'shelter', value: 'Überdacht' }],
   };
 
   const replStopB: ReplacementStop = {
@@ -70,12 +78,14 @@ export function loadMockData(store: PlanningStoreService): void {
     stopCode: 'SEV-GB',
     position: { lat: 52.5485, lng: 13.389 },
     nearestUniqueOpId: opB.uniqueOpId,
+    attributes: [{ key: 'shelter', value: 'Offen' }],
   };
 
   const replRoute: ReplacementRoute = {
     replacementRouteId: uid(),
     name: 'SEV Hbf - Gesundbrunnen',
     operator: 'DemoBus GmbH',
+    attributes: [{ key: 'line-number', value: 'SEV100' }],
   };
 
   const replEdge: ReplacementEdge = {
@@ -86,6 +96,7 @@ export function loadMockData(store: PlanningStoreService): void {
     seq: 1,
     avgDurationSec: 900,
     distanceM: 4800,
+    attributes: [{ key: 'via', value: 'Invalidenstr.' }],
   };
 
   const opLink: OpReplacementStopLink = {
@@ -95,6 +106,7 @@ export function loadMockData(store: PlanningStoreService): void {
     relationType: 'PRIMARY_SEV_STOP',
     walkingTimeSec: 180,
     distanceM: 150,
+    attributes: [{ key: 'signage', value: 'Gelb', validFrom: '2024-03-01' }],
   };
 
   const transferEdge: TransferEdge = {
@@ -105,6 +117,7 @@ export function loadMockData(store: PlanningStoreService): void {
     avgDurationSec: 120,
     distanceM: 110,
     bidirectional: true,
+    attributes: [{ key: 'covered', value: 'true' }],
   };
 
   store.addOperationalPoint(opA);
@@ -118,4 +131,3 @@ export function loadMockData(store: PlanningStoreService): void {
   store.addOpReplacementStopLink(opLink);
   store.addTransferEdge(transferEdge);
 }
-

@@ -7,6 +7,15 @@ export interface LatLng {
   lng: number;
 }
 
+export interface TopologyAttribute {
+  key: string;
+  value: string;
+  /**
+   * Optionale fachliche Gültigkeit ab (ISO-Datum, z. B. 2024-01-01).
+   */
+  validFrom?: string;
+}
+
 export interface AuditInfo {
   createdAt?: string;
   updatedAt?: string;
@@ -14,7 +23,7 @@ export interface AuditInfo {
   updatedBy?: string;
 }
 
-export type OpType = 'STATION' | 'JUNCTION' | 'BORDER_POINT' | 'SIDING_AREA';
+export type OpType = string;
 
 export interface OperationalPoint extends AuditInfo {
   opId: UUID;
@@ -23,6 +32,7 @@ export interface OperationalPoint extends AuditInfo {
   name: string;
   opType: OpType;
   position: LatLng;
+   attributes?: TopologyAttribute[];
 }
 
 export type SolNature = 'REGULAR' | 'LINK';
@@ -34,6 +44,7 @@ export interface SectionOfLine extends AuditInfo {
   lengthKm?: number;
   nature: SolNature;
   polyline?: LatLng[];
+   attributes?: TopologyAttribute[];
 }
 
 export type OpTrackRole = 'RUNNING' | 'SIDING';
@@ -44,6 +55,7 @@ export interface OpTrack {
   role: OpTrackRole;
   name?: string;
   polyline?: LatLng[];
+   attributes?: TopologyAttribute[];
 }
 
 export type PersonnelSiteType = 'MELDESTELLE' | 'PAUSENRAUM' | 'BEREITSCHAFT' | 'BÜRO';
@@ -55,6 +67,7 @@ export interface PersonnelSite extends AuditInfo {
   uniqueOpId?: string;
   position: LatLng;
   openingHoursJson?: string;
+   attributes?: TopologyAttribute[];
 }
 
 export interface ReplacementStop extends AuditInfo {
@@ -63,12 +76,14 @@ export interface ReplacementStop extends AuditInfo {
   stopCode?: string;
   position: LatLng;
   nearestUniqueOpId?: string;
+   attributes?: TopologyAttribute[];
 }
 
 export interface ReplacementRoute extends AuditInfo {
   replacementRouteId: UUID;
   name: string;
   operator?: string;
+   attributes?: TopologyAttribute[];
 }
 
 export interface ReplacementEdge extends AuditInfo {
@@ -80,6 +95,7 @@ export interface ReplacementEdge extends AuditInfo {
   avgDurationSec?: number;
   distanceM?: number;
   polyline?: LatLng[];
+   attributes?: TopologyAttribute[];
 }
 
 export type OpReplRelation = 'PRIMARY_SEV_STOP' | 'ALTERNATIVE' | 'TEMPORARY';
@@ -91,6 +107,7 @@ export interface OpReplacementStopLink extends AuditInfo {
   relationType: OpReplRelation;
   walkingTimeSec?: number;
   distanceM?: number;
+   attributes?: TopologyAttribute[];
 }
 
 export type TransferMode = 'WALK' | 'SHUTTLE' | 'INTERNAL';
@@ -108,6 +125,7 @@ export interface TransferEdge extends AuditInfo {
   avgDurationSec?: number;
   distanceM?: number;
   bidirectional: boolean;
+   attributes?: TopologyAttribute[];
 }
 
 export interface PlanningEntitySignals {
@@ -120,4 +138,3 @@ export interface PlanningEntitySignals {
   opReplacementStopLinks: WritableSignal<OpReplacementStopLink[]>;
   transferEdges: WritableSignal<TransferEdge[]>;
 }
-

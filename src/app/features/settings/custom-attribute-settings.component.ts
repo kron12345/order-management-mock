@@ -24,6 +24,7 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatDividerModule } from '@angular/material/divider';
 import { MatCardModule } from '@angular/material/card';
+import { MatSlideToggleModule } from '@angular/material/slide-toggle';
 import { ActivityTypeSettingsComponent } from './activity-type-settings.component';
 
 @Component({
@@ -40,6 +41,7 @@ import { ActivityTypeSettingsComponent } from './activity-type-settings.componen
     MatTooltipModule,
     MatDividerModule,
     MatCardModule,
+    MatSlideToggleModule,
     ActivityTypeSettingsComponent,
   ],
   templateUrl: './custom-attribute-settings.component.html',
@@ -68,6 +70,8 @@ export class CustomAttributeSettingsComponent implements OnDestroy {
     key: ['', [Validators.required, Validators.maxLength(64)]],
     type: ['string' as CustomAttributePrimitiveType, Validators.required],
     description: [''],
+    temporal: [false],
+    required: [false],
   });
 
   protected readonly editForm = this.fb.group({
@@ -75,6 +79,8 @@ export class CustomAttributeSettingsComponent implements OnDestroy {
     key: ['', [Validators.required, Validators.maxLength(64)]],
     type: ['string' as CustomAttributePrimitiveType, Validators.required],
     description: [''],
+    temporal: [false],
+    required: [false],
   });
 
   protected readonly editingId = signal<string | null>(null);
@@ -114,6 +120,8 @@ export class CustomAttributeSettingsComponent implements OnDestroy {
       key: '',
       type: 'string',
       description: '',
+      temporal: false,
+      required: false,
     });
   }
 
@@ -124,6 +132,8 @@ export class CustomAttributeSettingsComponent implements OnDestroy {
       key: definition.key,
       type: definition.type,
       description: definition.description ?? '',
+      temporal: !!definition.temporal,
+      required: !!definition.required,
     });
   }
 
@@ -134,6 +144,8 @@ export class CustomAttributeSettingsComponent implements OnDestroy {
       key: '',
       type: 'string',
       description: '',
+      temporal: false,
+      required: false,
     });
   }
 
@@ -151,6 +163,8 @@ export class CustomAttributeSettingsComponent implements OnDestroy {
       key: value.key ?? '',
       type: value.type ?? 'string',
       description: value.description ?? '',
+      temporal: !!value.temporal,
+      required: !!value.required,
     });
     this.cancelEdit();
   }
@@ -176,12 +190,16 @@ export class CustomAttributeSettingsComponent implements OnDestroy {
       key: value.key ?? '',
       type: value.type ?? 'string',
       description: value.description ?? '',
+      temporal: !!value.temporal,
+      required: !!value.required,
     });
     this.newAttributeForm.reset({
       label: '',
       key: '',
       type: 'string',
       description: '',
+      temporal: false,
+      required: false,
     });
   }
 
