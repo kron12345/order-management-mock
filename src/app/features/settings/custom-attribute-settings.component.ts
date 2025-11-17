@@ -27,6 +27,15 @@ import { MatCardModule } from '@angular/material/card';
 import { MatSlideToggleModule } from '@angular/material/slide-toggle';
 import { ActivityTypeSettingsComponent } from './activity-type-settings.component';
 
+const ATTRIBUTE_FORM_DEFAULTS = {
+  label: 'Beispiel-Attribut',
+  key: 'beispiel-attribut',
+  type: 'string' as CustomAttributePrimitiveType,
+  description: 'z. B. zusätzliche Referenznummer',
+  temporal: false,
+  required: false,
+};
+
 @Component({
   selector: 'app-custom-attribute-settings',
   standalone: true,
@@ -66,12 +75,12 @@ export class CustomAttributeSettingsComponent implements OnDestroy {
   protected readonly isDirty = this.customAttributes.isDirty;
 
   protected readonly newAttributeForm = this.fb.group({
-    label: ['', [Validators.required, Validators.maxLength(64)]],
-    key: ['', [Validators.required, Validators.maxLength(64)]],
-    type: ['string' as CustomAttributePrimitiveType, Validators.required],
-    description: [''],
-    temporal: [false],
-    required: [false],
+    label: [ATTRIBUTE_FORM_DEFAULTS.label, [Validators.required, Validators.maxLength(64)]],
+    key: [ATTRIBUTE_FORM_DEFAULTS.key, [Validators.required, Validators.maxLength(64)]],
+    type: [ATTRIBUTE_FORM_DEFAULTS.type, Validators.required],
+    description: [ATTRIBUTE_FORM_DEFAULTS.description],
+    temporal: [ATTRIBUTE_FORM_DEFAULTS.temporal],
+    required: [ATTRIBUTE_FORM_DEFAULTS.required],
   });
 
   protected readonly editForm = this.fb.group({
@@ -115,14 +124,7 @@ export class CustomAttributeSettingsComponent implements OnDestroy {
   protected handleTargetChange(entityId: string): void {
     this.selectedTargetId.set(entityId);
     this.editingId.set(null);
-    this.newAttributeForm.reset({
-      label: '',
-      key: '',
-      type: 'string',
-      description: '',
-      temporal: false,
-      required: false,
-    });
+    this.newAttributeForm.reset(ATTRIBUTE_FORM_DEFAULTS);
   }
 
   protected startEdit(definition: CustomAttributeDefinition): void {
@@ -193,14 +195,7 @@ export class CustomAttributeSettingsComponent implements OnDestroy {
       temporal: !!value.temporal,
       required: !!value.required,
     });
-    this.newAttributeForm.reset({
-      label: '',
-      key: '',
-      type: 'string',
-      description: '',
-      temporal: false,
-      required: false,
-    });
+    this.newAttributeForm.reset(ATTRIBUTE_FORM_DEFAULTS);
   }
 
   protected trackById(_index: number, item: CustomAttributeDefinition): string {

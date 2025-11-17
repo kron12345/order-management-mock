@@ -138,3 +138,33 @@ export interface PlanningEntitySignals {
   opReplacementStopLinks: WritableSignal<OpReplacementStopLink[]>;
   transferEdges: WritableSignal<TransferEdge[]>;
 }
+
+export type TopologyImportKind =
+  | 'operational-points'
+  | 'sections-of-line'
+  | 'personnel-sites'
+  | 'replacement-stops'
+  | 'replacement-routes'
+  | 'replacement-edges'
+  | 'op-replacement-stop-links'
+  | 'transfer-edges';
+
+export type TopologyImportStatus = 'queued' | 'in-progress' | 'succeeded' | 'failed' | 'ignored';
+
+export interface TopologyImportRequest {
+  kinds?: TopologyImportKind[];
+}
+
+export interface TopologyImportResponse {
+  startedAt: string;
+  requestedKinds: TopologyImportKind[];
+  message?: string;
+}
+
+export interface TopologyImportRealtimeEvent {
+  status: TopologyImportStatus;
+  kinds?: TopologyImportKind[];
+  message?: string;
+  source?: string;
+  timestamp: string;
+}

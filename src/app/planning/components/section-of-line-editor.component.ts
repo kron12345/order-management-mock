@@ -1,11 +1,18 @@
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, OnDestroy, computed, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
-import { firstValueFrom } from 'rxjs';
+import { firstValueFrom, Subscription } from 'rxjs';
 import { PlanningStoreService } from '../../shared/planning-store.service';
-import { SectionOfLine, SolNature } from '../../shared/planning-types';
+import {
+  SectionOfLine,
+  SolNature,
+  TopologyImportKind,
+  TopologyImportRealtimeEvent,
+  TopologyImportResponse,
+  TopologyImportStatus,
+} from '../../shared/planning-types';
 import { CustomAttributeService } from '../../core/services/custom-attribute.service';
 import {
   AttributeEntityEditorComponent,
@@ -19,8 +26,27 @@ import { TopologyApiService } from '../topology-api.service';
 const DEFAULT_FALLBACK = {
   startUniqueOpId: '',
   endUniqueOpId: '',
-  lengthKm: '',
+  lengthKm: '9.8',
   nature: 'REGULAR',
+  id: 'DE-SOL-000123',
+  name: 'Berlin Hbf – Berlin-Spandau',
+  notActive: 'false',
+  owner: 'DB Netz',
+  country: 'DEU',
+  attributeLine: '6107',
+  tdaClassOfTrack: 'D4',
+  tdaKvCodification: 'KV-G1',
+  tdaTrackWidth: '1435',
+  tdaMaxSpeed: '200',
+  tdaProtectionLegacySystem: 'PZB|LZB',
+  tdaCommuicationInfrastructure: 'GSM-R',
+  tdaEtcsLevel: 'L2',
+  tdaTsiPantographHead: '1950 mm',
+  tdaOtherPantographHead: '',
+  tdaContactLineSystem: '15kV/16.7Hz',
+  tdaContactForcePermitted: '90 N',
+  tdaGradientProfile: '0.5%',
+  url: 'http://data.europa.eu/949/functionalInfrastructure/sectionsOfLine/DE000123',
 };
 
 const SOL_NATURES: SolNature[] = ['REGULAR', 'LINK'];
@@ -95,10 +121,11 @@ const SOL_NATURES: SolNature[] = ['REGULAR', 'LINK'];
   styleUrl: './section-of-line-editor.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class SectionOfLineEditorComponent {
+export class SectionOfLineEditorComponent implements OnDestroy {
   private readonly store = inject(PlanningStoreService);
   private readonly customAttributes = inject(CustomAttributeService);
   private readonly topologyApi = inject(TopologyApiService);
+  private importSubscription: Subscription | null = null;
 
   readonly attributeDefinitions = computed(() =>
     this.customAttributes.list('topology-sections-of-line'),
@@ -130,6 +157,10 @@ export class SectionOfLineEditorComponent {
   readonly canToggleConsole = computed(
     () => this.importLogs().length > 0 || this.importState() !== 'idle',
   );
+
+  ngOnDestroy(): void {
+    this.teardownImportSubscription();
+  }
 
   handleSave(event: EntitySaveEvent): void {
     const core = this.deriveCoreFields(event.payload.values);
@@ -182,18 +213,17 @@ export class SectionOfLineEditorComponent {
     if (this.importState() === 'running') {
       return;
     }
-    this.importState.set('running');
-    this.importLogs.set(['Import gestartet …']);
-    this.importConsoleOpen.set(true);
+    const kind: TopologyImportKind = 'sections-of-line';
+    const startedAt = new Date();
+    this.prepareImportUi(kind, startedAt);
+    this.listenToImportStream(kind, startedAt.getTime(), () =>
+      this.store.refreshSectionsOfLineFromApi(),
+    );
     try {
-      const logs = await firstValueFrom(this.topologyApi.importSectionsOfLine());
-      const normalized = this.normalizeLogs(logs);
-      this.importLogs.set(['Import gestartet …', ...normalized, 'Import abgeschlossen.']);
-      this.importState.set('success');
-      await this.store.refreshSectionsOfLineFromApi();
+      const response = await firstValueFrom(this.topologyApi.importSectionsOfLine());
+      this.logImportAcknowledgement(response);
     } catch (error) {
-      this.importLogs.update((lines) => [...lines, `Fehler: ${this.describeError(error)}`]);
-      this.importState.set('error');
+      this.handleImportStartError(error);
     }
   }
 
@@ -250,15 +280,6 @@ export class SectionOfLineEditorComponent {
     };
   }
 
-  private normalizeLogs(logs: string[] | undefined): string[] {
-    if (!logs || logs.length === 0) {
-      return ['Keine Rückmeldungen vom Backend.'];
-    }
-    return logs
-      .map((line) => line?.toString().trim())
-      .filter((line): line is string => !!line && line.length > 0);
-  }
-
   private describeError(error: unknown): string {
     return error instanceof Error ? error.message : String(error ?? 'Unbekannter Fehler');
   }
@@ -269,6 +290,134 @@ export class SectionOfLineEditorComponent {
 
   private findSection(id: string): SectionOfLine | null {
     return this.store.sectionsOfLine().find((entry) => entry.solId === id) ?? null;
+  }
+
+  private prepareImportUi(kind: TopologyImportKind, startedAt: Date): void {
+    this.importState.set('running');
+    this.importConsoleOpen.set(true);
+    this.importLogs.set([
+      `[${this.formatTimestamp(startedAt)}] Import für ${this.describeImportKind(kind)} gestartet …`,
+    ]);
+  }
+
+  private listenToImportStream(
+    kind: TopologyImportKind,
+    sinceMs: number,
+    refresh: () => Promise<void>,
+  ): void {
+    this.teardownImportSubscription();
+    this.importSubscription = this.topologyApi.streamTopologyImportEvents().subscribe({
+      next: (event) => this.handleImportEvent(event, kind, sinceMs, refresh),
+      error: (error) => this.handleImportStreamError(error),
+    });
+  }
+
+  private handleImportEvent(
+    event: TopologyImportRealtimeEvent,
+    kind: TopologyImportKind,
+    sinceMs: number,
+    refresh: () => Promise<void>,
+  ): void {
+    if (!this.eventMatchesKind(event, kind) || !this.isEventRecent(event, sinceMs)) {
+      return;
+    }
+    this.importLogs.update((lines) => [...lines, this.formatImportEvent(event)]);
+    if (this.isTerminalStatus(event.status)) {
+      if (event.status === 'succeeded' || event.status === 'ignored') {
+        this.importState.set('success');
+        void refresh();
+      } else {
+        this.importState.set('error');
+      }
+      this.teardownImportSubscription();
+    }
+  }
+
+  private logImportAcknowledgement(response: TopologyImportResponse | null | undefined): void {
+    if (!response) {
+      return;
+    }
+    const kinds = response.requestedKinds?.length
+      ? response.requestedKinds.join(', ')
+      : 'Topologie';
+    const suffix = response.message ? ` – ${response.message}` : '';
+    this.importLogs.update((lines) => [
+      ...lines,
+      `[${this.formatTimestamp(response.startedAt)}] Importauftrag registriert (${kinds})${suffix}`,
+    ]);
+  }
+
+  private handleImportStartError(error: unknown): void {
+    this.importLogs.update((lines) => [
+      ...lines,
+      `Fehler beim Importstart: ${this.describeError(error)}`,
+    ]);
+    this.importState.set('error');
+    this.teardownImportSubscription();
+  }
+
+  private handleImportStreamError(error: unknown): void {
+    this.importLogs.update((lines) => [
+      ...lines,
+      `Stream-Fehler: ${this.describeError(error)}`,
+    ]);
+    this.importState.set('error');
+    this.teardownImportSubscription();
+  }
+
+  private isTerminalStatus(status: TopologyImportStatus): boolean {
+    return status === 'succeeded' || status === 'failed' || status === 'ignored';
+  }
+
+  private eventMatchesKind(event: TopologyImportRealtimeEvent, kind: TopologyImportKind): boolean {
+    if (!event.kinds || event.kinds.length === 0) {
+      return true;
+    }
+    return event.kinds.includes(kind);
+  }
+
+  private isEventRecent(event: TopologyImportRealtimeEvent, sinceMs: number): boolean {
+    if (!event.timestamp) {
+      return true;
+    }
+    const timestamp = Date.parse(event.timestamp);
+    if (Number.isNaN(timestamp)) {
+      return true;
+    }
+    return timestamp >= sinceMs;
+  }
+
+  private describeImportKind(kind: TopologyImportKind): string {
+    switch (kind) {
+      case 'operational-points':
+        return 'Operational Points';
+      case 'sections-of-line':
+        return 'Sections of Line';
+      default:
+        return kind;
+    }
+  }
+
+  private formatImportEvent(event: TopologyImportRealtimeEvent): string {
+    const kinds = event.kinds?.length ? ` (${event.kinds.join(', ')})` : '';
+    const message = event.message ? ` – ${event.message}` : '';
+    const source = event.source ? ` – Quelle: ${event.source}` : '';
+    return `[${this.formatTimestamp(event.timestamp)}] ${event.status}${kinds}${message}${source}`;
+  }
+
+  private formatTimestamp(value: string | Date): string {
+    const date = typeof value === 'string' ? new Date(value) : value;
+    if (Number.isNaN(date.getTime())) {
+      return new Date().toLocaleTimeString();
+    }
+    return date.toLocaleTimeString();
+  }
+
+  private teardownImportSubscription(): void {
+    if (this.importSubscription) {
+      this.importSubscription.unsubscribe();
+      this.importSubscription = null;
+    }
   }
 }
 

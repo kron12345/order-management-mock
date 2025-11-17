@@ -44,10 +44,10 @@ const TIMETABLE_YEAR_DEFINITIONS: CustomAttributeDefinition[] = [
 ];
 
 const DEFAULT_VALUES = {
-  label: '',
-  startIso: '',
-  endIso: '',
-  description: '',
+  label: 'Fahrplanjahr 2025/26',
+  startIso: '2024-12-15',
+  endIso: '2025-12-13',
+  description: 'Referenzfahrplan für das Jahr 2025/26',
 };
 
 @Component({

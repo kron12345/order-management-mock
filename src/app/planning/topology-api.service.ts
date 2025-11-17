@@ -12,6 +12,9 @@ import {
   ReplacementStop,
   SectionOfLine,
   TransferEdge,
+  TopologyImportKind,
+  TopologyImportRealtimeEvent,
+  TopologyImportResponse,
 } from '../shared/planning-types';
 
 type ListPayload<T> = { items: T[] };
@@ -85,16 +88,57 @@ export class TopologyApiService {
     return this.putList('/planning/topology/transfer-edges', items);
   }
 
-  importOperationalPoints(): Observable<string[]> {
-    return this.http
-      .post<unknown>(this.url('/planning/topology/operational-points/import'), {})
-      .pipe(map((response) => this.normalizeLogs(response, 'Operational-Point-Import abgeschlossen.')));
+  importOperationalPoints(): Observable<TopologyImportResponse> {
+    return this.triggerTopologyImport(['operational-points']);
   }
 
-  importSectionsOfLine(): Observable<string[]> {
+  importSectionsOfLine(): Observable<TopologyImportResponse> {
+    return this.triggerTopologyImport(['sections-of-line']);
+  }
+
+  triggerTopologyImport(kinds: TopologyImportKind[]): Observable<TopologyImportResponse> {
+    const payload = kinds.length > 0 ? { kinds } : {};
     return this.http
-      .post<unknown>(this.url('/planning/topology/sections-of-line/import'), {})
-      .pipe(map((response) => this.normalizeLogs(response, 'Section-of-Line-Import abgeschlossen.')));
+      .post<TopologyImportResponse>(this.url('/planning/topology/import'), payload)
+      .pipe(map((response) => this.normalizeImportResponse(response)));
+  }
+
+  streamTopologyImportEvents(): Observable<TopologyImportRealtimeEvent> {
+    return new Observable<TopologyImportRealtimeEvent>((observer) => {
+      if (typeof window === 'undefined' || typeof EventSource === 'undefined') {
+        observer.complete();
+        return;
+      }
+
+      const eventSource = new EventSource(this.url('/planning/topology/import/events'), {
+        withCredentials: true,
+      });
+
+      const handleMessage = (event: MessageEvent<string>) => {
+        if (!event.data) {
+          return;
+        }
+        try {
+          const payload = JSON.parse(event.data) as TopologyImportRealtimeEvent;
+          observer.next(payload);
+        } catch (error) {
+          console.warn('[TopologyApiService] Failed to parse import event payload', error);
+        }
+      };
+
+      const handleError = (error: Event) => {
+        observer.error(error);
+      };
+
+      eventSource.addEventListener('message', handleMessage as EventListener);
+      eventSource.addEventListener('error', handleError as EventListener);
+
+      return () => {
+        eventSource.removeEventListener('message', handleMessage as EventListener);
+        eventSource.removeEventListener('error', handleError as EventListener);
+        eventSource.close();
+      };
+    });
   }
 
   private getList<T>(path: string, fallback: T[]): Observable<T[]> {
@@ -131,26 +175,13 @@ export class TopologyApiService {
     return fallback;
   }
 
-  private normalizeLogs(response: unknown, fallback: string): string[] {
-    if (Array.isArray(response)) {
-      return response.map((line) => String(line));
-    }
-    if (response && typeof response === 'object') {
-      const maybeLogs = (response as { logs?: unknown; message?: string }).logs;
-      if (Array.isArray(maybeLogs)) {
-        return maybeLogs.map((line) => String(line));
-      }
-      const message = (response as { message?: string }).message;
-      if (typeof message === 'string') {
-        return [message];
-      }
-    }
-    if (typeof response === 'string') {
-      return response
-        .split(/\r?\n/)
-        .map((line) => line.trim())
-        .filter((line) => line.length > 0);
-    }
-    return [fallback];
+  private normalizeImportResponse(
+    response: TopologyImportResponse | null | undefined,
+  ): TopologyImportResponse {
+    const startedAt = response?.startedAt ?? new Date().toISOString();
+    const kinds = response?.requestedKinds;
+    const requestedKinds = Array.isArray(kinds) ? kinds : [];
+    const message = response?.message ?? undefined;
+    return { startedAt, requestedKinds, message };
   }
 }

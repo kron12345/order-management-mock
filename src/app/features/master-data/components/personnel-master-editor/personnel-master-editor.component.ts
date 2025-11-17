@@ -214,41 +214,41 @@ const PERSONNEL_BASE_DEFINITIONS: CustomAttributeDefinition[] = [
 ];
 
 const SERVICE_POOL_DEFAULTS = {
-  name: '',
-  description: '',
-  shiftCoordinator: '',
-  contactEmail: '',
+  name: 'Fernverkehr Süd',
+  description: 'Stammpool für die Langläufe München–Berlin',
+  shiftCoordinator: 'Leonie Kraus',
+  contactEmail: 'fv-sued@rail.example',
 };
 
 const PERSONNEL_SERVICE_DEFAULTS = {
-  name: '',
-  description: '',
-  poolId: '',
-  startTime: '',
-  endTime: '',
+  name: 'ICE 1001 Frühdienst',
+  description: 'Besetzt den Umlauf Berlin → München',
+  poolId: 'fv-sued',
+  startTime: '05:00',
+  endTime: '13:00',
   isNightService: 'false',
-  requiredQualifications: '',
-  maxDailyInstances: '',
-  maxResourcesPerInstance: '',
+  requiredQualifications: 'Traktion A, ETCS',
+  maxDailyInstances: '4',
+  maxResourcesPerInstance: '2',
 };
 
 const PERSONNEL_DEFAULTS = {
-  firstName: '',
-  lastName: '',
-  preferredName: '',
-  qualifications: '',
-  serviceIds: '',
-  poolId: '',
-  homeStation: '',
-  availabilityStatus: '',
-  qualificationExpires: '',
+  firstName: 'Max',
+  lastName: 'Beispiel',
+  preferredName: 'Max',
+  qualifications: 'Traktion A, Notfallhelfer',
+  serviceIds: 'ICE1001,ICE1003',
+  poolId: 'team-berlin',
+  homeStation: 'Berlin Hbf',
+  availabilityStatus: 'einsatzbereit',
+  qualificationExpires: '2025-12-31',
   isReserve: 'false',
 };
 
 const PERSONNEL_POOL_DEFAULTS = {
-  name: '',
-  description: '',
-  locationCode: '',
+  name: 'Team Berlin',
+  description: 'Lokführerstandort für den Nordkorridor',
+  locationCode: 'BER',
 };
 
 @Component({

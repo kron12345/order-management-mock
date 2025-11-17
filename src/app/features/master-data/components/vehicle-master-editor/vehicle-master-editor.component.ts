@@ -136,52 +136,60 @@ const VEHICLE_COMPOSITION_BASE_DEFINITIONS: CustomAttributeDefinition[] = [
   { id: 'vc-remark', key: 'remark', label: 'Bemerkung', type: 'string', entityId: 'vehicle-compositions' },
 ];
 
-const VEHICLE_SERVICE_POOL_DEFAULTS = { name: '', description: '', dispatcher: '' };
-const VEHICLE_SERVICE_DEFAULTS = {
-  name: '',
-  description: '',
-  poolId: '',
-  startTime: '',
-  endTime: '',
-  isOvernight: 'false',
-  primaryRoute: '',
+const VEHICLE_SERVICE_POOL_DEFAULTS = {
+  name: 'IC Nord',
+  description: 'Disposition für die Umläufe Hamburg – Köln',
+  dispatcher: 'Leitstelle Hannover',
 };
-const VEHICLE_POOL_DEFAULTS = { name: '', description: '', depotManager: '' };
+const VEHICLE_SERVICE_DEFAULTS = {
+  name: 'IC 2070 Tagesumlauf',
+  description: 'Hamburg Hbf → Köln Hbf',
+  poolId: 'ic-nord',
+  startTime: '04:45',
+  endTime: '13:30',
+  isOvernight: 'false',
+  primaryRoute: 'Hamburg – Köln',
+};
+const VEHICLE_POOL_DEFAULTS = {
+  name: 'Depot Hamburg',
+  description: 'IC-Fahrzeuge Nord',
+  depotManager: 'Depot HH-Eidelstedt',
+};
 const VEHICLE_DEFAULTS = {
-  vehicleNumber: '',
-  typeId: '',
-  serviceIds: '',
-  poolId: '',
-  description: '',
-  depot: '',
+  vehicleNumber: '4010 001-5',
+  typeId: 'ICE4-12',
+  serviceIds: 'IC2070,IC2071',
+  poolId: 'depot-hamburg',
+  description: 'Langläufer Hamburg – Köln',
+  depot: 'Hamburg-Eidelstedt',
 };
 const VEHICLE_TYPE_DEFAULTS = {
-  label: '',
-  category: '',
-  capacity: '',
-  trainTypeCode: '',
-  lengthMeters: '',
-  weightTons: '',
-  brakeType: '',
-  brakePercentage: '',
-  tiltingCapability: '',
-  powerSupplySystems: '',
-  trainProtectionSystems: '',
-  etcsLevel: '',
-  gaugeProfile: '',
-  maxSpeed: '',
-  maintenanceIntervalDays: '',
-  energyType: '',
-  manufacturer: '',
-  maxAxleLoad: '',
-  noiseCategory: '',
-  remarks: '',
+  label: 'ICE 4 (12-teilig)',
+  category: 'Triebzug',
+  capacity: '830',
+  trainTypeCode: 'ICE4-12',
+  lengthMeters: '346',
+  weightTons: '670',
+  brakeType: 'KE-GPR-E mZ',
+  brakePercentage: '150',
+  tiltingCapability: 'none',
+  powerSupplySystems: '15kV/16.7Hz,25kV/50Hz',
+  trainProtectionSystems: 'PZB,LZB,ETCS',
+  etcsLevel: 'ETCS Level 2',
+  gaugeProfile: 'G2',
+  maxSpeed: '250',
+  maintenanceIntervalDays: '30',
+  energyType: 'electric',
+  manufacturer: 'Siemens',
+  maxAxleLoad: '17',
+  noiseCategory: 'TSI HL',
+  remarks: 'Demo-Typ für Tests',
 };
 const VEHICLE_COMPOSITION_DEFAULTS = {
-  name: '',
-  entriesSerialized: '',
-  turnaroundBuffer: '',
-  remark: '',
+  name: 'ICE 4 Doppelführung',
+  entriesSerialized: 'ICE4-12:1\nICE4-7:1',
+  turnaroundBuffer: '00:20',
+  remark: 'Zuglänge 19 Teile, benötigt Bahnsteiglänge 400m',
 };
 
 const UNASSIGNED_SERVICE_GROUP = '__unassigned-vehicle-services';
