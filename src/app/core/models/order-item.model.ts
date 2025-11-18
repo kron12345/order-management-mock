@@ -1,5 +1,14 @@
 import { TimetablePhase } from './timetable.model';
 
+export type InternalProcessingStatus =
+  | 'in_bearbeitung'
+  | 'freigegeben'
+  | 'ueberarbeiten'
+  | 'uebermittelt'
+  | 'beantragt'
+  | 'abgeschlossen'
+  | 'annulliert';
+
 export interface OrderItemValiditySegment {
   startDate: string; // ISO date (YYYY-MM-DD)
   endDate: string; // ISO date (YYYY-MM-DD)
@@ -70,4 +79,9 @@ export interface OrderItem {
   generatedTimetableRefId?: string;
   timetablePhase?: TimetablePhase;
   originalTimetable?: OrderItemTimetableSnapshot;
+  /**
+   * SOB-interner Bearbeitungsstatus der Position (optional im Mock).
+   * Ergänzt den Fahrplanstatus um die Sicht „In Bearbeitung“, „Freigegeben“, „Beantragt“, etc.
+   */
+  internalStatus?: InternalProcessingStatus;
 }

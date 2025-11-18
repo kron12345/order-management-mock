@@ -70,6 +70,12 @@
               <span>{{ validitySummary(it) }}</span>
             </div>
           }
+          @if (internalStatusLabel(it)) {
+            <div class="internal-status">
+              <mat-icon inline>task_alt</mat-icon>
+              <span>Bearbeitungsstatus: {{ internalStatusLabel(it) }}</span>
+            </div>
+          }
           @if (it.fromLocation || it.toLocation || it.serviceType) {
             <div class="route">
               @if (it.fromLocation || it.toLocation) {

@@ -24,12 +24,12 @@ export class BusinessTemplatePanelComponent {
   private readonly dialog = inject(MatDialog);
   private readonly orderService = inject(OrderService);
   private readonly timetablePhaseLabels: Record<TimetablePhase, string> = {
-    bedarf: 'Bedarf',
-    path_request: 'Trassenanmeldung',
-    offer: 'Angebot',
-    contract: 'Vertrag',
-    operational: 'Betrieb',
-    archived: 'Archiv',
+    bedarf: 'Draft',
+    path_request: 'Path Request',
+    offer: 'Offered',
+    contract: 'Booked',
+    operational: 'Used',
+    archived: 'Cancelled',
   };
 
   readonly phaseTemplates = this.templateService.phaseTemplates;

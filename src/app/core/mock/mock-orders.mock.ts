@@ -53,6 +53,7 @@ export const MOCK_ORDERS: Order[] = [
         childItemIds: ['ORD-2030-001-OP-002'],
         generatedTimetableRefId: 'TT-2030-ICE-001A',
         timetablePhase: 'path_request',
+        internalStatus: 'beantragt',
         timetableYearLabel: '2029/30',
         originalTimetable: {
           refTrainId: 'TT-2030-ICE-001A',
@@ -91,6 +92,7 @@ export const MOCK_ORDERS: Order[] = [
         versionPath: [1, 1],
         generatedTimetableRefId: 'TT-2030-ICE-001B',
         timetablePhase: 'offer',
+        internalStatus: 'in_bearbeitung',
         timetableYearLabel: '2029/30',
         originalTimetable: {
           refTrainId: 'TT-2030-ICE-001A',
@@ -122,8 +124,10 @@ export const MOCK_ORDERS: Order[] = [
         versionPath: [1],
         trafficPeriodId: 'TPER-2030-SERVICE-KOELN',
         timetableYearLabel: '2029/30',
+        internalStatus: 'freigegeben',
       },
     ],
+    processStatus: 'planung',
   },
   {
     id: 'ORD-2030-002',
@@ -150,6 +154,7 @@ export const MOCK_ORDERS: Order[] = [
         versionPath: [1],
         generatedTimetableRefId: 'TT-2030-RE-0101',
         timetablePhase: 'operational',
+        internalStatus: 'abgeschlossen',
         timetableYearLabel: '2029/30',
         originalTimetable: {
           refTrainId: 'TT-2030-RE-0101',
@@ -185,6 +190,7 @@ export const MOCK_ORDERS: Order[] = [
         versionPath: [1, 1],
         generatedTimetableRefId: 'TT-2030-RE-0102',
         timetablePhase: 'contract',
+        internalStatus: 'freigegeben',
         timetableYearLabel: '2029/30',
         originalTimetable: {
           refTrainId: 'TT-2030-RE-0101',
@@ -202,6 +208,7 @@ export const MOCK_ORDERS: Order[] = [
         },
       },
     ],
+    processStatus: 'produktion',
   },
   {
     id: 'ORD-2030-003',
@@ -228,6 +235,7 @@ export const MOCK_ORDERS: Order[] = [
         versionPath: [1],
         generatedTimetableRefId: 'TT-2030-CARGO-7001',
         timetablePhase: 'bedarf',
+        internalStatus: 'in_bearbeitung',
         timetableYearLabel: '2029/30',
         originalTimetable: {
           refTrainId: 'TT-2030-CARGO-7001',
@@ -259,8 +267,10 @@ export const MOCK_ORDERS: Order[] = [
         versionPath: [1],
         trafficPeriodId: 'TPER-2030-BAULOG-BSL',
         timetableYearLabel: '2029/30',
+        internalStatus: 'in_bearbeitung',
       },
     ],
+    processStatus: 'auftrag',
   },
   {
     id: 'ORD-TTR-DEMO',
@@ -285,6 +295,7 @@ export const MOCK_ORDERS: Order[] = [
         validity: [validityRange(320, 1)],
         timetablePhase: 'bedarf',
         deviation: 'Strategische Abstimmung mit Infra.',
+        internalStatus: 'in_bearbeitung',
       },
       {
         id: 'ORD-TTR-DEMO-OP-002',
@@ -297,6 +308,7 @@ export const MOCK_ORDERS: Order[] = [
         validity: [validityRange(230, 90)],
         timetablePhase: 'path_request',
         linkedTemplateId: 'TPL-DEMO-ANNUAL',
+        internalStatus: 'beantragt',
       },
       {
         id: 'ORD-TTR-DEMO-OP-003',
@@ -309,6 +321,7 @@ export const MOCK_ORDERS: Order[] = [
         validity: [validityRange(150, 45)],
         timetablePhase: 'offer',
         deviation: 'TTT-Angebot mit +3 min Ankunft.',
+        internalStatus: 'freigegeben',
       },
       {
         id: 'ORD-TTR-DEMO-OP-004',
@@ -321,6 +334,7 @@ export const MOCK_ORDERS: Order[] = [
         validity: [validityRange(40, 14)],
         timetablePhase: 'contract',
         deviation: 'Zusätzliche Wochenendlage.',
+        internalStatus: 'abgeschlossen',
       },
       {
         id: 'ORD-TTR-DEMO-OP-005',
@@ -333,6 +347,7 @@ export const MOCK_ORDERS: Order[] = [
         validity: [validityRange(12, 7)],
         timetablePhase: 'operational',
         deviation: 'Auslöser: Baustelle Rheinbrücke.',
+        internalStatus: 'in_bearbeitung',
       },
       {
         id: 'ORD-TTR-DEMO-OP-006',
@@ -345,6 +360,7 @@ export const MOCK_ORDERS: Order[] = [
         validity: [validityRange(2, 1)],
         timetablePhase: 'operational',
         deviation: 'Fahrzeugtausch wegen Defekt.',
+        internalStatus: 'ueberarbeiten',
       },
       {
         id: 'ORD-TTR-DEMO-OP-007',
@@ -359,7 +375,9 @@ export const MOCK_ORDERS: Order[] = [
         tags: ['#operational', '#nachlauf'],
         validity: [validityRange(-10, 5)],
         timetablePhase: 'archived',
+        internalStatus: 'abgeschlossen',
       },
     ],
+    processStatus: 'abrechnung_nachbereitung',
   },
 ];

@@ -94,7 +94,6 @@ export class BusinessPhaseDialogComponent {
     ],
   };
   private readonly allTtrPhases: ReadonlyArray<OrderTtrPhase> = [
-    'capacity_supply',
     'annual_request',
     'final_offer',
     'rolling_planning',
@@ -254,12 +253,12 @@ export class BusinessPhaseDialogComponent {
 
   private buildTimetablePhaseOptions(): ReadonlyArray<{ value: TimetablePhase; label: string }> {
     const labels: Record<TimetablePhase, string> = {
-      bedarf: 'Bedarf',
-      path_request: 'Trassenanmeldung',
-      offer: 'Angebot',
-      contract: 'Vertrag',
-      operational: 'Betrieb',
-      archived: 'Archiv',
+      bedarf: 'Draft',
+      path_request: 'Path Request',
+      offer: 'Offered',
+      contract: 'Booked',
+      operational: 'Used',
+      archived: 'Cancelled',
     };
     return this.allTimetablePhases.map((phase) => ({
       value: phase,

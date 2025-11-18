@@ -36,52 +36,6 @@ const personAssignment = (name: string): BusinessAssignment => ({
 
 export const TTR_PHASE_TEMPLATE_DEFINITIONS: PhaseTemplateDefinition[] = [
   {
-    id: 'capacity_supply',
-    label: 'Capacity Supply',
-    summary: 'Strategische Kapazitäten und Baustellen abstimmen, bevor Bestellungen möglich sind.',
-    timelineReference: 'fpYear',
-    autoCreate: true,
-    sourcePhase: 'capacity_supply',
-    window: {
-      unit: 'days',
-      start: -540,
-      end: -240,
-      bucket: 'week',
-      label: '18–8 Monate vor Fahrplanjahr',
-    },
-    template: {
-      id: 'tpl-capacity-supply',
-      title: 'Capacity Supply Check',
-      description:
-        'Vorabklärung mit InfraGO: Welche Baustellen, Kapazitäten und Prioritäten betreffen dieses Geschäft?',
-      tags: ['#capacity', '#ttr', '#vorlauf'],
-      category: 'Frist',
-      recommendedAssignment: groupAssignment('Strategie TTR'),
-      dueRule: {
-        anchor: 'production_start',
-        offsetDays: -240,
-        label: '240 Tage vor Produktion',
-      },
-      defaultLeadTimeDays: 30,
-      automationHint: 'Automatisch, sobald ein Auftrag Capacity Supply erreicht.',
-      steps: [
-        {
-          id: 'cap-1',
-          title: 'InfraGo Info prüfen',
-          description: 'Neue Baustellen & Kapazitätssperren übernehmen.',
-          dueRule: { anchor: 'production_start', offsetDays: -260, label: '260 Tage vor Produktion' },
-        },
-        {
-          id: 'cap-2',
-          title: 'Risiken markieren',
-          description: 'Betriebsrisiken in TTR-Board markieren und Kommunikation vorbereiten.',
-          dueRule: { anchor: 'production_start', offsetDays: -240, label: '240 Tage vor Produktion' },
-        },
-      ],
-      parameterHints: ['region', 'verkehrsart'],
-    },
-  },
-  {
     id: 'annual_request',
     label: 'Annual TT Request',
     summary: 'Jahresfahrplan-Bestellungen einsammeln und vollständig einreichen.',

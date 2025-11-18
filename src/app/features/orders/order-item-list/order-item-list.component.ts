@@ -5,6 +5,7 @@ import {
   OrderItem,
   OrderItemTimetableSnapshotModification,
   OrderItemTimetableSnapshotVariant,
+  InternalProcessingStatus,
 } from '../../../core/models/order-item.model';
 import {
   Business,
@@ -80,12 +81,21 @@ export class OrderItemListComponent {
     Fahrplan: 'Fahrplan',
   };
   private readonly timetablePhaseLabels: Record<TimetablePhase, string> = {
-    bedarf: 'Bedarf',
-    path_request: 'Trassenanmeldung',
-    offer: 'Angebot',
-    contract: 'Vertrag',
-    operational: 'Betrieb',
-    archived: 'Archiv',
+    bedarf: 'Draft',
+    path_request: 'Path Request',
+    offer: 'Offered',
+    contract: 'Booked',
+    operational: 'Used',
+    archived: 'Cancelled',
+  };
+  private readonly internalStatusLabels: Partial<Record<InternalProcessingStatus, string>> = {
+    in_bearbeitung: 'In Bearbeitung',
+    freigegeben: 'Freigegeben',
+    ueberarbeiten: 'Überarbeiten',
+    uebermittelt: 'Übermittelt',
+    beantragt: 'Beantragt',
+    abgeschlossen: 'Abgeschlossen',
+    annulliert: 'Annulliert',
   };
 
   constructor(
@@ -154,6 +164,13 @@ export class OrderItemListComponent {
     }
     const meta = this.orderService.getTtrPhaseMeta(phase);
     return `${meta.window} · ${meta.hint} (${this.referenceLabel(meta.reference)})`;
+  }
+
+  internalStatusLabel(item: OrderItem): string | undefined {
+    if (!item.internalStatus) {
+      return undefined;
+    }
+    return this.internalStatusLabels[item.internalStatus] ?? item.internalStatus;
   }
 
   formatScheduleTime(value: string | undefined): string {

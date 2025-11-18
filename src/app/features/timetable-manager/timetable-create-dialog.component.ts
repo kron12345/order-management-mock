@@ -55,12 +55,12 @@ export class TimetableCreateDialogComponent {
   private readonly dialog = inject(MatDialog);
 
   readonly phaseOptions: { value: TimetablePhase; label: string }[] = [
-    { value: 'bedarf', label: 'Bedarf' },
-    { value: 'path_request', label: 'Trassenanmeldung' },
-    { value: 'offer', label: 'Angebot' },
-    { value: 'contract', label: 'Vertrag' },
-    { value: 'operational', label: 'Betrieb' },
-    { value: 'archived', label: 'Archiv' },
+    { value: 'bedarf', label: 'Draft' },
+    { value: 'path_request', label: 'Path Request' },
+    { value: 'offer', label: 'Offered' },
+    { value: 'contract', label: 'Booked' },
+    { value: 'operational', label: 'Used' },
+    { value: 'archived', label: 'Cancelled' },
   ];
 
   readonly sourceOptions: { value: TimetableSourceType; label: string }[] = [

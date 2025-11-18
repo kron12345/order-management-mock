@@ -37,13 +37,13 @@ export class FilterBarComponent {
   ];
 
   readonly trainStatusOptions: { value: TimetablePhase | 'all'; label: string }[] = [
-    { value: 'all', label: 'Alle Phasen' },
-    { value: 'bedarf', label: 'Bedarf' },
-    { value: 'path_request', label: 'Trassenanmeldung' },
-    { value: 'offer', label: 'Angebot' },
-    { value: 'contract', label: 'Vertrag' },
-    { value: 'operational', label: 'Betrieb' },
-    { value: 'archived', label: 'Archiv' },
+    { value: 'all', label: 'All phases' },
+    { value: 'bedarf', label: 'Draft' },
+    { value: 'path_request', label: 'Path Request' },
+    { value: 'offer', label: 'Offered' },
+    { value: 'contract', label: 'Booked' },
+    { value: 'operational', label: 'Used' },
+    { value: 'archived', label: 'Cancelled' },
   ];
 
   readonly businessStatusOptions: { value: BusinessStatus | 'all'; label: string }[] = [
@@ -65,8 +65,7 @@ export class FilterBarComponent {
   ];
 
   readonly ttrPhaseOptions: { value: OrderTtrPhaseFilter; label: string; window: string }[] = [
-    { value: 'all', label: 'Alle Phasen', window: 'ohne Einschränkung' },
-    { value: 'capacity_supply', label: 'Capacity Supply', window: '18–8 Monate vor FP' },
+    { value: 'all', label: 'Alle TTR-Phasen', window: 'ohne Einschränkung' },
     { value: 'annual_request', label: 'Annual TT Request', window: '12–7 Monate' },
     { value: 'final_offer', label: 'Final Offer (ENFP)', window: '7–4 Monate' },
     { value: 'rolling_planning', label: 'Rolling Planning', window: '13–3 Wochen' },
@@ -119,6 +118,7 @@ export class FilterBarComponent {
       timeRange: 'all',
       trainStatus: 'all',
       businessStatus: 'all',
+      internalStatus: 'all',
       trainNumber: '',
       timetableYearLabel: 'all',
       linkedBusinessId: null,

@@ -97,12 +97,12 @@ export class OrderItemEditDialogComponent implements OnInit {
   private readonly requiresPlanVersion = this.computeRequiresPlanVersion();
   readonly canEditCalendar = this.isPlanItem && !this.requiresPlanVersion;
   readonly phaseMap: Record<TimetablePhase, string> = {
-    bedarf: 'Bedarf',
-    path_request: 'Trassenanmeldung',
-    offer: 'Angebot',
-    contract: 'Vertrag',
-    operational: 'Betrieb',
-    archived: 'Archiv',
+    bedarf: 'Draft',
+    path_request: 'Path Request',
+    offer: 'Offered',
+    contract: 'Booked',
+    operational: 'Used',
+    archived: 'Cancelled',
   };
   readonly phaseLabel = computed(() =>
     this.phaseMap[(this.item.timetablePhase ?? 'bedarf') as TimetablePhase],

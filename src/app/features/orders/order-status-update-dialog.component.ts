@@ -5,7 +5,7 @@ import { MatSnackBar } from '@angular/material/snack-bar';
 
 import { MATERIAL_IMPORTS } from '../../core/material.imports.imports';
 import { Order } from '../../core/models/order.model';
-import { OrderItem } from '../../core/models/order-item.model';
+import { OrderItem, InternalProcessingStatus } from '../../core/models/order-item.model';
 import { TimetablePhase } from '../../core/models/timetable.model';
 import { OrderService } from '../../core/services/order.service';
 
@@ -29,13 +29,23 @@ export class OrderStatusUpdateDialogComponent {
 
   readonly selectedPhase = signal<TimetablePhase>('bedarf');
   readonly selectedItemIds = signal<Set<string>>(new Set(this.data.items.map((item) => item.id)));
+  readonly selectedInternalStatus = signal<InternalProcessingStatus | null>(null);
   readonly phaseOptions: { value: TimetablePhase; label: string; icon: string }[] = [
-    { value: 'bedarf', label: 'Bedarf', icon: 'lightbulb' },
-    { value: 'path_request', label: 'Trassenanmeldung', icon: 'directions_subway' },
-    { value: 'offer', label: 'Angebot', icon: 'description' },
-    { value: 'contract', label: 'Vertrag', icon: 'assignment_turned_in' },
-    { value: 'operational', label: 'Betrieb', icon: 'play_circle' },
-    { value: 'archived', label: 'Archiv', icon: 'inventory_2' },
+    { value: 'bedarf', label: 'Draft', icon: 'lightbulb' },
+    { value: 'path_request', label: 'Path Request', icon: 'directions_subway' },
+    { value: 'offer', label: 'Offered', icon: 'description' },
+    { value: 'contract', label: 'Booked', icon: 'assignment_turned_in' },
+    { value: 'operational', label: 'Used', icon: 'play_circle' },
+    { value: 'archived', label: 'Cancelled', icon: 'inventory_2' },
+  ];
+  readonly internalStatusOptions: { value: InternalProcessingStatus; label: string; hint: string }[] = [
+    { value: 'in_bearbeitung', label: 'In Bearbeitung', hint: 'Position ist in Arbeit.' },
+    { value: 'freigegeben', label: 'Freigegeben', hint: 'An nächste Stelle/Team übergeben.' },
+    { value: 'ueberarbeiten', label: 'Überarbeiten', hint: 'Zurück an vorherige Stelle.' },
+    { value: 'uebermittelt', label: 'Übermittelt', hint: 'Path Request ist technisch gesendet.' },
+    { value: 'beantragt', label: 'Beantragt', hint: 'Request ist bestätigt, Entscheid PIM offen.' },
+    { value: 'abgeschlossen', label: 'Abgeschlossen', hint: 'Fachlich abgeschlossen.' },
+    { value: 'annulliert', label: 'Annulliert', hint: 'Bestellung wurde storniert.' },
   ];
 
   constructor() {
@@ -47,6 +57,10 @@ export class OrderStatusUpdateDialogComponent {
 
   selectPhase(phase: TimetablePhase): void {
     this.selectedPhase.set(phase);
+  }
+
+  selectInternalStatus(status: InternalProcessingStatus | null): void {
+    this.selectedInternalStatus.set(status);
   }
 
   toggleItem(itemId: string): void {
@@ -63,15 +77,50 @@ export class OrderStatusUpdateDialogComponent {
 
   save(): void {
     const phase = this.selectedPhase();
+    const internalStatus = this.selectedInternalStatus();
     const items = Array.from(this.selectedItemIds());
     if (!items.length) {
       return;
     }
-    items.forEach((itemId) => this.orderService.setItemTimetablePhase(itemId, phase));
+
+    if (internalStatus === 'freigegeben' || internalStatus === 'ueberarbeiten') {
+      const missingBusiness = this.data.items.filter(
+        (item) =>
+          items.includes(item.id) &&
+          (!item.linkedBusinessIds || item.linkedBusinessIds.length === 0),
+      );
+      if (missingBusiness.length) {
+        this.snackBar.open(
+          `${missingBusiness.length} Position${
+            missingBusiness.length === 1 ? '' : 'en'
+          } ohne verknüpftes Geschäft. Bitte zuerst ein Geschäft zuweisen.`,
+          'OK',
+          { duration: 3500 },
+        );
+        return;
+      }
+    }
+
+    items.forEach((itemId) => {
+      this.orderService.setItemTimetablePhase(itemId, phase);
+      if (internalStatus) {
+        this.orderService.setItemInternalStatus(itemId, internalStatus);
+      }
+    });
+    const phaseLabel = this.labelForPhase(phase);
+    const statusLabel = internalStatus
+      ? this.internalStatusOptions.find((s) => s.value === internalStatus)?.label ?? internalStatus
+      : null;
+    const messageParts = [`Fahrplanstatus auf ${phaseLabel}`];
+    if (statusLabel) {
+      messageParts.push(`Bearbeitungsstatus auf ${statusLabel}`);
+    }
     this.snackBar.open(
-      `${items.length} Position${items.length === 1 ? '' : 'en'} auf ${this.labelForPhase(phase)} gesetzt.`,
+      `${items.length} Position${items.length === 1 ? '' : 'en'} aktualisiert (${messageParts.join(
+        ' · ',
+      )}).`,
       'OK',
-      { duration: 2500 },
+      { duration: 3000 },
     );
     this.dialogRef.close();
   }

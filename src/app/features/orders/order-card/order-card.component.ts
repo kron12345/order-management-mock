@@ -2,8 +2,8 @@ import { Component, Input, computed, effect, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { MatDialog } from '@angular/material/dialog';
 import { MATERIAL_IMPORTS } from '../../../core/material.imports.imports';
-import { Order } from '../../../core/models/order.model';
-import { OrderItem } from '../../../core/models/order-item.model';
+import { Order, OrderProcessStatus } from '../../../core/models/order.model';
+import { OrderItem, InternalProcessingStatus } from '../../../core/models/order-item.model';
 import { OrderItemListComponent } from '../order-item-list/order-item-list.component';
 import { OrderPositionDialogComponent } from '../order-position-dialog.component';
 import { BusinessService } from '../../../core/services/business.service';
@@ -26,6 +26,10 @@ import {
   OrderStatusUpdateDialogComponent,
   OrderStatusUpdateDialogData,
 } from '../order-status-update-dialog.component';
+import {
+  ConfirmDialogComponent,
+  ConfirmDialogData,
+} from '../../../shared/confirm-dialog/confirm-dialog.component';
 
 @Component({
   selector: 'app-order-card',
@@ -80,6 +84,9 @@ export class OrderCardComponent {
   readonly timetableYearSummaries = computed(() =>
     this.computeTimetableYearSummaries(this.effectiveItems()),
   );
+  readonly internalStatusSummaries = computed(() =>
+    this.computeInternalStatusSummaries(this.effectiveItems()),
+  );
   readonly orderHealth = computed(() => this.computeOrderHealth());
   private readonly filters = computed(() => this.orderService.filters());
   private readonly filtersActive = computed(() =>
@@ -97,15 +104,30 @@ export class OrderCardComponent {
     erledigt: 'Erledigt',
   };
   private readonly timetablePhaseLabels: Record<TimetablePhase, string> = {
-    bedarf: 'Bedarf',
-    path_request: 'Trassenanmeldung',
-    offer: 'Angebot',
-    contract: 'Vertrag',
-    operational: 'Betrieb',
-    archived: 'Archiv',
+    bedarf: 'Draft',
+    path_request: 'Path Request',
+    offer: 'Offered',
+    contract: 'Booked',
+    operational: 'Used',
+    archived: 'Cancelled',
+  };
+  private readonly internalStatusLabels: Partial<Record<InternalProcessingStatus, string>> = {
+    in_bearbeitung: 'In Bearbeitung',
+    freigegeben: 'Freigegeben',
+    ueberarbeiten: 'Überarbeiten',
+    uebermittelt: 'Übermittelt',
+    beantragt: 'Beantragt',
+    abgeschlossen: 'Abgeschlossen',
+    annulliert: 'Annulliert',
+  };
+  public readonly orderProcessStatusLabels: Record<OrderProcessStatus, string> = {
+    auftrag: 'Auftrag',
+    planung: 'Planung',
+    produkt_leistung: 'Produkt/Leistung',
+    produktion: 'Produktion',
+    abrechnung_nachbereitung: 'Abrechnung/Nachbereitung',
   };
   private readonly filterableTtrPhases = new Set<OrderTtrPhaseFilter>([
-    'capacity_supply',
     'annual_request',
     'final_offer',
     'rolling_planning',
@@ -248,6 +270,77 @@ export class OrderCardComponent {
     this.snackBar.open('Auftragsposition bestellt.', 'OK', { duration: 2000 });
   }
 
+  advanceProcessStatus(event: MouseEvent): void {
+    event.stopPropagation();
+    const current = this.order.processStatus ?? 'auftrag';
+    const next = this.nextProcessStatus(current);
+    if (!next || next === current) {
+      this.snackBar.open('Der Auftrag befindet sich bereits im letzten Prozessschritt.', 'OK', {
+        duration: 2500,
+      });
+      return;
+    }
+
+    if (next === 'produktion') {
+      const missing = this.orderService.getItemsMissingBookedStatus(this.order.id);
+      if (missing.length) {
+        const names = missing
+          .slice(0, 5)
+          .map((item) => `• ${item.name}`)
+          .join('\n');
+        const more = missing.length > 5 ? `\n… und ${missing.length - 5} weitere.` : '';
+        const data: ConfirmDialogData = {
+          title: 'Auftrag in Produktion übergeben?',
+          message:
+            `Es sind noch ${missing.length} Fahrplan-Position(en) nicht im TTT-Status „Booked“.\n` +
+            `Möchten Sie den Auftrag trotzdem in den Prozessschritt „Produktion“ übergeben?\n\n` +
+            `${names}${more}`,
+          confirmLabel: 'Trotzdem übergeben',
+          cancelLabel: 'Abbrechen',
+        };
+        this.dialog
+          .open(ConfirmDialogComponent, {
+            data,
+            width: '520px',
+            maxWidth: '95vw',
+          })
+          .afterClosed()
+          .subscribe((confirmed) => {
+            if (confirmed) {
+              this.orderService.setOrderProcessStatus(this.order.id, next);
+              this.snackBar.open('Prozessstatus auf „Produktion“ gesetzt.', 'OK', {
+                duration: 2500,
+              });
+            }
+          });
+        return;
+      }
+    }
+
+    this.orderService.setOrderProcessStatus(this.order.id, next);
+    this.snackBar.open(
+      `Prozessstatus auf „${this.orderProcessStatusLabels[next]}“ gesetzt.`,
+      'OK',
+      { duration: 2500 },
+    );
+  }
+
+  private nextProcessStatus(current: OrderProcessStatus): OrderProcessStatus | null {
+    switch (current) {
+      case 'auftrag':
+        return 'planung';
+      case 'planung':
+        return 'produkt_leistung';
+      case 'produkt_leistung':
+        return 'produktion';
+      case 'produktion':
+        return 'abrechnung_nachbereitung';
+      case 'abrechnung_nachbereitung':
+      default:
+        return null;
+    }
+  }
+
   private computeBusinessStatusSummaries(items: OrderItem[]): StatusSummary[] {
     const ids = new Set<string>();
     items.forEach((item) =>
@@ -363,6 +456,31 @@ export class OrderCardComponent {
     );
   }
 
+  private computeInternalStatusSummaries(items: OrderItem[]): StatusSummary[] {
+    const counts = new Map<string, number>();
+    const labels = new Map<string, string>();
+    const values = new Map<string, InternalProcessingStatus>();
+    items.forEach((item) => {
+      if (!item.internalStatus) {
+        return;
+      }
+      const key = this.statusClassName(item.internalStatus);
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+      const label = this.internalStatusLabels[item.internalStatus] ?? this.fallbackStatusLabel(item.internalStatus);
+      labels.set(key, label);
+      values.set(key, item.internalStatus);
+    });
+
+    return this.sortSummaries(
+      Array.from(counts.entries()).map(([key, count]) => ({
+        key,
+        label: labels.get(key) ?? this.stripStatusPrefix(key),
+        count,
+        value: values.get(key) ?? this.stripStatusPrefix(key),
+      })),
+    );
+  }
+
   private fallbackStatusLabel(value: string): string {
     return value
       .replace(/[_-]+/g, ' ')
@@ -438,6 +556,10 @@ export class OrderCardComponent {
     return this.filters().businessStatus === status;
   }
 
+  isInternalStatusActive(status: string): boolean {
+    return this.filters().internalStatus === status;
+  }
+
   togglePhaseFilter(status: string, event: MouseEvent) {
     event.stopPropagation();
     const current = this.filters().trainStatus;
@@ -469,6 +591,18 @@ export class OrderCardComponent {
   clearBusinessStatus(event: MouseEvent) {
     event.stopPropagation();
     this.orderService.setFilter({ businessStatus: 'all' });
+  }
+
+  clearInternalStatus(event: MouseEvent) {
+    event.stopPropagation();
+    this.orderService.setFilter({ internalStatus: 'all' });
+  }
+
+  toggleInternalStatus(status: string, event: MouseEvent) {
+    event.stopPropagation();
+    const current = this.filters().internalStatus;
+    const next = current === status ? 'all' : (status as InternalProcessingStatus);
+    this.orderService.setFilter({ internalStatus: next });
   }
 
   clearPhaseFilter(event: MouseEvent) {

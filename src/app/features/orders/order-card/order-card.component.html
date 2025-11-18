@@ -54,6 +54,17 @@
           </span>
           <span class="order-health__caption">{{ health.caption }}</span>
         </div>
+        @if (order.processStatus) {
+          <button
+            type="button"
+            class="order-health__process-status"
+            matTooltip="SOB-Prozessschritt des Auftrags · Klick zum Fortschalten"
+            (click)="advanceProcessStatus($event)"
+          >
+            <mat-icon inline>timeline</mat-icon>
+            <span>Prozess: {{ orderProcessStatusLabels[order.processStatus] }}</span>
+          </button>
+        }
         <div class="order-health__mini-stats">
           <div class="mini-stat" matTooltip="Positionen starten in den nächsten 7 Tagen">
             <span class="mini-stat__value">{{ health.upcoming }}</span>
@@ -160,10 +171,10 @@
               @if (timetablePhaseSummaries().length) {
                 <div class="status-group status-group--phase">
                   <span class="group-label">
-                <mat-icon inline>timeline</mat-icon>
-                Phasen
-              </span>
-              <mat-chip-set aria-label="Phasen der Fahrpläne">
+                    <mat-icon inline>timeline</mat-icon>
+                    TTT Phasen
+                  </span>
+                  <mat-chip-set aria-label="TTT-Phasen der Fahrpläne">
                 <mat-chip
                   class="status-chip status-chip--phase"
                   [class.status-chip--active]="isPhaseActive('all')"
@@ -206,6 +217,33 @@
                         (click)="toggleTtrPhaseFilter(summary.value, $event)"
                         matTooltip="{{ ttrPhaseTooltip(summary.value) }}"
                         matTooltipShowDelay="250"
+                      >
+                        {{ summary.label }} · {{ summary.count }}
+                      </mat-chip>
+                    }
+                  </mat-chip-set>
+                </div>
+              }
+              @if (internalStatusSummaries().length) {
+                <div class="status-group status-group--internal">
+                  <span class="group-label">
+                    <mat-icon inline>task_alt</mat-icon>
+                    Bearbeitungsstatus
+                  </span>
+                  <mat-chip-set aria-label="Interne Bearbeitungsstatus">
+                    <mat-chip
+                      class="status-chip status-chip--internal"
+                      [class.status-chip--active]="isInternalStatusActive('all')"
+                      (click)="clearInternalStatus($event)"
+                    >
+                      Alle
+                    </mat-chip>
+                    @for (summary of internalStatusSummaries(); track summary.key) {
+                      <mat-chip
+                        class="status-chip status-chip--internal"
+                        [ngClass]="summary.key"
+                        [class.status-chip--active]="isInternalStatusActive(summary.value)"
+                        (click)="toggleInternalStatus(summary.value, $event)"
                       >
                         {{ summary.label }} · {{ summary.count }}
                       </mat-chip>

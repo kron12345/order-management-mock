@@ -551,6 +551,28 @@
             color: rgba(248, 250, 252, 0.7);
           }
         }
+
+        &__process-status {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          font-size: 0.85rem;
+          color: rgba(248, 250, 252, 0.9);
+          border: none;
+          background: transparent;
+          padding: 0;
+          cursor: pointer;
+
+          mat-icon {
+            font-size: 18px;
+            height: 18px;
+            width: 18px;
+          }
+
+          &:hover {
+            text-decoration: underline;
+          }
+        }
       }
     }
 

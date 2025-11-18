@@ -120,7 +120,6 @@ export class OrderListComponent {
     Exclude<OrderFilters['ttrPhase'], 'all'>,
     { label: string; window: string }
   > = {
-    capacity_supply: { label: 'Capacity Supply', window: '18–8 Monate vor FP' },
     annual_request: { label: 'Annual TT Request', window: '12–7 Monate vor FP' },
     final_offer: { label: 'Final Offer (ENFP)', window: '7–4 Monate vor FP' },
     rolling_planning: { label: 'Rolling Planning', window: '13–3 Wochen vor FP' },
@@ -230,7 +229,7 @@ export class OrderListComponent {
     },
     {
       key: 'phaseCoverage',
-      label: 'Phasen aktiv',
+      label: 'TTR-Phasen aktiv',
       value: this.heroMetrics().phaseCoverage,
       hint: 'Abgedeckte TTR-Buckets',
       icon: 'category',
@@ -330,7 +329,7 @@ export class OrderListComponent {
 
   describeTtrPhase(phase: OrderFilters['ttrPhase']): string {
     if (phase === 'all') {
-      return 'Alle Phasen';
+      return 'Alle TTR-Phasen';
     }
     return this.ttrPhaseMeta[phase]?.label ?? phase;
   }
@@ -780,6 +779,7 @@ export class OrderListComponent {
       timeRange: filters?.timeRange ?? 'all',
       trainStatus: filters?.trainStatus ?? 'all',
       businessStatus: filters?.businessStatus ?? 'all',
+      internalStatus: filters?.internalStatus ?? 'all',
       trainNumber: filters?.trainNumber ?? '',
       timetableYearLabel: filters?.timetableYearLabel ?? 'all',
       linkedBusinessId: filters?.linkedBusinessId ?? null,
@@ -797,6 +797,7 @@ export class OrderListComponent {
       a.timeRange === b.timeRange &&
       a.trainStatus === b.trainStatus &&
       a.businessStatus === b.businessStatus &&
+      a.internalStatus === b.internalStatus &&
       a.trainNumber === b.trainNumber &&
       a.timetableYearLabel === b.timetableYearLabel &&
       (a.linkedBusinessId ?? null) === (b.linkedBusinessId ?? null) &&
@@ -884,19 +885,19 @@ export class OrderListComponent {
   private friendlyPhase(phase: TimetablePhase | 'all'): string {
     switch (phase) {
       case 'bedarf':
-        return 'Bedarf';
+        return 'Draft';
       case 'path_request':
-        return 'Trassenanmeldung';
+        return 'Path Request';
       case 'offer':
-        return 'Angebot';
+        return 'Offered';
       case 'contract':
-        return 'Vertrag';
+        return 'Booked';
       case 'operational':
-        return 'Betrieb';
+        return 'Used';
       case 'archived':
-        return 'Archiv';
+        return 'Cancelled';
       default:
-        return 'alle Phasen';
+        return 'all phases';
     }
   }
 

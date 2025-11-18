@@ -1,9 +1,10 @@
 import { Injectable, computed, signal } from '@angular/core';
-import { Order } from '../models/order.model';
+import { Order, OrderProcessStatus } from '../models/order.model';
 import {
   OrderItem,
   OrderItemTimetableSnapshot,
   OrderItemValiditySegment,
+  InternalProcessingStatus,
 } from '../models/order-item.model';
 import {
   Timetable,
@@ -39,7 +40,6 @@ import {
 export type OrderTimelineReference = 'fpDay' | 'operationalDay' | 'fpYear';
 
 export type OrderTtrPhase =
-  | 'capacity_supply'
   | 'annual_request'
   | 'final_offer'
   | 'rolling_planning'
@@ -50,7 +50,6 @@ export type OrderTtrPhase =
 
 export type OrderTtrPhaseFilter =
   | 'all'
-  | 'capacity_supply'
   | 'annual_request'
   | 'final_offer'
   | 'rolling_planning'
@@ -72,6 +71,7 @@ export interface OrderFilters {
   timeRange: 'all' | 'next4h' | 'next12h' | 'today' | 'thisWeek';
   trainStatus: TimetablePhase | 'all';
   businessStatus: BusinessStatus | 'all';
+   internalStatus: InternalProcessingStatus | 'all';
   trainNumber: string;
   timetableYearLabel: string | 'all';
   linkedBusinessId: string | null;
@@ -88,6 +88,7 @@ const DEFAULT_ORDER_FILTERS: OrderFilters = {
   timeRange: 'all',
   trainStatus: 'all',
   businessStatus: 'all',
+  internalStatus: 'all',
   trainNumber: '',
   timetableYearLabel: 'all',
   linkedBusinessId: null,
@@ -98,13 +99,6 @@ const DEFAULT_ORDER_FILTERS: OrderFilters = {
 };
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
 const TTR_PHASE_META: Record<OrderTtrPhase, OrderTtrPhaseMeta> = {
-  capacity_supply: {
-    key: 'capacity_supply',
-    label: 'Capacity Supply',
-    window: '18–8 Monate vor Fahrplanjahr',
-    reference: 'fpDay',
-    hint: 'Strategische Angebotsphase · Infrastrukturkapazitäten werden veröffentlicht.',
-  },
   annual_request: {
     key: 'annual_request',
     label: 'Annual TT Request',
@@ -398,6 +392,7 @@ export class OrderService {
       filters.timeRange !== 'all' ||
       filters.trainStatus !== 'all' ||
       filters.businessStatus !== 'all' ||
+      filters.internalStatus !== 'all' ||
       filters.trainNumber.trim() !== '' ||
       filters.timetableYearLabel !== 'all' ||
       filters.ttrPhase !== 'all' ||
@@ -440,6 +435,7 @@ export class OrderService {
       snapshot.timeRange !== DEFAULT_ORDER_FILTERS.timeRange ||
       snapshot.trainStatus !== DEFAULT_ORDER_FILTERS.trainStatus ||
       snapshot.businessStatus !== DEFAULT_ORDER_FILTERS.businessStatus ||
+      snapshot.internalStatus !== DEFAULT_ORDER_FILTERS.internalStatus ||
       snapshot.trainNumber.trim().length > 0 ||
       snapshot.timetableYearLabel !== DEFAULT_ORDER_FILTERS.timetableYearLabel ||
       snapshot.linkedBusinessId !== DEFAULT_ORDER_FILTERS.linkedBusinessId ||
@@ -1371,6 +1367,12 @@ export class OrderService {
       }
     }
 
+    if (filters.internalStatus !== 'all') {
+      if (item.internalStatus !== filters.internalStatus) {
+        return false;
+      }
+    }
+
     return true;
   }
 
@@ -1532,9 +1534,6 @@ export class OrderService {
     if (Number.isNaN(diffDays)) {
       return 'unknown';
     }
-    if (diffDays >= 240) {
-      return 'capacity_supply';
-    }
     if (diffDays >= 210) {
       return 'annual_request';
     }
@@ -1581,6 +1580,42 @@ export class OrderService {
 
   setItemTimetablePhase(itemId: string, phase: TimetablePhase): void {
     this.updateItem(itemId, (item) => ({ ...item, timetablePhase: phase }));
+  }
+
+  setItemInternalStatus(itemId: string, status: InternalProcessingStatus | null): void {
+    this.updateItem(itemId, (item) => {
+      if (!status) {
+        const next = { ...item };
+        delete next.internalStatus;
+        return next;
+      }
+      return { ...item, internalStatus: status };
+    });
+  }
+
+  setOrderProcessStatus(orderId: string, status: OrderProcessStatus): void {
+    this._orders.update((orders) =>
+      orders.map((order) =>
+        order.id === orderId ? { ...order, processStatus: status } : order,
+      ),
+    );
+  }
+
+  /**
+   * Ermittelt alle Fahrplan-Positionen eines Auftrags, die noch nicht im Status „Booked“ sind.
+   * Im Mock wird hierfür die Timetable-Phase der Position verwendet.
+   */
+  getItemsMissingBookedStatus(orderId: string): OrderItem[] {
+    const order = this.getOrderById(orderId);
+    if (!order) {
+      return [];
+    }
+    return order.items.filter((item) => {
+      if (item.type !== 'Fahrplan') {
+        return false;
+      }
+      return item.timetablePhase !== 'contract';
+    });
   }
 
   private detectStorage(): Storage | null {
@@ -1750,10 +1785,14 @@ export class OrderService {
     const customer = this.resolveCustomerName(order.customerId, order.customer);
     const timetableYearLabel =
       order.timetableYearLabel ?? this.deriveOrderTimetableYear(prepared) ?? undefined;
+    const processStatus: OrderProcessStatus =
+      order.processStatus ??
+      (prepared.length ? 'planung' : 'auftrag');
     return {
       ...order,
       customer,
       timetableYearLabel,
+      processStatus,
       items: this.normalizeItemsAfterChange(prepared),
     };
   }
