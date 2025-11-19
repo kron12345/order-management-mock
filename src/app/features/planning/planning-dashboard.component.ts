@@ -264,6 +264,7 @@ export class PlanningDashboardComponent {
   private readonly selectedActivityIdsSignal = signal<Set<string>>(new Set());
   private readonly activityMoveTargetSignal = signal<string>('');
   private readonly selectedActivityState = signal<{ activity: Activity; resource: Resource } | null>(null);
+  private readonly selectedActivitySlotSignal = signal<{ activityId: string; resourceId: string } | null>(null);
   private readonly pendingServiceResourceSignal = signal<Resource | null>(null);
   private readonly serviceAssignmentTargetSignal = signal<string | null>(null);
   private readonly stageYearSelectionState = signal<Record<PlanningStageId, Set<string>>>(
@@ -610,6 +611,7 @@ export class PlanningDashboardComponent {
   protected readonly selectedActivity = computed(() => this.selectedActivityState());
   protected readonly selectedActivities = computed(() => this.computeSelectedActivities());
   protected readonly selectedActivityIdsArray = computed(() => Array.from(this.selectedActivityIdsSignal()));
+  protected readonly selectedActivitySlot = computed(() => this.selectedActivitySlotSignal());
   protected readonly moveTargetOptions = computed(() => this.computeMoveTargetOptions());
   protected readonly activityMoveTarget = computed(() => this.activityMoveTargetSignal());
 
@@ -934,8 +936,10 @@ export class PlanningDashboardComponent {
       const current = this.selectedActivityIdsSignal();
       if (current.size === 1 && current.has(event.activity.id)) {
         this.selectedActivityIdsSignal.set(new Set());
+        this.selectedActivitySlotSignal.set(null);
       } else {
         this.selectedActivityIdsSignal.set(new Set([event.activity.id]));
+        this.selectedActivitySlotSignal.set({ activityId: event.activity.id, resourceId: event.resource.id });
       }
       return;
     }
@@ -943,8 +947,13 @@ export class PlanningDashboardComponent {
       const next = new Set(set);
       if (next.has(event.activity.id)) {
         next.delete(event.activity.id);
+        const slot = this.selectedActivitySlotSignal();
+        if (slot && slot.activityId === event.activity.id) {
+          this.selectedActivitySlotSignal.set(null);
+        }
       } else {
         next.add(event.activity.id);
+        this.selectedActivitySlotSignal.set({ activityId: event.activity.id, resourceId: event.resource.id });
       }
       return next;
     });
@@ -1180,6 +1189,7 @@ export class PlanningDashboardComponent {
   protected clearActivitySelection(): void {
     this.selectedActivityIdsSignal.set(new Set());
     this.activityMoveTargetSignal.set('');
+    this.selectedActivitySlotSignal.set(null);
   }
 
   protected clearSelectedActivity(): void {
@@ -1750,6 +1760,7 @@ export class PlanningDashboardComponent {
     this.pendingActivitySignal.set({ stage, activity });
     this.selectedActivityState.set({ activity, resource });
     this.selectedActivityIdsSignal.set(new Set());
+    this.selectedActivitySlotSignal.set(null);
     this.clearEditingPreview();
   }
 

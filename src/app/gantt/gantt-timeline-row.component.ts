@@ -1,6 +1,10 @@
 import { Component, EventEmitter, Input, Output } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { GanttActivityComponent, GanttActivityDragData } from './gantt-activity.component';
+import {
+  GanttActivityComponent,
+  GanttActivityDragData,
+  GanttActivitySelectionEvent,
+} from './gantt-activity.component';
 import { Activity } from '../models/activity';
 import { ActivityParticipantCategory } from '../models/activity-ownership';
 import { CdkDragMove, CdkDragStart, CdkDragEnd, DragDropModule } from '@angular/cdk/drag-drop';
@@ -12,6 +16,7 @@ export interface GanttBar {
   width: number;
   classes?: string[];
   selected?: boolean;
+   primarySelected?: boolean;
   label?: string;
   showRoute?: boolean;
   dragDisabled?: boolean;
@@ -57,7 +62,7 @@ export class GanttTimelineRowComponent {
   @Input() viewMode: 'block' | 'detail' = 'detail';
 
   @Output() activitySelected = new EventEmitter<Activity>();
-  @Output() activityToggleSelection = new EventEmitter<Activity>();
+  @Output() activityToggleSelection = new EventEmitter<GanttActivitySelectionEvent>();
   @Output() activityDragStarted = new EventEmitter<CdkDragStart<GanttActivityDragData>>();
   @Output() activityDragMoved = new EventEmitter<CdkDragMove<GanttActivityDragData>>();
   @Output() activityDragEnded = new EventEmitter<CdkDragEnd<GanttActivityDragData>>();

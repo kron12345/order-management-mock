@@ -92,6 +92,12 @@
   z-index: 30;
 }
 
+:host(.gantt--dragging) .gantt__row--drag-origin .gantt-timeline-row__activities,
+:host(.gantt--dragging) .gantt__row--drag-hover .gantt-timeline-row__activities {
+  position: relative;
+  z-index: 50;
+}
+
 .gantt__resource-cell {
   position: sticky;
   left: 0;

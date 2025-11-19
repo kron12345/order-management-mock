@@ -183,22 +183,6 @@
   padding: 0;
 }
 
-.gantt-activity--mirror {
-  border: 2px dashed rgba(255, 255, 255, 0.65);
-  background-image: linear-gradient(
-    135deg,
-    rgba(255, 255, 255, 0.18) 25%,
-    rgba(255, 255, 255, 0.08) 25%,
-    rgba(255, 255, 255, 0.08) 50%,
-    rgba(255, 255, 255, 0.18) 50%,
-    rgba(255, 255, 255, 0.18) 75%,
-    rgba(255, 255, 255, 0.08) 75%,
-    rgba(255, 255, 255, 0.08)
-  );
-  background-size: 12px 12px;
-  box-shadow: none;
-}
-
 .gantt-activity--compact {
   padding: 0;
 }
@@ -221,9 +205,9 @@
 
 .gantt-activity--selected {
   box-shadow:
-    0 0 0 2px rgba(255, 255, 255, 0.8),
-    0 0 0 6px rgba(255, 235, 59, 0.6),
-    0 10px 20px rgba(10, 16, 24, 0.32);
+    0 0 0 2px rgba(255, 255, 255, 0.95),
+    0 0 0 7px rgba(255, 193, 7, 0.95),
+    0 14px 26px rgba(10, 16, 24, 0.4);
   transform: translateY(-4px);
   z-index: 2;
 }
@@ -233,6 +217,24 @@
   position: absolute;
   inset: 2px;
   border: 2px solid rgba(255, 255, 255, 0.8);
+  border-radius: 4px;
+  pointer-events: none;
+}
+
+.gantt-activity--selected-secondary {
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.7),
+    0 0 0 4px rgba(255, 235, 59, 0.45),
+    0 6px 16px rgba(10, 16, 24, 0.28);
+  transform: translateY(-2px);
+  z-index: 1;
+}
+
+.gantt-activity--selected-secondary::after {
+  content: '';
+  position: absolute;
+  inset: 3px;
+  border: 1px solid rgba(255, 255, 255, 0.7);
   border-radius: 4px;
   pointer-events: none;
 }
@@ -289,10 +291,7 @@
   top: 8px;
   bottom: 8px;
   border-radius: 4px;
-  border: 2px dashed rgba(255, 255, 255, 0.5);
-  background: rgba(15, 23, 42, 0.12);
   pointer-events: none;
-  box-shadow: inset 0 0 6px rgba(15, 23, 42, 0.2);
 }
 
 .gantt-activity-popover {

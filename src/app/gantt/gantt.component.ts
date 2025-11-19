@@ -35,7 +35,7 @@ import { TimeScaleService } from '../core/services/time-scale.service';
 import { createTimeViewport, TimeViewport } from '../core/signals/time-viewport.signal';
 import { GanttMenuComponent } from './gantt-menu.component';
 import { GanttResourcesComponent } from './gantt-resources.component';
-import { GanttActivityDragData } from './gantt-activity.component';
+import { GanttActivityDragData, GanttActivitySelectionEvent } from './gantt-activity.component';
 import {
   GanttBackgroundSegment,
   GanttBar,
@@ -125,6 +125,11 @@ interface ActivitySelectionEventPayload {
   resource: Resource;
   activity: Activity;
   selectionMode: ActivitySelectionMode;
+}
+
+interface ActivitySlotSelection {
+  activityId: string;
+  resourceId: string;
 }
 
 interface ActivityDragState {
@@ -323,7 +328,17 @@ export class GanttComponent implements AfterViewInit {
     const signature = prepared
       .map(
         (activity) =>
-          `${activity.id}:${activity.ownerResourceId ?? ''}:${activity.startMs}:${activity.endMs}`,
+          [
+            activity.id,
+            activity.ownerResourceId ?? '',
+            activity.startMs,
+            activity.endMs,
+            // Teilnehmer-Fingerprint, damit neue/entfernte Ressourcen sofort sichtbar werden.
+            (activity.participants ?? [])
+              .map((participant) => `${participant.resourceId}:${participant.role ?? ''}`)
+              .sort()
+              .join(','),
+          ].join(':'),
       )
       .join('|');
     if (
@@ -618,6 +633,7 @@ export class GanttComponent implements AfterViewInit {
   });
   readonly zoomLabel = computed(() => (this.viewportReady() ? this.describeZoom(this.viewport.rangeMs()) : '—'));
   readonly resourceCount = computed(() => this.resourcesSignal().length);
+  private primarySelection: ActivitySlotSelection | null = null;
 
   readonly nowMarkerLeft = computed(() => {
     if (!this.viewportReady()) {
@@ -964,8 +980,13 @@ export class GanttComponent implements AfterViewInit {
     this.activityEditRequested.emit({ resource, activity: target });
   }
 
-  onActivitySelectionToggle(resource: Resource, activity: Activity) {
-    this.activitySelectionToggle.emit({ resource, activity, selectionMode: 'toggle' });
+  onActivitySelectionToggle(resource: Resource, event: GanttActivitySelectionEvent) {
+    this.primarySelection = { activityId: event.activity.id, resourceId: resource.id };
+    this.activitySelectionToggle.emit({
+      resource,
+      activity: event.activity,
+      selectionMode: event.selectionMode,
+    });
   }
 
   onActivityDragStarted(event: CdkDragStart<GanttActivityDragData>) {
@@ -1521,6 +1542,8 @@ export class GanttComponent implements AfterViewInit {
     const endMs = end.getTime();
     const pxPerMs = this.timeScale.pixelsPerMs();
 
+    const primary = this.primarySelection;
+
     resources.forEach((resource) => {
       const slots = this.activitySlotsByResource().get(resource.id) ?? [];
       const bars: GanttBar[] = [];
@@ -1553,9 +1576,14 @@ export class GanttComponent implements AfterViewInit {
         if (isPending) {
           classes.push('gantt-activity--ghost', 'gantt-activity--pending');
         }
-        if (!slot.isOwner) {
+        const isMirror = !slot.isOwner;
+        if (isMirror) {
           classes.push('gantt-activity--mirror');
         }
+        const primarySelected =
+          !!primary &&
+          primary.activityId === activity.id &&
+          primary.resourceId === slot.resourceId;
         bars.push({
           id: slot.id,
           activity,
@@ -1564,9 +1592,10 @@ export class GanttComponent implements AfterViewInit {
           classes,
           dragDisabled: false,
           selected: selectedIds.has(activity.id),
+          primarySelected,
           label: displayInfo.label,
           showRoute: !isMilestone && displayInfo.showRoute && !!(activity.from || activity.to),
-          isMirror: !slot.isOwner,
+          isMirror,
           participantResourceId: slot.resourceId,
           participantCategory: slot.category,
           isOwner: slot.isOwner,

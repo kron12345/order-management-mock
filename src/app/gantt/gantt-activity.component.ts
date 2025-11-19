@@ -25,11 +25,12 @@ export class GanttActivityComponent {
   @Input() showRouteDetails = false;
   @Input() dragDisabled = false;
   @Input() isMirror = false;
+  @Input() isPrimarySelection = false;
   @Input() roleIcon: string | null = null;
   @Input() roleLabel: string | null = null;
   @Input({ required: true }) dragData!: GanttActivityDragData;
   @Output() activitySelected = new EventEmitter<Activity>();
-  @Output() toggleSelection = new EventEmitter<Activity>();
+  @Output() toggleSelection = new EventEmitter<GanttActivitySelectionEvent>();
   @Output() dragStarted = new EventEmitter<CdkDragStart<GanttActivityDragData>>();
   @Output() dragMoved = new EventEmitter<CdkDragMove<GanttActivityDragData>>();
   @Output() dragEnded = new EventEmitter<CdkDragEnd<GanttActivityDragData>>();
@@ -132,7 +133,11 @@ export class GanttActivityComponent {
       classes.push(...this.classes);
     }
     if (this.isSelected) {
-      classes.push('gantt-activity--selected');
+      classes.push(
+        this.isPrimarySelection
+          ? 'gantt-activity--selected'
+          : 'gantt-activity--selected-secondary',
+      );
     }
     if (this.widthPx < 80) {
       classes.push('gantt-activity--compact');
@@ -268,6 +273,16 @@ export class GanttActivityComponent {
   }
 
   private updatePopoverOpen(): void {
+    // Während eines Drags oder im Kopiermodus keinen Tooltip anzeigen,
+    // damit Ziele nicht verdeckt werden.
+    if (this.isDragging || this.dragMode === 'copy') {
+      if (this.popoverHideTimer !== null) {
+        clearTimeout(this.popoverHideTimer);
+        this.popoverHideTimer = null;
+      }
+      this.isPopoverOpen = false;
+      return;
+    }
     const shouldOpen = this.isTriggerHovered || this.isPopoverHovered;
     if (shouldOpen) {
       if (this.popoverHideTimer !== null) {
@@ -310,7 +325,7 @@ export class GanttActivityComponent {
     }
     if (this.hasSelectionModifier(event)) {
       this.cancelPendingClick();
-      this.toggleSelection.emit(this.activity);
+      this.toggleSelection.emit({ activity: this.activity, selectionMode: 'toggle' });
       return;
     }
     if (this.suppressNextClick) {
@@ -332,7 +347,7 @@ export class GanttActivityComponent {
       return;
     }
     this.cancelPendingClick();
-    this.toggleSelection.emit(this.activity);
+    this.toggleSelection.emit({ activity: this.activity, selectionMode: 'set' });
   }
 
   protected handleKeyboardActivate(event: KeyboardEvent | Event): void {
@@ -343,7 +358,7 @@ export class GanttActivityComponent {
     }
     const keyboardEvent = event as KeyboardEvent;
     if (this.hasSelectionModifier(keyboardEvent)) {
-      this.toggleSelection.emit(this.activity);
+      this.toggleSelection.emit({ activity: this.activity, selectionMode: 'toggle' });
       return;
     }
     if (this.shouldSuppressEdit()) {
@@ -371,7 +386,7 @@ export class GanttActivityComponent {
       if (!this.activity) {
         return;
       }
-      this.toggleSelection.emit(this.activity);
+      this.toggleSelection.emit({ activity: this.activity, selectionMode: 'toggle' });
       this.suppressNextClick = true;
       this.cancelTouchHold();
     }, this.touchHoldDelayMs);
@@ -397,6 +412,9 @@ export class GanttActivityComponent {
 
   protected onDragStarted(event: CdkDragStart<GanttActivityDragData>): void {
     this.isDragging = true;
+    this.isTriggerHovered = false;
+    this.isPopoverHovered = false;
+    this.updatePopoverOpen();
     // Sicherstellen, dass der aktuelle Modus (move/copy) im Drag-Datenobjekt landet.
     event.source.data = {
       ...event.source.data,
@@ -499,4 +517,9 @@ export interface GanttActivityDragData {
   initialLeft: number;
   width: number;
   mode?: 'move' | 'copy';
+}
+
+export interface GanttActivitySelectionEvent {
+  activity: Activity;
+  selectionMode: 'set' | 'toggle';
 }
