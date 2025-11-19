@@ -221,6 +221,13 @@
   pointer-events: none;
 }
 
+.gantt-activity--selected:hover {
+  box-shadow:
+    0 0 0 2px rgba(255, 255, 255, 0.95),
+    0 0 0 7px rgba(255, 193, 7, 0.95),
+    0 18px 32px rgba(10, 16, 24, 0.45);
+}
+
 .gantt-activity--selected-secondary {
   box-shadow:
     0 0 0 1px rgba(255, 255, 255, 0.7),
@@ -237,6 +244,13 @@
   border: 1px solid rgba(255, 255, 255, 0.7);
   border-radius: 4px;
   pointer-events: none;
+}
+
+.gantt-activity--selected-secondary:hover {
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.7),
+    0 0 0 4px rgba(255, 235, 59, 0.45),
+    0 10px 22px rgba(10, 16, 24, 0.32);
 }
 
 .gantt-activity--copy-mode {

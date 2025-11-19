@@ -31,6 +31,8 @@
   class="gantt-activity"
   role="button"
   tabindex="0"
+  [attr.data-activity-id]="activity.id"
+  [attr.data-resource-id]="dragData.resourceId"
   cdkDrag
   cdkDragPreviewContainer="global"
   [cdkDragData]="dragData"

@@ -37,6 +37,10 @@
     <button mat-icon-button type="button" aria-label="Datum wählen" [matMenuTriggerFor]="dateMenu">
       <mat-icon fontIcon="event"></mat-icon>
     </button>
+
+    <span class="gantt-menu__extra-actions">
+      <ng-content></ng-content>
+    </span>
   </div>
 
   <mat-menu #dateMenu="matMenu">

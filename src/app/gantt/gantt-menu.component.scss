@@ -32,6 +32,13 @@
   gap: 6px;
 }
 
+.gantt-menu__extra-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 4px;
+}
+
 .gantt-menu__zoom-label {
   font-size: 0.78rem;
   font-weight: 600;

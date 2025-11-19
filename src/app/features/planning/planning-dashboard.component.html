@@ -1,10 +1,23 @@
 <section class="planning-dashboard">
   <header class="planning-toolbar">
-    <div class="planning-toolbar__row planning-toolbar__row--actions">
-      <span class="planning-toolbar__summary">
-        {{ boards().length }} Plantafel(n) · {{ resources().length }} Ressourcen ·
-        {{ selectionSize() }} ausgewählt
-      </span>
+    <div class="planning-toolbar__bar">
+      <div class="planning-toolbar__summary-block">
+        <span class="planning-toolbar__summary">
+          {{ boards().length }} Plantafel(n) · {{ resources().length }} Ressourcen ·
+          {{ selectionSize() }} ausgewählt
+        </span>
+        <button
+          *ngIf="activeStageId() === 'base'"
+          mat-stroked-button
+          color="primary"
+          class="planning-toolbar__base-toggle"
+          (click)="toggleBasePlanningPanel()"
+          matTooltip="Zeitscheiben bearbeiten, ohne dass der Gantt-Bereich kleiner wird."
+        >
+          <mat-icon fontIcon="view_week"></mat-icon>
+          {{ isBasePlanningPanelOpen() ? 'Basisplanung schließen' : 'Basisplanung öffnen' }}
+        </button>
+      </div>
 
       <div class="planning-filter-bar">
         <div class="planning-filter" tabindex="0">
@@ -136,18 +149,6 @@
         </button>
       </div>
     </div>
-    <div
-      class="planning-toolbar__row planning-toolbar__row--base-toggle"
-      *ngIf="activeStageId() === 'base'"
-    >
-      <button mat-stroked-button color="primary" (click)="toggleBasePlanningPanel()">
-        <mat-icon fontIcon="view_week"></mat-icon>
-        {{ isBasePlanningPanelOpen() ? 'Basisplanung schließen' : 'Basisplanung öffnen' }}
-      </button>
-      <span class="planning-toolbar__hint">
-        Zeitscheiben bearbeiten, ohne dass der Gantt-Bereich kleiner wird.
-      </span>
-    </div>
   </header>
 
   <mat-menu #selectionAddMenu="matMenu">
@@ -170,6 +171,20 @@
     </button>
   </mat-menu>
 
+  <mat-menu #boardActionsMenu="matMenu">
+    <ng-template matMenuContent let-board="board">
+      <button mat-menu-item (click)="setSelectionFromBoard(board.id)">
+        Auswahl übernehmen
+      </button>
+      <button mat-menu-item [disabled]="!hasSelection()" (click)="addSelectionToBoard(board.id)">
+        Auswahl hinzufügen
+      </button>
+      <button mat-menu-item [disabled]="!hasSelection()" (click)="replaceBoardWithSelection(board.id)">
+        Ersetzen
+      </button>
+    </ng-template>
+  </mat-menu>
+
   <section class="planning-main">
     <mat-card class="planning-main__card">
       <mat-card-content>
@@ -182,50 +197,24 @@
           <mat-tab *ngFor="let board of boards(); trackBy: trackBoard">
             <ng-template mat-tab-label>
               <span [class.is-active]="isActiveBoard(board.id)">{{ board.title }}</span>
-              <button
-                *ngIf="boards().length > 1"
-                mat-icon-button
-                matTooltip="Plantafel schließen"
-                (click)="removeBoard(board.id); $event.stopPropagation()"
-              >
-                <mat-icon fontIcon="close"></mat-icon>
-              </button>
+              <span class="planning-tab-actions">
+                <app-gantt-window-launcher
+                  [stageId]="activeStageId()"
+                  [boardId]="board.id"
+                  [resourceIds]="board.resourceIds"
+                />
+                <button
+                  *ngIf="boards().length > 1"
+                  mat-icon-button
+                  matTooltip="Plantafel schließen"
+                  (click)="removeBoard(board.id); $event.stopPropagation()"
+                >
+                  <mat-icon fontIcon="close"></mat-icon>
+                </button>
+              </span>
             </ng-template>
 
             <div class="planning-board">
-              <header class="planning-board__header">
-                <div class="planning-board__meta">
-                  {{ board.resourceIds.length }} Ressourcen ·
-                  {{ boardActivities(board).length }} Aktivitäten
-                </div>
-                <div class="planning-board__actions">
-                  <button mat-button (click)="setSelectionFromBoard(board.id)">
-                    Auswahl übernehmen
-                  </button>
-                  <button
-                    mat-button
-                    color="primary"
-                    [disabled]="!hasSelection()"
-                    (click)="addSelectionToBoard(board.id)"
-                  >
-                    Auswahl hinzufügen
-                  </button>
-                  <button
-                    mat-button
-                    color="warn"
-                    [disabled]="!hasSelection()"
-                    (click)="replaceBoardWithSelection(board.id)"
-                  >
-                    Ersetzen
-                  </button>
-                  <app-gantt-window-launcher
-                    [stageId]="activeStageId()"
-                    [boardId]="board.id"
-                    [resourceIds]="board.resourceIds"
-                  />
-                </div>
-              </header>
-
               <div class="planning-board__gantt" *ngIf="board.resourceIds.length > 0; else emptyBoard">
                 <app-gantt
                   [resources]="boardResources(board)"
@@ -245,7 +234,19 @@
                   (activityRepositionRequested)="handleActivityReposition($event)"
                   (activitySelectionToggle)="handleActivitySelectionToggle($event)"
                   (removeResource)="removeResourceFromBoard(board.id, $event)"
-                />
+                >
+                  <ng-container gantt-menu-actions>
+                    <button
+                      mat-icon-button
+                      class="planning-board__menu-trigger"
+                      [matMenuTriggerFor]="boardActionsMenu"
+                      [matMenuTriggerData]="{ board: board }"
+                      matTooltip="Aktionen"
+                    >
+                      <mat-icon fontIcon="more_vert"></mat-icon>
+                    </button>
+                  </ng-container>
+                </app-gantt>
               </div>
 
               <ng-template #emptyBoard>

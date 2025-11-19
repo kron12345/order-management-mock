@@ -23,7 +23,7 @@ import { ActivityTypeDefinition, ActivityTypeService } from '../../core/services
         [selectedActivityIds]="selectedActivityIds()"
         [activityTypeInfo]="activityTypeInfo()"
         (activitySelectionToggle)="noop()"
-      />
+      ></app-gantt>
     </div>
   `,
   styles: [

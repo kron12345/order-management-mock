@@ -8,7 +8,9 @@
     (gotoToday)="onGotoToday()"
     (gotoDate)="onGotoDate($event)"
     (filterChange)="onFilterChange($event)"
-  />
+  >
+    <ng-content select="[gantt-menu-actions]"></ng-content>
+  </app-gantt-menu>
 
   <div class="gantt__main">
     <div class="gantt__grid" role="grid">
@@ -117,6 +119,15 @@
       }
     </div>
   </div>
+
+  <div
+    class="gantt__lasso"
+    *ngIf="lassoBox() as box"
+    [style.left.px]="box.left"
+    [style.top.px]="box.top"
+    [style.width.px]="box.width"
+    [style.height.px]="box.height"
+  ></div>
 
   <app-gantt-status-bar
     [viewStart]="viewStart()"

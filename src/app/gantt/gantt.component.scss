@@ -1,5 +1,7 @@
 :host {
   --gantt-scrollbar-width: 0px;
+  position: relative;
+  display: block;
 }
 
 .gantt {
@@ -153,6 +155,15 @@
   padding: 24px;
   color: rgba(0, 0, 0, 0.6);
   font-size: 0.9rem;
+}
+
+.gantt__lasso {
+  position: absolute;
+  border: 1px solid rgba(33, 150, 243, 0.85);
+  background: rgba(33, 150, 243, 0.15);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.4) inset;
+  pointer-events: none;
+  z-index: 60;
 }
 
 .gantt__timeline-cell::-webkit-scrollbar,
