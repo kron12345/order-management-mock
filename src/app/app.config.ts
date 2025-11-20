@@ -3,6 +3,7 @@ import { provideRouter } from '@angular/router';
 import { provideNativeDateAdapter } from '@angular/material/core';
 import { provideAnimationsAsync } from '@angular/platform-browser/animations/async';
 import { provideHttpClient } from '@angular/common/http';
+import { environment } from '../environments/environment';
 import { API_CONFIG } from './core/config/api-config';
 
 import { routes } from './app.routes';
@@ -24,6 +25,11 @@ function resolveApiBaseUrl(): string {
     if (metaOverride) {
       return metaOverride;
     }
+  }
+
+  const envOverride = environment.apiBaseUrl?.trim();
+  if (envOverride) {
+    return envOverride;
   }
 
   if (typeof window !== 'undefined') {
