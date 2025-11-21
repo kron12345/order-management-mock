@@ -294,6 +294,15 @@ export class GanttComponent implements AfterViewInit {
     this.destroyRef.onDestroy(() => this.updateDragBadge(null));
   }
 
+  private extractActivityColor(activity: Activity): string | null {
+    const attrs = activity.attributes as Record<string, unknown> | undefined;
+    const color = attrs?.['color'];
+    if (typeof color === 'string' && color.trim().length > 0) {
+      return color.trim();
+    }
+    return null;
+  }
+
   private viewport!: TimeViewport;
   private viewportInitialized = false;
   private lastTimelineRange: { start: number; end: number } | null = null;
@@ -1882,6 +1891,56 @@ export class GanttComponent implements AfterViewInit {
         if (isMilestone) {
           classes.push('gantt-activity--milestone');
         }
+        // Erweiterte Darstellung aus Attributen (draw_as / layer)
+        const attrMap = activity.attributes as Record<string, unknown> | undefined;
+        const drawAs =
+          typeof attrMap?.['draw_as'] === 'string' ? (attrMap['draw_as'] as string) : null;
+        const layerAttr =
+          typeof attrMap?.['layer'] === 'string' ? (attrMap['layer'] as string) : null;
+        switch (drawAs) {
+          case 'line-above':
+            classes.push('gantt-activity--draw-line-above');
+            break;
+          case 'line-below':
+            classes.push('gantt-activity--draw-line-below');
+            break;
+          case 'shift-up':
+            classes.push('gantt-activity--draw-shift-up');
+            break;
+          case 'shift-down':
+            classes.push('gantt-activity--draw-shift-down');
+            break;
+          case 'dot':
+            classes.push('gantt-activity--draw-dot');
+            break;
+          case 'square':
+            classes.push('gantt-activity--draw-square');
+            break;
+          case 'triangle-up':
+            classes.push('gantt-activity--draw-triangle-up');
+            break;
+          case 'triangle-down':
+            classes.push('gantt-activity--draw-triangle-down');
+            break;
+          case 'thick':
+            classes.push('gantt-activity--draw-thick');
+            break;
+          case 'background':
+            classes.push('gantt-activity--draw-background');
+            break;
+          default:
+            break;
+        }
+        switch (layerAttr) {
+          case 'background':
+            classes.push('gantt-activity--layer-background');
+            break;
+          case 'marker':
+            classes.push('gantt-activity--layer-marker');
+            break;
+          default:
+            break;
+        }
         const isPending = pendingId === activity.id;
         if (isPending) {
           classes.push('gantt-activity--ghost', 'gantt-activity--pending');
@@ -1897,6 +1956,7 @@ export class GanttComponent implements AfterViewInit {
           left: barLeft,
           width: barWidth,
           classes,
+          color: this.extractActivityColor(activity),
           dragDisabled: false,
           selected: selectedIds.has(activity.id),
           primarySelected,

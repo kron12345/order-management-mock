@@ -1,12 +1,13 @@
 .gantt-activity {
   position: absolute;
-  top: 10px;
-  bottom: 10px;
+  top: 18px;
+  bottom: 18px;
   display: flex;
   align-items: center;
   padding: 4px 10px;
   color: #fff;
-  font-size: 0.82rem;
+  font-family: var(--font-compact);
+  font-size: 0.78rem;
   letter-spacing: 0.01em;
   cursor: pointer;
   box-shadow: 0 4px 10px rgba(10, 16, 24, 0.18);
@@ -282,7 +283,12 @@
 }
 
 .gantt-activity.cdk-drag-dragging {
-  z-index: 5000;
+  position: fixed !important;
+  inset: auto !important;
+  height: 28px !important; // match visible bar height
+  top: var(--drag-start-top, 0px) !important;
+  left: var(--drag-start-left, 0px) !important;
+  z-index: 12000;
   pointer-events: none;
 }
 
@@ -298,12 +304,118 @@
 .gantt-activity--preview {
   pointer-events: none;
   opacity: 0.98;
+  z-index: 12000;
+  height: 28px;
+}
+
+.cdk-drag-preview.gantt-activity {
+  position: fixed !important;
+  top: var(--drag-start-top, 0px) !important;
+  left: var(--drag-start-left, 0px) !important;
+  height: 28px !important; // match visible bar height
+  z-index: 12000 !important;
+  pointer-events: none;
+  opacity: 0.98;
+}
+
+// Draw-as Varianten
+.gantt-activity--draw-line-above {
+  top: 6px;
+  bottom: 52px;
+  border-radius: 999px;
+}
+
+.gantt-activity--draw-line-below {
+  top: 52px;
+  bottom: 6px;
+  border-radius: 999px;
+}
+
+.gantt-activity--draw-shift-up {
+  top: 10px;
+  bottom: 26px;
+}
+
+.gantt-activity--draw-shift-down {
+  top: 26px;
+  bottom: 10px;
+}
+
+.gantt-activity--draw-thick {
+  top: 14px;
+  bottom: 14px;
+}
+
+.gantt-activity--draw-background {
+  top: 0;
+  bottom: 0;
+  opacity: 0.25;
+}
+
+.gantt-activity--draw-dot,
+.gantt-activity--draw-square,
+.gantt-activity--draw-triangle-up,
+.gantt-activity--draw-triangle-down {
+  top: 4px;
+  bottom: auto;
+  height: 12px;
+  padding: 0;
+  justify-content: center;
+}
+
+.gantt-activity--draw-dot {
+  border-radius: 999px;
+}
+
+.gantt-activity--draw-square {
+  border-radius: 2px;
+}
+
+.gantt-activity--draw-triangle-up,
+.gantt-activity--draw-triangle-down {
+  background: transparent;
+  box-shadow: none;
+}
+
+.gantt-activity--draw-triangle-up::before,
+.gantt-activity--draw-triangle-down::before {
+  content: '';
+  width: 0;
+  height: 0;
+  border-left: 7px solid transparent;
+  border-right: 7px solid transparent;
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.gantt-activity--draw-triangle-up::before {
+  border-bottom-width: 10px;
+  border-bottom-style: solid;
+  border-bottom-color: currentColor;
+  top: 0;
+}
+
+.gantt-activity--draw-triangle-down::before {
+  border-top-width: 10px;
+  border-top-style: solid;
+  border-top-color: currentColor;
+  top: 2px;
+}
+
+// Layer-Klassen
+.gantt-activity--layer-background {
+  z-index: 0;
+}
+
+.gantt-activity--layer-marker {
+  z-index: 5;
 }
 
 .gantt-activity--placeholder {
   position: absolute;
-  top: 8px;
-  bottom: 8px;
+  top: 18px;
+  bottom: 18px;
   border-radius: 4px;
   pointer-events: none;
 }

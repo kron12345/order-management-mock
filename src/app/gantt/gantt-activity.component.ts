@@ -415,6 +415,11 @@ export class GanttActivityComponent {
     this.isTriggerHovered = false;
     this.isPopoverHovered = false;
     this.updatePopoverOpen();
+    // Anchor the drag position to the current viewport coordinates to avoid snapping to (0,0).
+    const rect = event.source.element.nativeElement.getBoundingClientRect();
+    const el = event.source.element.nativeElement as HTMLElement;
+    el.style.setProperty('--drag-start-left', `${rect.left}px`);
+    el.style.setProperty('--drag-start-top', `${rect.top}px`);
     // Sicherstellen, dass der aktuelle Modus (move/copy) im Drag-Datenobjekt landet.
     event.source.data = {
       ...event.source.data,
@@ -430,6 +435,9 @@ export class GanttActivityComponent {
   protected onDragEnded(event: CdkDragEnd<GanttActivityDragData>): void {
     this.isDragging = false;
     this.dragSuppressUntil = Date.now() + this.dragSuppressWindowMs;
+    const el = event.source.element.nativeElement as HTMLElement;
+    el.style.removeProperty('--drag-start-left');
+    el.style.removeProperty('--drag-start-top');
     this.dragEnded.emit(event);
     // Nach einem Drag-Modus stets zurück auf "move" setzen
     this.dragMode = 'move';

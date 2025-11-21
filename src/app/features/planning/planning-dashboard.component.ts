@@ -34,6 +34,10 @@ import {
   ActivityCategory,
 } from '../../core/services/activity-type.service';
 import {
+  ActivityCatalogService,
+  ActivityAttributeValue as ActivityCatalogAttribute,
+} from '../../core/services/activity-catalog.service';
+import {
   PLANNING_STAGE_METAS,
   PlanningResourceCategory,
   PlanningStageId,
@@ -79,6 +83,18 @@ interface StageRuntimeState {
 interface PendingActivityState {
   stage: PlanningStageId;
   activity: Activity;
+}
+
+interface ActivityCatalogOption {
+  id: string; // activity key
+  label: string;
+  description?: string;
+  defaultDurationMinutes: number | null;
+  attributes: ActivityCatalogAttribute[];
+  templateId: string | null;
+  activityTypeId: string;
+  typeDefinition: ActivityTypeDefinition;
+  relevantFor?: ResourceKind[];
 }
 
 interface ActivityEditPreviewState {
@@ -154,7 +170,7 @@ type ActivityTypePickerGroup = {
   id: ActivityCategory;
   label: string;
   icon: string;
-  items: ActivityTypeDefinition[];
+  items: ActivityCatalogOption[];
 };
 
 @Component({
@@ -249,6 +265,7 @@ export class PlanningDashboardComponent {
   };
 
   private readonly activityTypeService = inject(ActivityTypeService);
+  private readonly activityCatalog = inject(ActivityCatalogService);
 
   private readonly resourceViewModeState = signal<Record<PlanningStageId, Record<string, 'block' | 'detail'>>>(
     {
@@ -356,16 +373,18 @@ export class PlanningDashboardComponent {
     effect(
       () => {
         const selection = this.selectedActivityState();
+        const defaultCatalog = this.selectedCatalogOption();
+        const defaultTypeId = defaultCatalog?.activityTypeId ?? '';
         if (!selection) {
           this.activityForm.reset({
             start: '',
             end: '',
-            type: this.activityCreationToolSignal(),
+            type: defaultTypeId,
             from: '',
             to: '',
             remark: '',
           });
-          this.activityFormTypeSignal.set(this.activityCreationToolSignal());
+          this.activityFormTypeSignal.set(defaultTypeId);
           this.clearEditingPreview();
           return;
         }
@@ -388,15 +407,45 @@ export class PlanningDashboardComponent {
 
     effect(
       () => {
-        const defs = this.activityTypeDefinitions();
-        if (defs.length === 0) {
+        const selection = this.selectedActivityState();
+        if (!selection) {
+          return;
+        }
+        const attrs = (selection.activity.attributes ?? {}) as Record<string, unknown>;
+        const activityKey =
+          typeof attrs['activityKey'] === 'string' ? (attrs['activityKey'] as string) : null;
+        if (activityKey && this.activityCatalogOptionMap().has(activityKey)) {
+          this.activityCreationToolSignal.set(activityKey);
+        }
+      },
+      { allowSignalWrites: true },
+    );
+
+    effect(
+      () => {
+        const options = this.activityCreationOptions();
+        if (options.length === 0) {
           this.activityCreationToolSignal.set('');
           return;
         }
-      const current = this.activityCreationToolSignal();
-        if (!current || !defs.some((definition) => definition.id === current)) {
-          this.activityCreationToolSignal.set(defs[0].id);
+        const current = this.activityCreationToolSignal();
+        if (!current || !options.some((option) => option.id === current)) {
+          this.activityCreationToolSignal.set(options[0].id);
         }
+      },
+      { allowSignalWrites: true },
+    );
+
+    effect(
+      () => {
+        const selection = this.selectedActivityState();
+        if (selection) {
+          return;
+        }
+        const option = this.selectedCatalogOption();
+        const typeId = option?.activityTypeId ?? '';
+        this.activityForm.controls.type.setValue(typeId);
+        this.activityFormTypeSignal.set(typeId);
       },
       { allowSignalWrites: true },
     );
@@ -527,19 +576,43 @@ export class PlanningDashboardComponent {
     () => this.stageStateSignal()[this.activeStageSignal()].boards,
   );
   protected readonly activityTypeDefinitions = this.activityTypeService.definitions;
-  protected readonly activityCreationOptions = this.activityTypeDefinitions;
+  private readonly activityCatalogOptions = computed<ActivityCatalogOption[]>(() => {
+    const typeMap = this.activityTypeMap();
+    return this.activityCatalog
+      .definitions()
+      .map((entry) => {
+        const type = typeMap.get(entry.activityType ?? '');
+        if (!type) {
+          return null;
+        }
+        return {
+          id: entry.id,
+          label: entry.label,
+          description: entry.description ?? type.description,
+          defaultDurationMinutes: entry.defaultDurationMinutes ?? null,
+          attributes: entry.attributes ?? [],
+          templateId: entry.templateId ?? null,
+          activityTypeId: entry.activityType ?? type.id,
+          typeDefinition: type,
+          relevantFor: entry.relevantFor && entry.relevantFor.length ? entry.relevantFor : type.relevantFor,
+        } as ActivityCatalogOption;
+      })
+      .filter((entry): entry is ActivityCatalogOption => !!entry);
+  });
+  protected readonly activityCreationOptions = this.activityCatalogOptions;
   protected readonly activityTypeCandidates = computed(() => {
-    const defs = this.activityTypeDefinitions();
+    const options = this.activityCatalogOptions();
     const selection = this.selectedActivityState();
     const resourceKind = selection?.resource.kind ?? null;
     if (!resourceKind) {
-      return defs;
+      return options;
     }
-    return defs.filter((definition) =>
-      (definition.relevantFor ?? definition.appliesTo).includes(resourceKind),
-    );
+    return options.filter((option) => {
+      const relevant = option.relevantFor ?? option.typeDefinition.relevantFor ?? option.typeDefinition.appliesTo;
+      return relevant.includes(resourceKind);
+    });
   });
-  protected readonly quickActivityTypes = computed<ActivityTypeDefinition[]>(() => {
+  protected readonly quickActivityTypes = computed<ActivityCatalogOption[]>(() => {
     const candidates = this.activityTypeCandidates();
     if (!candidates.length) {
       return [];
@@ -549,30 +622,39 @@ export class PlanningDashboardComponent {
     return candidates.slice(0, MAX_QUICK_TYPES);
   });
   protected readonly activityTypePickerGroups = computed<ActivityTypePickerGroup[]>(() => {
-    const definitions = this.activityTypeCandidates();
-    if (!definitions.length) {
+    const options = this.activityTypeCandidates();
+    if (!options.length) {
       return [];
     }
     const groups = TYPE_PICKER_META.map((meta) => ({
       id: meta.id,
       label: meta.label,
       icon: meta.icon,
-      items: [] as ActivityTypeDefinition[],
+      items: [] as ActivityCatalogOption[],
     }));
-    definitions.forEach((definition) => {
-      const targetId = definition.category ?? 'other';
+    options.forEach((option) => {
+      const targetId = option.typeDefinition.category ?? 'other';
       const target =
         groups.find((group) => group.id === targetId) ??
         groups.find((group) => group.id === 'other') ??
         groups[0];
-      target.items.push(definition);
+      target.items.push(option);
     });
-    return groups.filter((group) => group.items.length > 0).map((group) => ({
-      id: group.id,
-      label: group.label,
-      icon: group.icon,
-      items: [...group.items].sort((a, b) => a.label.localeCompare(b.label, 'de')),
-    }));
+    return groups
+      .filter((group) => group.items.length > 0)
+      .map((group) => ({
+        id: group.id,
+        label: group.label,
+        icon: group.icon,
+        items: [...group.items].sort((a, b) => a.label.localeCompare(b.label, 'de')),
+      }));
+  });
+  protected readonly activityCatalogOptionMap = computed(() =>
+    new Map<string, ActivityCatalogOption>(this.activityCatalogOptions().map((option) => [option.id, option])),
+  );
+  protected readonly selectedCatalogOption = computed<ActivityCatalogOption | null>(() => {
+    const id = this.activityCreationToolSignal();
+    return id ? this.activityCatalogOptionMap().get(id) ?? null : null;
   });
 
   protected readonly activityTypeMap = computed(() => {
@@ -676,8 +758,8 @@ export class PlanningDashboardComponent {
     return focus;
   }
 
-  protected trackActivityType(_: number, definition: ActivityTypeDefinition): string {
-    return definition.id;
+  protected trackActivityCatalog(_: number, option: ActivityCatalogOption): string {
+    return option.id;
   }
 
   protected trackActivity(_: number, item: { activity: Activity; resource: Resource }): string {
@@ -698,17 +780,19 @@ export class PlanningDashboardComponent {
     this.activityTypeMenuSelection.set(groupId);
   }
 
-  protected isActivityTypeSelected(typeId: string): boolean {
-    return (this.activityForm.controls.type.value ?? '') === typeId;
+  protected isActivityOptionSelected(optionId: string): boolean {
+    return this.activityCreationToolSignal() === optionId;
   }
 
-  protected selectActivityType(typeId: string): void {
-    if (!typeId) {
+  protected selectCatalogActivity(optionId: string): void {
+    const option = this.activityCatalogOptionMap().get(optionId);
+    if (!option) {
       return;
     }
-    this.activityForm.controls.type.setValue(typeId);
+    this.activityCreationToolSignal.set(option.id);
+    this.activityForm.controls.type.setValue(option.activityTypeId);
     this.activityForm.controls.type.markAsDirty();
-    this.activityFormTypeSignal.set(typeId);
+    this.activityFormTypeSignal.set(option.activityTypeId);
   }
 
   protected openTypePicker(): void {
@@ -719,8 +803,8 @@ export class PlanningDashboardComponent {
     this.typePickerOpenSignal.set(false);
   }
 
-  protected selectActivityTypeFromPicker(typeId: string): void {
-    this.selectActivityType(typeId);
+  protected selectActivityTypeFromPicker(optionId: string): void {
+    this.selectCatalogActivity(optionId);
     this.closeTypePicker();
   }
 
@@ -770,10 +854,8 @@ export class PlanningDashboardComponent {
   }
 
   protected setActivityCreationTool(tool: string): void {
-    const options = this.activityTypeDefinitions();
-    const next = options.some((definition) => definition.id === tool)
-      ? tool
-      : options[0]?.id ?? '';
+    const options = this.activityCreationOptions();
+    const next = options.some((option) => option.id === tool) ? tool : options[0]?.id ?? '';
     this.activityCreationToolSignal.set(next);
   }
 
@@ -903,14 +985,13 @@ export class PlanningDashboardComponent {
     if (stage === 'base' && !this.templateStore.selectedTemplate()?.id) {
       return;
     }
-    const definition = this.resolveActivityTypeForResource(
-      event.resource,
-      this.activityCreationToolSignal(),
-    );
+    const selectedOption = this.activityCatalogOptionMap().get(this.activityCreationToolSignal());
+    const typeId = selectedOption?.activityTypeId ?? selectedOption?.typeDefinition.id ?? null;
+    const definition = this.resolveActivityTypeForResource(event.resource, typeId);
     if (!definition) {
       return;
     }
-    const draft = this.createActivityDraft(event, definition);
+    const draft = this.createActivityDraft(event, definition, selectedOption ?? null);
     const normalized = this.applyActivityTypeConstraints(draft);
     this.pendingActivityOriginal.set(normalized);
     this.startPendingActivity(stage, event.resource, normalized);
@@ -1215,16 +1296,24 @@ export class PlanningDashboardComponent {
       value.type && value.type.length > 0 ? value.type : (selection.activity.type ?? '');
     const definition =
       this.findActivityType(desiredType) ?? this.findActivityType(selection.activity.type ?? null);
+    const catalog = this.selectedCatalogOption();
     const isPoint = definition?.timeMode === 'point';
     const endDateRaw = !isPoint && value.end ? this.fromLocalDateTime(value.end) : null;
     const endDateValid =
       endDateRaw && endDateRaw.getTime() > startDate.getTime() ? endDateRaw : null;
+    const mergedAttributes = catalog
+      ? {
+          ...(selection.activity.attributes ?? {}),
+          ...(this.buildAttributesFromCatalog(catalog) ?? {}),
+        }
+      : selection.activity.attributes;
     const updated: Activity = {
       ...selection.activity,
-      title: this.buildActivityTitle(definition ?? null),
+      title: catalog?.label ?? this.buildActivityTitle(definition ?? null),
       start: startDate.toISOString(),
       end: endDateValid ? endDateValid.toISOString() : null,
       type: (desiredType || selection.activity.type) ?? '',
+      attributes: mergedAttributes,
     };
     if (definition) {
       if (this.definitionHasField(definition, 'from')) {
@@ -2028,7 +2117,8 @@ export class PlanningDashboardComponent {
     }
     let mutated = false;
     const normalized = list.map((activity) => {
-      const next = this.applyActivityTypeConstraints(activity);
+      let next = this.applyActivityTypeConstraints(activity);
+      next = this.ensureActivityCatalogAttributes(next);
       if (next !== activity) {
         mutated = true;
       }
@@ -2049,6 +2139,49 @@ export class PlanningDashboardComponent {
       return { ...activity, end: null };
     }
     return activity;
+  }
+
+  private ensureActivityCatalogAttributes(activity: Activity): Activity {
+    const attrs = (activity.attributes ?? {}) as Record<string, unknown>;
+    const existingKey = typeof attrs['activityKey'] === 'string' ? (attrs['activityKey'] as string) : null;
+    const candidateKey = existingKey ?? activity.type ?? null;
+    if (!candidateKey) {
+      return activity;
+    }
+    const option = this.activityCatalogOptionMap().get(candidateKey) ?? null;
+    let changed = false;
+    const nextAttrs: Record<string, unknown> = { ...attrs };
+    if (!existingKey) {
+      nextAttrs['activityKey'] = candidateKey;
+      changed = true;
+    }
+    if (option?.templateId && !nextAttrs['templateId']) {
+      nextAttrs['templateId'] = option.templateId;
+      changed = true;
+    }
+    if (option?.attributes?.length) {
+      option.attributes.forEach((attr) => {
+        const key = (attr?.key ?? '').trim();
+        if (!key || key in nextAttrs) {
+          return;
+        }
+        nextAttrs[key] = attr.meta?.['value'] ?? '';
+        changed = true;
+      });
+    }
+    if (!nextAttrs['color']) {
+      const color =
+        (option?.attributes.find((attr) => attr.key === 'color')?.meta?.['value'] as string | undefined) ??
+        this.defaultColorForType(activity.type ?? option?.activityTypeId ?? null, option?.typeDefinition.category);
+      if (color) {
+        nextAttrs['color'] = color;
+        changed = true;
+      }
+    }
+    if (!changed) {
+      return activity;
+    }
+    return { ...activity, attributes: nextAttrs };
   }
 
   private activityOwnerId(activity: Activity): string | null {
@@ -3111,18 +3244,22 @@ export class PlanningDashboardComponent {
   private createActivityDraft(
     event: { resource: Resource; start: Date },
     definition: ActivityTypeDefinition,
+    option: ActivityCatalogOption | null,
   ): Activity {
+    const durationMinutes =
+      option?.defaultDurationMinutes ?? definition.defaultDurationMinutes;
     const endDate =
       definition.timeMode === 'duration'
-        ? new Date(event.start.getTime() + definition.defaultDurationMinutes * 60 * 1000)
+        ? new Date(event.start.getTime() + durationMinutes * 60 * 1000)
         : null;
     const draft: Activity = {
-      id: this.generateActivityId(definition.id),
-      title: this.buildActivityTitle(definition),
+      id: this.generateActivityId(option?.id ?? definition.id),
+      title: option?.label ?? this.buildActivityTitle(definition),
       start: event.start.toISOString(),
       end: endDate ? endDate.toISOString() : null,
       type: definition.id,
       serviceCategory: this.resolveServiceCategory(event.resource),
+      attributes: this.buildAttributesFromCatalog(option),
     };
     if (this.definitionHasField(definition, 'from')) {
       draft.from = '';
@@ -3137,6 +3274,62 @@ export class PlanningDashboardComponent {
       retainPreviousOwner: false,
       ownerCategory: this.resourceParticipantCategory(event.resource),
     });
+  }
+
+  private buildAttributesFromCatalog(option: ActivityCatalogOption | null): Record<string, unknown> | undefined {
+    if (!option) {
+      return undefined;
+    }
+    const attrs: Record<string, unknown> = { activityKey: option.id };
+    if (option.templateId) {
+      attrs['templateId'] = option.templateId;
+    }
+    option.attributes.forEach((attr) => {
+      const key = (attr?.key ?? '').trim();
+      if (!key) {
+        return;
+      }
+      const val = attr.meta?.['value'];
+      if (val !== undefined) {
+        attrs[key] = val;
+      }
+    });
+    if (!attrs['color']) {
+      const fallback = this.defaultColorForType(option.activityTypeId, option.typeDefinition.category);
+      if (fallback) {
+        attrs['color'] = fallback;
+      }
+    }
+    return attrs;
+  }
+
+  private defaultColorForType(typeId: string | null, category?: ActivityCategory | null): string | null {
+    const type = typeId?.toLowerCase() ?? '';
+    if (type.includes('break') || type.includes('pause')) {
+      return '#ffb74d';
+    }
+    if (type.includes('travel') || type.includes('fahrt')) {
+      return '#26a69a';
+    }
+    if (type.includes('transfer')) {
+      return '#26c6da';
+    }
+    if (type.includes('service-start')) {
+      return '#43a047';
+    }
+    if (type.includes('service-end')) {
+      return '#c62828';
+    }
+    if (category === 'movement') {
+      return '#26c6da';
+    }
+    if (category === 'rest') {
+      return '#8d6e63';
+    }
+    if (category === 'other') {
+      return '#7b1fa2';
+    }
+    return '#1976d2';
   }
 
   private handleBaseActivityReposition(event: {

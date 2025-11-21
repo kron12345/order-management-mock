@@ -26,6 +26,7 @@ export interface GanttBar {
   isMirror?: boolean;
   roleIcon?: string | null;
   roleLabel?: string | null;
+  color?: string | null;
 }
 
 export interface GanttBackgroundSegment {
