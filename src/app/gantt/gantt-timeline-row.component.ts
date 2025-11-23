@@ -15,6 +15,7 @@ export interface GanttBar {
   left: number;
   width: number;
   classes?: string[];
+  zIndex?: number;
   selected?: boolean;
    primarySelected?: boolean;
   label?: string;

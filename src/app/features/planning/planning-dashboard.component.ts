@@ -33,6 +33,7 @@ import {
   ActivityTypeService,
   ActivityCategory,
 } from '../../core/services/activity-type.service';
+import { TranslationService } from '../../core/services/translation.service';
 import {
   ActivityCatalogService,
   ActivityAttributeValue as ActivityCatalogAttribute,
@@ -266,6 +267,7 @@ export class PlanningDashboardComponent {
 
   private readonly activityTypeService = inject(ActivityTypeService);
   private readonly activityCatalog = inject(ActivityCatalogService);
+  private readonly translationService = inject(TranslationService);
 
   private readonly resourceViewModeState = signal<Record<PlanningStageId, Record<string, 'block' | 'detail'>>>(
     {
@@ -576,8 +578,22 @@ export class PlanningDashboardComponent {
     () => this.stageStateSignal()[this.activeStageSignal()].boards,
   );
   protected readonly activityTypeDefinitions = this.activityTypeService.definitions;
+  protected readonly activityTypeDisplayLabelMap = computed(() => {
+    // access translations signal for reactivity on locale changes
+    this.translationService.translations();
+    const map = new Map<string, string>();
+    this.activityTypeDefinitions().forEach((definition) => {
+      const translated = this.translationService.translate(
+        `activityType:${definition.id}`,
+        definition.label,
+      );
+      map.set(definition.id, translated || definition.label);
+    });
+    return map;
+  });
   private readonly activityCatalogOptions = computed<ActivityCatalogOption[]>(() => {
     const typeMap = this.activityTypeMap();
+    const displayLabelMap = this.activityTypeDisplayLabelMap();
     return this.activityCatalog
       .definitions()
       .map((entry) => {
@@ -585,16 +601,44 @@ export class PlanningDashboardComponent {
         if (!type) {
           return null;
         }
+        // Dauer und Relevant-für bevorzugt aus Attributen lesen
+        const attrList = entry.attributes ?? [];
+        const attrByKey = new Map(
+          attrList.map((a) => [a.key, a] as const),
+        );
+        const durationAttr = attrByKey.get('default_duration');
+        const relevantAttr = attrByKey.get('relevant_for');
+        const durationFromAttr =
+          durationAttr && durationAttr.meta?.['value']
+            ? Number(durationAttr.meta['value'])
+            : null;
+        const relevantFromAttr =
+          relevantAttr && relevantAttr.meta?.['value']
+            ? (relevantAttr.meta['value'] as string).split(',').map((v) => v.trim()).filter(Boolean)
+            : null;
+
+        const effectiveDuration =
+          Number.isFinite(durationFromAttr ?? NaN) && (durationFromAttr ?? 0) > 0
+            ? (durationFromAttr as number)
+            : entry.defaultDurationMinutes ?? type.defaultDurationMinutes;
+        const effectiveRelevantFor =
+          (relevantFromAttr && relevantFromAttr.length
+            ? (relevantFromAttr as ResourceKind[])
+            : entry.relevantFor && entry.relevantFor.length
+              ? entry.relevantFor
+              : type.relevantFor) ?? type.appliesTo;
+        const translatedTypeLabel = displayLabelMap.get(type.id) ?? type.label;
+
         return {
           id: entry.id,
-          label: entry.label,
+          label: translatedTypeLabel,
           description: entry.description ?? type.description,
-          defaultDurationMinutes: entry.defaultDurationMinutes ?? null,
-          attributes: entry.attributes ?? [],
+          defaultDurationMinutes: effectiveDuration ?? null,
+          attributes: attrList,
           templateId: entry.templateId ?? null,
           activityTypeId: entry.activityType ?? type.id,
           typeDefinition: type,
-          relevantFor: entry.relevantFor && entry.relevantFor.length ? entry.relevantFor : type.relevantFor,
+          relevantFor: effectiveRelevantFor,
         } as ActivityCatalogOption;
       })
       .filter((entry): entry is ActivityCatalogOption => !!entry);
@@ -666,8 +710,9 @@ export class PlanningDashboardComponent {
   protected readonly activityTypeInfoMap = computed(() => {
     const info: Record<string, { label: string; showRoute: boolean; serviceRole: ServiceRole | null }> = {};
     this.activityTypeDefinitions().forEach((definition) => {
+      const translated = this.activityTypeDisplayLabelMap().get(definition.id) ?? definition.label;
       info[definition.id] = {
-        label: definition.label,
+        label: translated,
         showRoute: definition.fields.includes('from') || definition.fields.includes('to'),
         serviceRole: null,
       };
@@ -770,7 +815,11 @@ export class PlanningDashboardComponent {
     if (!typeId) {
       return 'Aktivität';
     }
-    return this.activityTypeMap().get(typeId)?.label ?? 'Aktivität';
+    return (
+      this.activityTypeDisplayLabelMap().get(typeId) ??
+      this.activityTypeMap().get(typeId)?.label ??
+      'Aktivität'
+    );
   }
 
   protected setActivityTypePickerGroup(groupId: ActivityTypePickerGroup['id']): void {

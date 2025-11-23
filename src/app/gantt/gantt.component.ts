@@ -49,6 +49,7 @@ import { TrackHorizontalScrollDirective } from '../shared/directives/track-horiz
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { addDays, startOfDay, MS_IN_DAY, MS_IN_HOUR, MS_IN_MINUTE } from '../core/utils/time-math';
 import { ZOOM_RANGE_MS, findNearestZoomConfig } from '../core/constants/time-scale.config';
+import { LayerGroupService } from '../core/services/layer-group.service';
 
 interface PreparedActivity extends Activity {
   startMs: number;
@@ -232,6 +233,7 @@ export class GanttComponent implements AfterViewInit {
   private readonly hostElement = inject(ElementRef<HTMLElement>);
   private readonly injector = inject(Injector);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly layerGroups = inject(LayerGroupService);
   private readonly resourcesSignal = signal<Resource[]>([]);
   private readonly allowedResourceCategories = new Set([
     'personnel',
@@ -1895,8 +1897,13 @@ export class GanttComponent implements AfterViewInit {
         const attrMap = activity.attributes as Record<string, unknown> | undefined;
         const drawAs =
           typeof attrMap?.['draw_as'] === 'string' ? (attrMap['draw_as'] as string) : null;
-        const layerAttr =
-          typeof attrMap?.['layer'] === 'string' ? (attrMap['layer'] as string) : null;
+        const layerGroupId =
+          typeof attrMap?.['layer_group'] === 'string'
+            ? (attrMap['layer_group'] as string)
+            : typeof attrMap?.['layer'] === 'string'
+              ? (attrMap['layer'] as string)
+              : null;
+        const layerGroup = this.layerGroups.getById(layerGroupId) ?? this.layerGroups.getById('default');
         switch (drawAs) {
           case 'line-above':
             classes.push('gantt-activity--draw-line-above');
@@ -1931,15 +1938,10 @@ export class GanttComponent implements AfterViewInit {
           default:
             break;
         }
-        switch (layerAttr) {
-          case 'background':
-            classes.push('gantt-activity--layer-background');
-            break;
-          case 'marker':
-            classes.push('gantt-activity--layer-marker');
-            break;
-          default:
-            break;
+        if (layerGroup?.id === 'background') {
+          classes.push('gantt-activity--layer-background');
+        } else if (layerGroup?.id === 'marker') {
+          classes.push('gantt-activity--layer-marker');
         }
         const isPending = pendingId === activity.id;
         if (isPending) {
@@ -1963,6 +1965,7 @@ export class GanttComponent implements AfterViewInit {
           label: displayInfo.label,
           showRoute: !isMilestone && displayInfo.showRoute && !!(activity.from || activity.to),
           isMirror,
+          zIndex: layerGroup?.order,
           participantResourceId: slot.resourceId,
           participantCategory: slot.category,
           isOwner: slot.isOwner,

@@ -28,6 +28,7 @@ export class GanttActivityComponent {
   @Input() isPrimarySelection = false;
   @Input() roleIcon: string | null = null;
   @Input() roleLabel: string | null = null;
+  @Input() zIndex: number | null = null;
   @Input({ required: true }) dragData!: GanttActivityDragData;
   @Output() activitySelected = new EventEmitter<Activity>();
   @Output() toggleSelection = new EventEmitter<GanttActivitySelectionEvent>();

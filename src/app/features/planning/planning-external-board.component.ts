@@ -8,6 +8,7 @@ import { Resource } from '../../models/resource';
 import { Activity, ServiceRole } from '../../models/activity';
 import { getActivityOwnerId } from '../../models/activity-ownership';
 import { ActivityTypeDefinition, ActivityTypeService } from '../../core/services/activity-type.service';
+import { TranslationService } from '../../core/services/translation.service';
 
 @Component({
   selector: 'app-planning-external-board',
@@ -41,6 +42,7 @@ export class PlanningExternalBoardComponent {
   private readonly route = inject(ActivatedRoute);
   private readonly data = inject(PlanningDataService);
   private readonly activityTypes = inject(ActivityTypeService);
+  private readonly translationService = inject(TranslationService);
 
   private readonly stageId = signal<PlanningStageId>('base');
   private readonly resourceFilter = signal<Set<string> | null>(null);
@@ -115,9 +117,15 @@ export class PlanningExternalBoardComponent {
   private buildActivityTypeInfo(): Record<string, { label: string; showRoute: boolean; serviceRole: ServiceRole | null }> {
     const record: Record<string, { label: string; showRoute: boolean; serviceRole: ServiceRole | null }> = {};
     const definitions: ActivityTypeDefinition[] = this.activityTypes.definitions();
+    // Touch translations for reactivity
+    this.translationService.translations();
     definitions.forEach((definition) => {
+      const translated = this.translationService.translate(
+        `activityType:${definition.id}`,
+        definition.label,
+      );
       record[definition.id] = {
-        label: definition.label,
+        label: translated && translated.trim().length ? translated.trim() : definition.label,
         showRoute: definition.fields.includes('from') || definition.fields.includes('to'),
         serviceRole: null,
       };

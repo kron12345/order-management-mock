@@ -69,7 +69,12 @@ const DEFAULT_TEMPLATES: ActivityTemplate[] = [
     description: 'Standardpause mit 30 Minuten',
     activityType: 'break',
     defaultDurationMinutes: 30,
-    attributes: [{ key: 'category', meta: { value: 'pause' } }],
+    attributes: [
+      { key: 'category', meta: { value: 'pause' } },
+      { key: 'is_break', meta: { value: 'true' } },
+      { key: 'is_short_break', meta: { value: 'true' } },
+      { key: 'consider_capacity_conflicts', meta: { value: 'true' } },
+    ],
   },
   {
     id: 'pause-60-template',
@@ -77,7 +82,11 @@ const DEFAULT_TEMPLATES: ActivityTemplate[] = [
     description: 'Längere Pause mit 60 Minuten',
     activityType: 'break',
     defaultDurationMinutes: 60,
-    attributes: [{ key: 'category', meta: { value: 'pause' } }],
+    attributes: [
+      { key: 'category', meta: { value: 'pause' } },
+      { key: 'is_break', meta: { value: 'true' } },
+      { key: 'consider_capacity_conflicts', meta: { value: 'true' } },
+    ],
   },
 ];
 
@@ -91,6 +100,9 @@ const DEFAULT_DEFINITIONS: ActivityDefinition[] = [
     attributes: [
       { key: 'default-duration', meta: { datatype: 'number', value: '30' } },
       { key: 'kind', meta: { value: 'pause' } },
+      { key: 'is_break', meta: { value: 'true' } },
+      { key: 'is_short_break', meta: { value: 'true' } },
+      { key: 'consider_capacity_conflicts', meta: { value: 'true' } },
     ],
   },
   {
@@ -102,6 +114,8 @@ const DEFAULT_DEFINITIONS: ActivityDefinition[] = [
     attributes: [
       { key: 'default-duration', meta: { datatype: 'number', value: '60' } },
       { key: 'kind', meta: { value: 'pause' } },
+      { key: 'is_break', meta: { value: 'true' } },
+      { key: 'consider_capacity_conflicts', meta: { value: 'true' } },
     ],
   },
 ];
@@ -175,6 +189,14 @@ export class ActivityCatalogService {
 
   private normalizeDefinition(input: ActivityDefinitionInput): ActivityDefinition {
     const id = this.slugify(input.id || input.label);
+    const attributes = this.normalizeAttributes(input.attributes);
+    const relevantFor = this.normalizeRelevantFor(input.relevantFor);
+    const enhancedAttributes = this.ensureBehaviorAttributes(
+      attributes,
+      input.defaultDurationMinutes,
+      relevantFor,
+    );
+
     return {
       id,
       label: (input.label ?? id).trim(),
@@ -182,8 +204,8 @@ export class ActivityCatalogService {
       activityType: (input.activityType ?? 'other').trim(),
       templateId: input.templateId ?? null,
       defaultDurationMinutes: this.normalizeDuration(input.defaultDurationMinutes),
-      relevantFor: this.normalizeRelevantFor(input.relevantFor),
-      attributes: this.normalizeAttributes(input.attributes),
+      relevantFor,
+      attributes: enhancedAttributes,
     };
   }
 
@@ -316,7 +338,7 @@ export class ActivityCatalogService {
   }
 
   private mapTypeToActivityDefinition(type: ActivityTypeDefinition): ActivityDefinition {
-    const attrs: ActivityAttributeValue[] = [
+    const baseAttrs: ActivityAttributeValue[] = [
       { key: 'category', meta: { value: type.category } },
       { key: 'timeMode', meta: { value: type.timeMode } },
       ...type.fields.map((field) => ({
@@ -324,6 +346,11 @@ export class ActivityCatalogService {
         meta: FIELD_META[field] ?? {},
       })),
     ];
+    const attrs = this.ensureBehaviorAttributes(
+      baseAttrs,
+      type.defaultDurationMinutes,
+      type.relevantFor,
+    );
     return {
       id: type.id,
       label: type.label,
@@ -343,6 +370,56 @@ export class ActivityCatalogService {
     const allowed: ResourceKind[] = ['personnel', 'vehicle', 'personnel-service', 'vehicle-service'];
     const list = Array.from(new Set(values)).filter((v): v is ResourceKind => allowed.includes(v));
     return list.length ? list : undefined;
+  }
+
+  private ensureBehaviorAttributes(
+    attributes: ActivityAttributeValue[],
+    defaultDurationMinutes: number | null | undefined,
+    relevantFor: ResourceKind[] | undefined,
+  ): ActivityAttributeValue[] {
+    const result = [...attributes];
+    const byKey = new Map<string, ActivityAttributeValue>();
+    result.forEach((attr) => {
+      byKey.set(attr.key, attr);
+    });
+
+    if (defaultDurationMinutes !== null && defaultDurationMinutes !== undefined) {
+      const key = 'default_duration';
+      const existing = byKey.get(key);
+      const minutes = Math.max(1, Math.trunc(defaultDurationMinutes));
+      const meta: Record<string, string> = {
+        datatype: 'number',
+        unit: 'minutes',
+        value: minutes.toString(),
+        ...(existing?.meta ?? {}),
+      };
+      const updated: ActivityAttributeValue = { key, meta };
+      if (existing) {
+        Object.assign(existing, updated);
+      } else {
+        result.push(updated);
+      }
+    }
+
+    if (relevantFor && relevantFor.length) {
+      const key = 'relevant_for';
+      const existing = byKey.get(key);
+      const value = relevantFor.join(',');
+      const meta: Record<string, string> = {
+        datatype: 'list',
+        options: 'personnel,vehicle,personnel-service,vehicle-service',
+        value,
+        ...(existing?.meta ?? {}),
+      };
+      const updated: ActivityAttributeValue = { key, meta };
+      if (existing) {
+        Object.assign(existing, updated);
+      } else {
+        result.push(updated);
+      }
+    }
+
+    return result;
   }
 
   private normalizeMeta(
