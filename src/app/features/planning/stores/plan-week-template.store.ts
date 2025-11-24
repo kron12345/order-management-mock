@@ -36,6 +36,7 @@ export class PlanWeekTemplateStoreService {
   private readonly api = inject(PlanningTemplateApiService);
   private readonly state = signal<TemplateStoreState>({ ...INITIAL_STATE });
   private templatesLoaded = false;
+  private readonly activitiesRevisionSignal = signal(0);
 
   constructor() {
     this.loadTemplates();
@@ -57,6 +58,7 @@ export class PlanWeekTemplateStoreService {
   readonly weekInstances = computed(() => this.state().weekInstances);
   readonly isLoading = computed(() => this.state().loading);
   readonly error = computed(() => this.state().error);
+  readonly activitiesRevision = computed(() => this.activitiesRevisionSignal());
 
   loadTemplates(force = false): void {
     if (!force && (this.templatesLoaded || this.state().loading)) {
@@ -247,6 +249,7 @@ export class PlanWeekTemplateStoreService {
         tap((items) => {
           const normalized = items.map((item) => this.normalizePlanWeekActivity(item));
           this.setState({ activities: { ...this.state().activities, [templateId]: normalized } });
+          this.bumpActivitiesRevision();
         }),
         catchError((error) => {
           console.error('[PlanWeekTemplateStore] Failed to load activities', error);
@@ -266,6 +269,7 @@ export class PlanWeekTemplateStoreService {
           const current = this.state().activities[templateId] ?? [];
           const next = this.upsertById(current, normalized);
           this.setState({ activities: { ...this.state().activities, [templateId]: next } });
+          this.bumpActivitiesRevision();
         }),
         catchError((error) => {
           console.error('[PlanWeekTemplateStore] Failed to save activity', error);
@@ -288,6 +292,7 @@ export class PlanWeekTemplateStoreService {
               [templateId]: current.filter((entry) => entry.id !== activityId),
             },
           });
+          this.bumpActivitiesRevision();
         }),
         catchError((error) => {
           console.error('[PlanWeekTemplateStore] Failed to delete activity', error);
@@ -316,5 +321,9 @@ export class PlanWeekTemplateStoreService {
       ...activity,
       participants: activity.participants?.map((participant) => ({ ...participant })) ?? [],
     };
+  }
+
+  private bumpActivitiesRevision(): void {
+    this.activitiesRevisionSignal.update((value) => value + 1);
   }
 }

@@ -1,23 +1,6 @@
 import { Activity } from '../../models/activity';
 import { ActivityValidationIssue } from '../../models/activity-validation';
 import { Resource } from '../../models/resource';
-import { TrainRun, TrainSegment } from '../../models/train';
-import { PlanningStageId } from '../../features/planning/planning-stage.model';
-
-export interface TimelineRangeDto {
-  start: string;
-  end: string;
-}
-
-export interface PlanningStageSnapshotDto {
-  stageId: PlanningStageId;
-  resources: Resource[];
-  activities: Activity[];
-  trainRuns?: TrainRun[];
-  trainSegments?: TrainSegment[];
-  timelineRange: TimelineRangeDto;
-  version?: string | null;
-}
 
 export interface ActivityBatchMutationRequest {
   upserts?: Activity[];

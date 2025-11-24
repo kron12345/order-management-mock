@@ -1,4 +1,4 @@
-import { HttpClient, HttpParams } from '@angular/common/http';
+import { HttpClient } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import { Observable } from 'rxjs';
 import { PlanningStageId } from '../../features/planning/planning-stage.model';
@@ -8,41 +8,14 @@ import {
   ActivityBatchMutationResponse,
   ActivityValidationRequest,
   ActivityValidationResponse,
-  PlanningStageSnapshotDto,
   ResourceBatchMutationRequest,
   ResourceBatchMutationResponse,
 } from './activity-api.types';
-
-export interface ActivityListQuery {
-  from?: string;
-  to?: string;
-  resourceIds?: string[];
-}
 
 @Injectable({ providedIn: 'root' })
 export class ActivityApiService {
   private readonly http = inject(HttpClient);
   private readonly config = inject(API_CONFIG);
-
-  fetchStageSnapshot(stageId: PlanningStageId): Observable<PlanningStageSnapshotDto> {
-    return this.http.get<PlanningStageSnapshotDto>(this.stageUrl(stageId));
-  }
-
-  listActivities(stageId: PlanningStageId, query: ActivityListQuery = {}): Observable<PlanningStageSnapshotDto['activities']> {
-    let params = new HttpParams();
-    if (query.from) {
-      params = params.set('from', query.from);
-    }
-    if (query.to) {
-      params = params.set('to', query.to);
-    }
-    if (query.resourceIds && query.resourceIds.length > 0) {
-      params = params.set('resourceIds', query.resourceIds.join(','));
-    }
-    return this.http.get<PlanningStageSnapshotDto['activities']>(`${this.stageUrl(stageId)}/activities`, {
-      params,
-    });
-  }
 
   batchMutateActivities(
     stageId: PlanningStageId,
@@ -56,10 +29,6 @@ export class ActivityApiService {
     payload: ResourceBatchMutationRequest,
   ): Observable<ResourceBatchMutationResponse> {
     return this.http.put<ResourceBatchMutationResponse>(`${this.stageUrl(stageId)}/resources`, payload);
-  }
-
-  listResources(stageId: PlanningStageId): Observable<PlanningStageSnapshotDto['resources']> {
-    return this.http.get<PlanningStageSnapshotDto['resources']>(`${this.stageUrl(stageId)}/resources`);
   }
 
   validateActivities(

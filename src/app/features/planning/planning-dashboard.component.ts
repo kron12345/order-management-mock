@@ -229,10 +229,9 @@ export class PlanningDashboardComponent {
   };
 
   private readonly baseTimelineFallback = this.data.stageTimelineRange('base');
-  private readonly templateActivitySignal = computed(() => this.mapTemplateActivities());
 
   private readonly stageActivitySignals: Record<PlanningStageId, Signal<Activity[]>> = {
-    base: this.templateActivitySignal,
+    base: this.data.stageActivities('base'),
     operations: this.data.stageActivities('operations'),
     dispatch: this.data.stageActivities('dispatch'),
   };
@@ -318,6 +317,22 @@ export class PlanningDashboardComponent {
         const stage = this.normalizeStageId(params.get('stage'));
         this.setActiveStage(stage, false);
       });
+
+    effect(
+      () => {
+        const template = this.templateStore.selectedTemplate();
+        const templateId = template?.id ?? null;
+        const range = this.computeBaseTimelineRange();
+        this.data.setBaseTimelineRange(range);
+        this.data.setBaseTemplateContext(templateId);
+        const activitiesRevision = this.templateStore.activitiesRevision();
+        if (templateId) {
+          void activitiesRevision;
+          this.data.reloadBaseTimeline();
+        }
+      },
+      { allowSignalWrites: true },
+    );
 
     this.stageOrder.forEach((stage) => {
       effect(
@@ -3059,83 +3074,6 @@ export class PlanningDashboardComponent {
       .slice(0, 10);
   }
 
-  private mapTemplateActivities(): Activity[] {
-    const plans = this.templateStore.selectedActivities();
-    if (!plans.length) {
-      return [];
-    }
-    const resources = this.stageResourceSignals.base();
-    const normalized = this.normalizeActivityList(plans.map((item) => this.planActivityToActivity(item, resources)));
-    return this.annotateBaseServiceMetadata(normalized, resources);
-  }
-
-  private planActivityToActivity(plan: PlanWeekActivity, resources: Resource[]): Activity {
-    const activity: Activity = {
-      id: plan.id,
-      title: plan.title,
-      start: plan.startIso,
-      end: plan.endIso ?? plan.startIso,
-      type: plan.type,
-      remark: plan.remark ?? null,
-      attributes: plan.attributes,
-    };
-    // Restore optional route fields (persisted inside attributes on PlanWeek level)
-    const attr = plan.attributes as Record<string, unknown> | undefined;
-    const fromAttr = typeof attr?.['from'] === 'string' ? (attr?.['from'] as string) : undefined;
-    const toAttr = typeof attr?.['to'] === 'string' ? (attr?.['to'] as string) : undefined;
-    if (fromAttr !== undefined) {
-      activity.from = fromAttr;
-    }
-    if (toAttr !== undefined) {
-      activity.to = toAttr;
-    }
-    const normalized = this.applyActivityTypeConstraints(activity);
-    const planParticipants = plan.participants ?? [];
-    if (planParticipants.length === 0) {
-      return normalized;
-    }
-    const ownerParticipant =
-      planParticipants.find((participant) => this.isPrimaryParticipantRole(participant.role)) ??
-      planParticipants[0];
-    if (!ownerParticipant) {
-      return normalized;
-    }
-    const ownerResource =
-      resources.find((entry) => entry.id === ownerParticipant.resourceId) ?? null;
-    if (!ownerResource) {
-      return normalized;
-    }
-    const baseWithCategory: Activity = {
-      ...normalized,
-      serviceCategory: this.resolveServiceCategory(ownerResource) ?? normalized.serviceCategory,
-    };
-    let result = this.addParticipantToActivity(
-      baseWithCategory,
-      ownerResource,
-      undefined,
-      ownerParticipant.role,
-      { retainPreviousOwner: false, ownerCategory: this.resourceParticipantCategory(ownerResource) },
-    );
-    planParticipants.forEach((participant) => {
-      if (participant.resourceId === ownerResource.id) {
-        return;
-      }
-      const participantResource =
-        resources.find((entry) => entry.id === participant.resourceId) ?? null;
-      if (!participantResource) {
-        return;
-      }
-      result = this.addParticipantToActivity(
-        result,
-        ownerResource,
-        participantResource,
-        participant.role,
-        { retainPreviousOwner: true },
-      );
-    });
-    return result;
-  }
-
   private activityToPlanActivity(activity: Activity, templateId: string): PlanWeekActivity {
     // Ensure route fields are persisted within the attributes bag for PlanWeek storage
     const attrs: Record<string, unknown> = { ...(activity.attributes ?? {}) };
@@ -3171,123 +3109,6 @@ export class PlanningDashboardComponent {
       attributes: attrs,
       participants: planParticipants,
     };
-  }
-
-  private annotateBaseServiceMetadata(activities: Activity[], resources: Resource[]): Activity[] {
-    if (!activities.length) {
-      return activities;
-    }
-    const resourceMap = new Map(resources.map((resource) => [resource.id, resource]));
-    const clones = activities.map((activity) => ({ ...activity }));
-    const resourceBuckets = new Map<string, Activity[]>();
-
-    clones.forEach((activity) => {
-      const ownerId = this.activityOwnerId(activity);
-      if (!ownerId) {
-        return;
-      }
-      if (!resourceBuckets.has(ownerId)) {
-        resourceBuckets.set(ownerId, []);
-      }
-      resourceBuckets.get(ownerId)!.push(activity);
-    });
-
-    resourceBuckets.forEach((list, resourceId) => {
-      const resource = resourceMap.get(resourceId) ?? null;
-      list.sort((a, b) => {
-        const aTime = this.tryParseIso(a.start)?.getTime() ?? 0;
-        const bTime = this.tryParseIso(b.start)?.getTime() ?? 0;
-        return aTime - bTime;
-      });
-
-      let currentService: {
-        id: string;
-        category: 'personnel-service' | 'vehicle-service' | undefined;
-        templateId: string | null;
-      } | null = null;
-
-      list.forEach((activity) => {
-        const startDate = this.tryParseIso(activity.start);
-        if (!startDate) {
-          this.clearServiceMetadata(activity, resource);
-          return;
-        }
-
-        if (this.isServiceStartActivity(activity)) {
-          const serviceDate = this.toIsoDate(startDate);
-          const serviceId = this.buildServiceId(resourceId, serviceDate);
-          const category = resource ? this.resolveServiceCategory(resource) : activity.serviceCategory ?? undefined;
-          const templateId = resource?.id ?? activity.serviceTemplateId ?? null;
-          currentService = { id: serviceId, category, templateId };
-          this.assignServiceMetadata(activity, currentService, 'start');
-          return;
-        }
-
-        if (currentService) {
-          const role = this.isServiceEndActivity(activity) ? 'end' : 'segment';
-          this.assignServiceMetadata(activity, currentService, role);
-          if (role === 'end') {
-            currentService = null;
-          }
-        } else {
-          this.clearServiceMetadata(activity, resource);
-          if (this.isServiceEndActivity(activity)) {
-            activity.serviceRole = 'end';
-          }
-        }
-      });
-    });
-
-    return clones;
-  }
-
-  private isServiceStartActivity(activity: Activity): boolean {
-    return (activity.type ?? '') === 'service-start' || activity.serviceRole === 'start';
-  }
-
-  private isServiceEndActivity(activity: Activity): boolean {
-    return (activity.type ?? '') === 'service-end' || activity.serviceRole === 'end';
-  }
-
-  private assignServiceMetadata(
-    activity: Activity,
-    descriptor: {
-      id: string;
-      category: 'personnel-service' | 'vehicle-service' | undefined;
-      templateId: string | null;
-    },
-    role: ServiceRole,
-  ): void {
-    activity.serviceId = descriptor.id;
-    activity.serviceRole = role;
-    activity.serviceCategory = descriptor.category;
-    activity.serviceTemplateId = descriptor.templateId;
-  }
-
-  private clearServiceMetadata(activity: Activity, resource: Resource | null = null): void {
-    activity.serviceId = undefined;
-    if (!this.isServiceStartActivity(activity) && !this.isServiceEndActivity(activity)) {
-      activity.serviceRole = null;
-    }
-    if (resource) {
-      activity.serviceCategory = this.resolveServiceCategory(resource);
-      activity.serviceTemplateId = resource.id;
-    } else {
-      activity.serviceCategory = activity.serviceCategory ?? undefined;
-      activity.serviceTemplateId = activity.serviceTemplateId ?? null;
-    }
-  }
-
-  private buildServiceId(resourceId: string, serviceDate: string): string {
-    return `service:${resourceId}:${serviceDate}`;
-  }
-
-  private tryParseIso(value: string | null | undefined): Date | null {
-    if (!value) {
-      return null;
-    }
-    const date = new Date(value);
-    return Number.isFinite(date.getTime()) ? date : null;
   }
 
   private createActivityDraft(
