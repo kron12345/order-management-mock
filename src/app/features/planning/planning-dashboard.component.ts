@@ -16,7 +16,6 @@ import { MatDialog } from '@angular/material/dialog';
 import { FormsModule, ReactiveFormsModule, FormBuilder, Validators } from '@angular/forms';
 import { GanttComponent } from '../../gantt/gantt.component';
 import { GanttWindowLauncherComponent } from './components/gantt-window-launcher.component';
-import { PlanWeekTemplateComponent } from './components/plan-week-template.component';
 import { DragDropModule } from '@angular/cdk/drag-drop';
 import { PlanningDataService, PlanningTimelineRange } from './planning-data.service';
 import { Resource, ResourceKind } from '../../models/resource';
@@ -48,14 +47,13 @@ import { ActivatedRoute, Router } from '@angular/router';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { TimetableYearService } from '../../core/services/timetable-year.service';
 import { TimetableYearBounds } from '../../core/models/timetable-year.model';
-import { PlanWeekTemplateStoreService } from './stores/plan-week-template.store';
-import { PlanWeekActivity, PlanWeekActivityParticipant } from '../../models/planning-template';
 import { DurationPipe } from '../../shared/pipes/duration.pipe';
 import {
   ActivityLinkRole,
   ActivityLinkRoleDialogComponent,
   ActivityLinkRoleDialogResult,
 } from './activity-link-role-dialog.component';
+import { TemplateTimelineStoreService } from './template-timeline-store.service';
 
 interface PlanningBoard {
   id: string;
@@ -144,20 +142,6 @@ const STAGE_RESOURCE_GROUPS: Record<PlanningStageId, StageResourceGroupConfig[]>
       icon: 'groups',
     },
   ],
-  dispatch: [
-    {
-      category: 'vehicle',
-      label: 'Fahrzeuge',
-      description: 'Disposition der Fahrzeuge im Tagesgeschäft inklusive kurzfristiger Anpassungen.',
-      icon: 'directions_transit',
-    },
-    {
-      category: 'personnel',
-      label: 'Personal',
-      description: 'Direkte Bearbeitung von Diensten und Leistungen auf Personalressourcen.',
-      icon: 'groups',
-    },
-  ],
 };
 
 const TYPE_PICKER_META: Array<{ id: ActivityCategory; label: string; icon: string }> = [
@@ -197,7 +181,6 @@ type ActivityTypePickerGroup = {
     DurationPipe,
     GanttComponent,
     GanttWindowLauncherComponent,
-    PlanWeekTemplateComponent,
   ],
   templateUrl: './planning-dashboard.component.html',
   styleUrl: './planning-dashboard.component.scss',
@@ -209,7 +192,8 @@ export class PlanningDashboardComponent {
   private readonly fb = inject(FormBuilder);
   private readonly timetableYearService = inject(TimetableYearService);
   private readonly managedTimetableYearBounds = this.timetableYearService.managedYearBoundsSignal();
-  private readonly templateStore = inject(PlanWeekTemplateStoreService);
+  private readonly templateStore = inject(TemplateTimelineStoreService);
+  private readonly templateMetaLoad = signal(false);
 
   readonly stages = PLANNING_STAGE_METAS;
   private readonly stageMetaMap: Record<PlanningStageId, PlanningStageMeta> = this.stages.reduce(
@@ -225,7 +209,6 @@ export class PlanningDashboardComponent {
   private readonly stageResourceSignals: Record<PlanningStageId, Signal<Resource[]>> = {
     base: this.data.stageResources('base'),
     operations: this.data.stageResources('operations'),
-    dispatch: this.data.stageResources('dispatch'),
   };
 
   private readonly baseTimelineFallback = this.data.stageTimelineRange('base');
@@ -233,27 +216,21 @@ export class PlanningDashboardComponent {
   private readonly stageActivitySignals: Record<PlanningStageId, Signal<Activity[]>> = {
     base: this.data.stageActivities('base'),
     operations: this.data.stageActivities('operations'),
-    dispatch: this.data.stageActivities('dispatch'),
   };
 
   private readonly normalizedStageActivitySignals: Record<PlanningStageId, Signal<Activity[]>> = {
     base: computed(() => this.normalizeActivityList(this.stageActivitySignals.base())),
     operations: computed(() => this.normalizeActivityList(this.stageActivitySignals.operations())),
-    dispatch: computed(() => this.normalizeActivityList(this.stageActivitySignals.dispatch())),
   };
-
-  protected readonly isBasePlanningPanelOpen = signal(false);
 
   private readonly stageTimelineSignals = {
     base: computed(() => this.computeBaseTimelineRange()),
     operations: this.data.stageTimelineRange('operations'),
-    dispatch: this.data.stageTimelineRange('dispatch'),
   } as const;
 
   private readonly stageStateSignal = signal<Record<PlanningStageId, StageRuntimeState>>({
     base: this.createEmptyStageState(),
     operations: this.createEmptyStageState(),
-    dispatch: this.createEmptyStageState(),
   });
 
   private readonly activeStageSignal = signal<PlanningStageId>('base');
@@ -261,7 +238,6 @@ export class PlanningDashboardComponent {
   private readonly boardCounters: Record<PlanningStageId, number> = {
     base: 1,
     operations: 1,
-    dispatch: 1,
   };
 
   private readonly activityTypeService = inject(ActivityTypeService);
@@ -272,7 +248,6 @@ export class PlanningDashboardComponent {
     {
       base: {},
       operations: {},
-      dispatch: {},
     },
   );
 
@@ -294,6 +269,7 @@ export class PlanningDashboardComponent {
   private readonly activityDetailsOpenSignal = signal(true);
   private readonly dialog = inject(MatDialog);
   private readonly activityEditPreviewSignal = signal<ActivityEditPreviewState | null>(null);
+  protected readonly selectedTemplateId = computed(() => this.templateStore.selectedTemplateWithFallback()?.id ?? null);
 
   protected readonly activityForm = this.fb.group({
     start: ['', Validators.required],
@@ -305,6 +281,7 @@ export class PlanningDashboardComponent {
   });
 
   constructor() {
+    this.templateStore.loadTemplates();
     const initialStage = this.normalizeStageId(this.route.snapshot.queryParamMap.get('stage'));
     this.setActiveStage(initialStage, false);
     if (this.route.snapshot.queryParamMap.get('stage') !== initialStage) {
@@ -320,14 +297,15 @@ export class PlanningDashboardComponent {
 
     effect(
       () => {
-        const template = this.templateStore.selectedTemplate();
+        const template = this.templateStore.selectedTemplateWithFallback();
         const templateId = template?.id ?? null;
         const range = this.computeBaseTimelineRange();
         this.data.setBaseTimelineRange(range);
-        this.data.setBaseTemplateContext(templateId);
-        const activitiesRevision = this.templateStore.activitiesRevision();
+        this.data.setBaseTemplateContext(templateId, {
+          periods: template?.periods ?? null,
+          specialDays: template?.specialDays ?? null,
+        });
         if (templateId) {
-          void activitiesRevision;
           this.data.reloadBaseTimeline();
         }
       },
@@ -541,9 +519,6 @@ export class PlanningDashboardComponent {
 
     effect(
       () => {
-        if (this.activeStageSignal() !== 'base' && this.isBasePlanningPanelOpen()) {
-          this.isBasePlanningPanelOpen.set(false);
-        }
       },
       { allowSignalWrites: true },
     );
@@ -749,6 +724,9 @@ export class PlanningDashboardComponent {
   );
 
   protected readonly activityCreationTool = computed(() => this.activityCreationToolSignal());
+  protected readonly resourceError = this.data.resourceError;
+  protected readonly timelineError = this.data.timelineError.bind(this.data);
+  protected readonly templateError = this.templateStore.error;
 
   protected readonly selectedActivity = computed(() => this.selectedActivityState());
   protected readonly selectedActivities = computed(() => this.computeSelectedActivities());
@@ -857,6 +835,25 @@ export class PlanningDashboardComponent {
     this.activityForm.controls.type.setValue(option.activityTypeId);
     this.activityForm.controls.type.markAsDirty();
     this.activityFormTypeSignal.set(option.activityTypeId);
+  }
+
+  protected openPeriodsWindow(): void {
+    let templateId = this.selectedTemplateId();
+    if (!templateId) {
+      const first = this.templateStore.templates()[0];
+      if (first) {
+        this.templateStore.selectTemplate(first.id);
+        templateId = first.id;
+      }
+    }
+    if (!templateId || typeof window === 'undefined') {
+      return;
+    }
+    const urlTree = this.router.createUrlTree(['/planning/periods'], {
+      queryParams: { template: templateId },
+    });
+    const url = this.router.serializeUrl(urlTree);
+    window.open(url, '_blank', 'noopener,noreferrer');
   }
 
   protected openTypePicker(): void {
@@ -1056,7 +1053,8 @@ export class PlanningDashboardComponent {
       return;
     }
     const draft = this.createActivityDraft(event, definition, selectedOption ?? null);
-    const normalized = this.applyActivityTypeConstraints(draft);
+    const mappedDraft = stage === 'base' ? this.mapActivityToReferenceWeek(draft) : draft;
+    const normalized = this.applyActivityTypeConstraints(mappedDraft);
     this.pendingActivityOriginal.set(normalized);
     this.startPendingActivity(stage, event.resource, normalized);
   }
@@ -1464,7 +1462,7 @@ export class PlanningDashboardComponent {
     if (stage === 'base') {
       const templateId = this.templateStore.selectedTemplate()?.id;
       if (templateId) {
-        this.templateStore.deleteActivity(templateId, selection.activity.id);
+        this.data.deleteTemplateActivity(templateId, selection.activity.id);
       }
       this.selectedActivityState.set(null);
       return;
@@ -2897,20 +2895,12 @@ export class PlanningDashboardComponent {
       }
       return resources;
     }
-    if (stage === 'dispatch') {
-      return resources.filter((resource) => this.isPhysicalResource(resource));
-    }
     return resources;
   }
 
   private isServiceResource(resource: Resource): boolean {
     const category = this.getResourceCategory(resource);
     return category === 'vehicle-service' || category === 'personnel-service';
-  }
-
-  private isPhysicalResource(resource: Resource): boolean {
-    const category = this.getResourceCategory(resource);
-    return category === 'vehicle' || category === 'personnel';
   }
 
   private computeTimelineRange(stage: PlanningStageId): PlanningTimelineRange {
@@ -2930,34 +2920,12 @@ export class PlanningDashboardComponent {
   }
 
   private computeBaseTimelineRange(): PlanningTimelineRange {
-    const template = this.templateStore.selectedTemplate();
     const fallback = this.baseTimelineFallback();
-    const parsed = template?.baseWeekStartIso ? this.parseTemplateDate(template.baseWeekStartIso) : null;
-    const start = parsed ?? new Date(fallback.start);
+    const start = new Date(fallback.start);
     const end = new Date(start.getTime());
     end.setUTCDate(end.getUTCDate() + 7);
     end.setUTCHours(end.getUTCHours() + 20);
     return { start, end };
-  }
-
-  private parseTemplateDate(value: string | null | undefined): Date | null {
-    if (!value) {
-      return null;
-    }
-    if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-      const date = new Date(`${value}T00:00:00Z`);
-      return Number.isFinite(date.getTime()) ? date : null;
-    }
-    if (/^\d{2}\.\d{2}\.\d{4}$/.test(value)) {
-      const [day, month, year] = value.split('.').map((part) => Number.parseInt(part, 10));
-      if (Number.isNaN(day) || Number.isNaN(month) || Number.isNaN(year)) {
-        return null;
-      }
-      const date = new Date(Date.UTC(year, month - 1, day));
-      return Number.isFinite(date.getTime()) ? date : null;
-    }
-    const fallback = new Date(value);
-    return Number.isFinite(fallback.getTime()) ? fallback : null;
   }
 
   private computeStageYearRange(
@@ -3074,41 +3042,57 @@ export class PlanningDashboardComponent {
       .slice(0, 10);
   }
 
-  private activityToPlanActivity(activity: Activity, templateId: string): PlanWeekActivity {
-    // Ensure route fields are persisted within the attributes bag for PlanWeek storage
-    const attrs: Record<string, unknown> = { ...(activity.attributes ?? {}) };
-    if (typeof activity.from === 'string') {
-      attrs['from'] = activity.from;
-    } else {
-      delete (attrs as any)['from'];
+  private mapActivityToReferenceWeek(activity: Activity): Activity {
+    const template = this.templateStore.selectedTemplate();
+    const periods = template?.periods ?? this.defaultTemplatePeriod();
+    if (!periods.length) {
+      return activity;
     }
-    if (typeof activity.to === 'string') {
-      attrs['to'] = activity.to;
-    } else {
-      delete (attrs as any)['to'];
-    }
-    const planParticipants: PlanWeekActivityParticipant[] =
-      (activity.participants ?? []).map((participant) => ({
-        resourceId: participant.resourceId,
-        role: participant.role,
-      })) ?? [];
-    if (planParticipants.length === 0) {
-      const ownerId = this.activityOwnerId(activity);
-      if (ownerId) {
-        planParticipants.push({ resourceId: ownerId });
-      }
+    const startDate = new Date(activity.start);
+    const targetPeriod = periods.find((period) => {
+      const from = new Date(period.validFrom);
+      const to = period.validTo ? new Date(period.validTo) : this.timetableYearService.defaultYearBounds().end;
+      return startDate >= from && startDate <= to;
+    });
+    const period = targetPeriod ?? periods[0];
+    const refStart = new Date(period.validFrom);
+    const weekday = startDate.getUTCDay();
+    const mappedStart = new Date(refStart);
+    mappedStart.setUTCDate(refStart.getUTCDate() + weekday);
+    const startTime =
+      startDate.getUTCHours() * 3600_000 +
+      startDate.getUTCMinutes() * 60_000 +
+      startDate.getUTCSeconds() * 1000 +
+      startDate.getUTCMilliseconds();
+    mappedStart.setUTCMilliseconds(mappedStart.getUTCMilliseconds() + startTime);
+    let mappedEnd: Date | null = null;
+    if (activity.end) {
+      const endDate = new Date(activity.end);
+      const endTime =
+        endDate.getUTCHours() * 3600_000 +
+        endDate.getUTCMinutes() * 60_000 +
+        endDate.getUTCSeconds() * 1000 +
+        endDate.getUTCMilliseconds();
+      mappedEnd = new Date(refStart);
+      mappedEnd.setUTCDate(refStart.getUTCDate() + weekday);
+      mappedEnd.setUTCMilliseconds(mappedEnd.getUTCMilliseconds() + endTime);
     }
     return {
-      id: activity.id,
-      templateId,
-      title: activity.title,
-      startIso: activity.start,
-      endIso: activity.end ?? activity.start,
-      type: activity.type ?? undefined,
-      remark: activity.remark ?? undefined,
-      attributes: attrs,
-      participants: planParticipants,
+      ...activity,
+      start: mappedStart.toISOString(),
+      end: mappedEnd ? mappedEnd.toISOString() : null,
     };
+  }
+
+  private defaultTemplatePeriod() {
+    const year = this.timetableYearService.defaultYearBounds();
+    return [
+      {
+        id: 'default-year',
+        validFrom: year.startIso,
+        validTo: year.endIso,
+      },
+    ];
   }
 
   private createActivityDraft(
@@ -3244,16 +3228,7 @@ export class PlanningDashboardComponent {
     if (!templateId) {
       return;
     }
-    const payload = this.activityToPlanActivity(activity, templateId);
-    this.templateStore.saveActivity(templateId, payload);
-  }
-
-  protected toggleBasePlanningPanel(): void {
-    this.isBasePlanningPanelOpen.update((isOpen) => !isOpen);
-  }
-
-  protected closeBasePlanningPanel(): void {
-    this.isBasePlanningPanelOpen.set(false);
+    this.data.upsertTemplateActivity(templateId, activity);
   }
 
   private setActiveStage(stage: PlanningStageId, updateUrl: boolean): void {

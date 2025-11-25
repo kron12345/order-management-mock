@@ -2,6 +2,20 @@
   <header class="planning-toolbar">
     <div class="planning-toolbar__bar">
       <div class="planning-toolbar__summary-block">
+        <div class="planning-toolbar__alerts">
+          <div class="alert" *ngIf="resourceError()">
+            <mat-icon fontIcon="error"></mat-icon>
+            {{ resourceError() }}
+          </div>
+          <div class="alert" *ngIf="timelineError(activeStageId())">
+            <mat-icon fontIcon="error_outline"></mat-icon>
+            {{ timelineError(activeStageId()) }}
+          </div>
+          <div class="alert" *ngIf="templateError()">
+            <mat-icon fontIcon="warning"></mat-icon>
+            {{ templateError() }}
+          </div>
+        </div>
         <span class="planning-toolbar__summary">
           {{ boards().length }} Plantafel(n) · {{ resources().length }} Ressourcen ·
           {{ selectionSize() }} ausgewählt
@@ -11,11 +25,11 @@
           mat-stroked-button
           color="primary"
           class="planning-toolbar__base-toggle"
-          (click)="toggleBasePlanningPanel()"
-          matTooltip="Zeitscheiben bearbeiten, ohne dass der Gantt-Bereich kleiner wird."
+          (click)="openPeriodsWindow()"
+          matTooltip="Zeiträume und Spezialtage in neuem Fenster bearbeiten."
         >
           <mat-icon fontIcon="view_week"></mat-icon>
-          {{ isBasePlanningPanelOpen() ? 'Basisplanung schließen' : 'Basisplanung öffnen' }}
+          Zeiträume bearbeiten
         </button>
       </div>
 
@@ -655,31 +669,4 @@
     </div>
   </section>
 
-  <div
-    class="planning-base-overlay"
-    *ngIf="isBasePlanningPanelOpen() && activeStageId() === 'base'"
-  >
-    <div class="planning-base-overlay__backdrop" (click)="closeBasePlanningPanel()"></div>
-    <section class="planning-base-overlay__panel">
-      <header class="planning-base-overlay__header">
-        <div>
-          <div class="planning-base-overlay__title">Planwochen & Zeitscheiben</div>
-          <div class="planning-base-overlay__subtitle">
-            Vorlagen pflegen, Gültigkeiten definieren und Rollouts starten.
-          </div>
-        </div>
-        <button
-          mat-icon-button
-          type="button"
-          aria-label="Basisplanung schließen"
-          (click)="closeBasePlanningPanel()"
-        >
-          <mat-icon fontIcon="close"></mat-icon>
-        </button>
-      </header>
-      <div class="planning-base-overlay__content">
-        <app-plan-week-template [timetableYearRange]="basePlanningYearRange()"></app-plan-week-template>
-      </div>
-    </section>
-  </div>
 </section>

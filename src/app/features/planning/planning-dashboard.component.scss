@@ -27,6 +27,25 @@
   white-space: nowrap;
 }
 
+.planning-toolbar__alerts {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.planning-toolbar__alerts .alert {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: #ffe6e6;
+  color: #8a1c1c;
+  font-weight: 500;
+  border: 1px solid #f5c2c2;
+  white-space: nowrap;
+}
+
 .planning-toolbar__summary {
   font-size: 0.85rem;
   color: rgba(0, 0, 0, 0.7);

@@ -19,7 +19,7 @@ import { ClientIdentityService } from '../../core/services/client-identity.servi
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { TimetableYearService } from '../../core/services/timetable-year.service';
 import { TimelineApiService } from '../../core/api/timeline-api.service';
-import { TimelineActivityDto } from '../../core/api/timeline-api.types';
+import { TemplatePeriod, TimelineActivityDto } from '../../core/api/timeline-api.types';
 import { PlanningResourceApiService, ResourceSnapshotDto } from '../../core/api/planning-resource-api.service';
 import { TemporalValue } from '../../models/master-data';
 
@@ -44,7 +44,7 @@ interface ResourceDiff extends ResourceBatchMutationRequest {
   hasChanges: boolean;
 }
 
-const STAGE_IDS: PlanningStageId[] = ['base', 'operations', 'dispatch'];
+const STAGE_IDS: PlanningStageId[] = ['base', 'operations'];
 
 function defaultTimeline(): PlanningTimelineRange {
   const start = new Date();
@@ -95,6 +95,10 @@ function cloneTimelineRange(range: PlanningTimelineRange): PlanningTimelineRange
 
 function cloneResourceSnapshot(snapshot: ResourceSnapshotDto): ResourceSnapshotDto {
   return JSON.parse(JSON.stringify(snapshot)) as ResourceSnapshotDto;
+}
+
+function rangesEqual(a: PlanningTimelineRange, b: PlanningTimelineRange): boolean {
+  return a.start.getTime() === b.start.getTime() && a.end.getTime() === b.end.getTime();
 }
 
 function cloneStageData(stage: PlanningStageData): PlanningStageData {
@@ -170,6 +174,13 @@ export class PlanningDataService {
   private baseTemplateId: string | null = null;
   private baseTimelineRange: PlanningTimelineRange | null = null;
   private readonly resourceSnapshotSignal = signal<ResourceSnapshotDto | null>(null);
+  private readonly resourceErrorSignal = signal<string | null>(null);
+  private readonly timelineErrorSignal = signal<Record<PlanningStageId, string | null>>({
+    base: null,
+    operations: null,
+  });
+  private baseTemplatePeriods: TemplatePeriod[] | null = null;
+  private baseTemplateSpecialDays: Set<string> = new Set();
 
   private readonly stageDataSignal = signal<Record<PlanningStageId, PlanningStageData>>(
     STAGE_IDS.reduce((record, stage) => {
@@ -198,9 +209,11 @@ export class PlanningDataService {
           const clone = cloneResourceSnapshot(snapshot);
           this.resourceSnapshotSignal.set(cloneResourceSnapshot(clone));
           this.applyResourceSnapshot(clone);
+          this.resourceErrorSignal.set(null);
         }),
         catchError((error) => {
           console.warn('[PlanningDataService] Failed to load resource snapshot', error);
+          this.resourceErrorSignal.set('Ressourcen konnten nicht geladen werden.');
           return EMPTY;
         }),
       )
@@ -376,7 +389,9 @@ export class PlanningDataService {
   }
 
   stageResources(stage: PlanningStageId): Signal<Resource[]> {
-    return computed(() => cloneResources(this.stageDataSignal()[stage].resources));
+    return computed(() => cloneResources(this.stageDataSignal()[stage].resources), {
+      equal: resourceListsEqual,
+    });
   }
 
   stageActivities(stage: PlanningStageId): Signal<Activity[]> {
@@ -384,7 +399,18 @@ export class PlanningDataService {
   }
 
   stageTimelineRange(stage: PlanningStageId): Signal<PlanningTimelineRange> {
-    return computed(() => cloneTimelineRange(this.stageDataSignal()[stage].timelineRange));
+    return computed(
+      () => cloneTimelineRange(this.stageDataSignal()[stage].timelineRange),
+      { equal: rangesEqual },
+    );
+  }
+
+  resourceError(): Signal<string | null> {
+    return computed(() => this.resourceErrorSignal());
+  }
+
+  timelineError(stage: PlanningStageId): Signal<string | null> {
+    return computed(() => this.timelineErrorSignal()[stage] ?? null);
   }
 
   resourceSnapshot(): Signal<ResourceSnapshotDto | null> {
@@ -394,11 +420,20 @@ export class PlanningDataService {
     });
   }
 
-  setBaseTemplateContext(templateId: string | null): void {
+  setBaseTemplateContext(
+    templateId: string | null,
+    context?: { periods?: TemplatePeriod[] | null; specialDays?: string[] | null },
+  ): void {
     if (this.baseTemplateId === templateId) {
+      if (context) {
+        this.baseTemplatePeriods = context.periods ?? null;
+        this.baseTemplateSpecialDays = new Set(context.specialDays ?? []);
+      }
       return;
     }
     this.baseTemplateId = templateId;
+    this.baseTemplatePeriods = context?.periods ?? null;
+    this.baseTemplateSpecialDays = new Set(context?.specialDays ?? []);
     if (!templateId) {
       this.stageDataSignal.update((record) => ({
         ...record,
@@ -411,35 +446,74 @@ export class PlanningDataService {
   }
 
   setBaseTimelineRange(range: PlanningTimelineRange | null): void {
-    this.baseTimelineRange = range;
     if (!range) {
+      this.baseTimelineRange = null;
       return;
     }
+    const current = this.stageDataSignal().base.timelineRange;
+    const next = cloneTimelineRange(range);
+    if (rangesEqual(current, next)) {
+      this.baseTimelineRange = next;
+      return;
+    }
+    this.baseTimelineRange = next;
     this.stageDataSignal.update((record) => ({
       ...record,
       base: {
         ...record.base,
-        timelineRange: cloneTimelineRange(range),
+        timelineRange: next,
       },
     }));
   }
 
   reloadBaseTimeline(): void {
-    if (!this.baseTemplateId || !this.baseTimelineRange) {
+    if (!this.baseTimelineRange || !this.baseTemplateId) {
+      // Ohne Template kein Ladevorgang auslösen; Bereinigung passiert in setBaseTemplateContext.
       return;
     }
+    const range = {
+      from: this.baseTimelineRange.start.toISOString(),
+      to: this.baseTimelineRange.end.toISOString(),
+      lod: 'activity' as const,
+      stage: 'base' as const,
+    };
     this.timelineApi
-      .loadTemplateTimeline(this.baseTemplateId, {
-        from: this.baseTimelineRange.start.toISOString(),
-        to: this.baseTimelineRange.end.toISOString(),
-        stage: 'base',
-        lod: 'activity',
-      })
+      .loadTemplateTimeline(this.baseTemplateId, range)
       .pipe(
         take(1),
         tap((response) => this.applyTimelineActivities('base', response.activities ?? [])),
         catchError((error) => {
           console.warn('[PlanningDataService] Failed to load base timeline', error);
+          this.timelineErrorSignal.update((state) => ({ ...state, base: 'Basis-Timeline konnte nicht geladen werden.' }));
+          return EMPTY;
+        }),
+      )
+      .subscribe();
+  }
+
+  upsertTemplateActivity(templateId: string, activity: Activity): void {
+    const dto = this.activityToTimelineDto('base', activity);
+    this.timelineApi
+      .upsertTemplateActivity(templateId, dto)
+      .pipe(
+        take(1),
+        tap((saved) => this.applyTemplateActivity(saved)),
+        catchError((error) => {
+          console.warn('[PlanningDataService] Failed to upsert template activity', error);
+          return EMPTY;
+        }),
+      )
+      .subscribe();
+  }
+
+  deleteTemplateActivity(templateId: string, activityId: string): void {
+    this.timelineApi
+      .deleteTemplateActivity(templateId, activityId)
+      .pipe(
+        take(1),
+        tap(() => this.removeTemplateActivity(activityId)),
+        catchError((error) => {
+          console.warn('[PlanningDataService] Failed to delete template activity', error);
           return EMPTY;
         }),
       )
@@ -462,10 +536,7 @@ export class PlanningDataService {
       this.reloadBaseTimeline();
       return;
     }
-    const sourceStage: PlanningStageId = stage === 'dispatch' ? 'operations' : stage;
-    if (sourceStage !== 'operations') {
-      return;
-    }
+    const sourceStage: PlanningStageId = stage;
     const range = this.stageDataSignal()[stage].timelineRange;
     this.timelineApi
       .loadTimeline({
@@ -479,6 +550,10 @@ export class PlanningDataService {
         tap((response) => this.applyTimelineActivities(stage, response.activities ?? [])),
         catchError((error) => {
           console.warn(`[PlanningDataService] Failed to load timeline for stage ${stage}`, error);
+          this.timelineErrorSignal.update((state) => ({
+            ...state,
+            [stage]: 'Timeline konnte nicht geladen werden.',
+          }));
           return EMPTY;
         }),
       )
@@ -486,7 +561,7 @@ export class PlanningDataService {
   }
 
   private applyTimelineActivities(stage: PlanningStageId, entries: TimelineActivityDto[]): void {
-    const baseActivities = this.mapTimelineActivities(entries);
+    const baseActivities = this.mapTimelineActivities(entries, stage);
     const normalized = normalizeActivityParticipants(baseActivities, this.stageDataSignal()[stage].resources);
     this.stageDataSignal.update((record) => ({
       ...record,
@@ -497,8 +572,43 @@ export class PlanningDataService {
     }));
   }
 
-  private mapTimelineActivities(entries: TimelineActivityDto[]): Activity[] {
-    return entries.map((entry) => ({
+  private applyTemplateActivity(entry: TimelineActivityDto): void {
+    if (!this.baseTemplateId) {
+      return;
+    }
+    const [activity] = this.mapTimelineActivities([entry], 'base');
+    this.stageDataSignal.update((record) => {
+      const baseStage = record.base;
+      const next = mergeActivityList(baseStage.activities, [activity], []);
+      return {
+        ...record,
+        base: {
+          ...baseStage,
+          activities: next,
+        },
+      };
+    });
+  }
+
+  private removeTemplateActivity(activityId: string): void {
+    this.stageDataSignal.update((record) => {
+      const baseStage = record.base;
+      const filtered = baseStage.activities.filter((activity) => activity.id !== activityId);
+      if (filtered === baseStage.activities) {
+        return record;
+      }
+      return {
+        ...record,
+        base: {
+          ...baseStage,
+          activities: filtered,
+        },
+      };
+    });
+  }
+
+  private mapTimelineActivities(entries: TimelineActivityDto[], stage: PlanningStageId): Activity[] {
+    const activities = entries.map((entry) => ({
       id: entry.id,
       title: entry.label?.trim().length ? entry.label : entry.type ?? entry.id,
       start: entry.start,
@@ -516,6 +626,128 @@ export class PlanningDataService {
         role: (assignment.role ?? undefined) as ActivityParticipant['role'],
       })),
     }));
+    if (stage !== 'base') {
+      return activities;
+    }
+    return this.reflectBaseActivities(activities);
+  }
+
+  private activityToTimelineDto(stage: PlanningStageId, activity: Activity): TimelineActivityDto {
+    const participants = activity.participants ?? [];
+    const resourceAssignments = participants.map((participant) => ({
+      resourceId: participant.resourceId,
+      resourceType: participant.kind,
+      role: participant.role ?? null,
+      lineIndex: null,
+    }));
+    const isOpenEnded = !activity.end;
+    return {
+      id: activity.id,
+      stage,
+      type: activity.type ?? '',
+      start: activity.start,
+      end: activity.end ?? null,
+      isOpenEnded,
+      status: (activity as any).status ?? null,
+      serviceRole: activity.serviceRole ?? null,
+      from: activity.from ?? null,
+      to: activity.to ?? null,
+      remark: activity.remark ?? null,
+      label: activity.title ?? null,
+      serviceId: activity.serviceId ?? null,
+      resourceAssignments,
+      attributes: activity.attributes ?? null,
+      version: (activity as any).version ?? null,
+    };
+  }
+
+  private reflectBaseActivities(activities: Activity[]): Activity[] {
+    const periods = this.baseTemplatePeriods && this.baseTemplatePeriods.length > 0 ? this.baseTemplatePeriods : this.defaultPeriods();
+    if (!periods.length) {
+      return activities;
+    }
+    const specials = this.baseTemplateSpecialDays;
+    const reflected: Activity[] = [];
+    const viewStart = this.baseTimelineRange?.start ?? null;
+    const viewEnd = this.baseTimelineRange?.end ?? null;
+
+    periods.forEach((period) => {
+      const periodStart = new Date(period.validFrom);
+      const periodEnd = period.validTo ? new Date(period.validTo) : this.timetableYear.defaultYearBounds().end;
+      const windowStart = viewStart && viewStart > periodStart ? viewStart : periodStart;
+      const windowEnd = viewEnd && viewEnd < periodEnd ? viewEnd : periodEnd;
+      if (windowEnd < windowStart) {
+        return;
+      }
+      activities.forEach((activity) => {
+        const activityDate = new Date(activity.start);
+        const weekday = activityDate.getUTCDay();
+        const startTime = new Date(activity.start);
+        const endTime = activity.end ? new Date(activity.end) : null;
+        const timeMs =
+          startTime.getUTCHours() * 3600_000 +
+          startTime.getUTCMinutes() * 60_000 +
+          startTime.getUTCSeconds() * 1000 +
+          startTime.getUTCMilliseconds();
+        const endMs = endTime
+          ? endTime.getUTCHours() * 3600_000 +
+            endTime.getUTCMinutes() * 60_000 +
+            endTime.getUTCSeconds() * 1000 +
+            endTime.getUTCMilliseconds()
+          : null;
+
+        // Finde den ersten passenden Wochentag innerhalb des Fensters
+        const first = this.alignToWeekday(windowStart, weekday);
+        if (!first || first > windowEnd) {
+          return;
+        }
+
+        for (let cursor = first; cursor <= windowEnd; cursor.setUTCDate(cursor.getUTCDate() + 7)) {
+          const iso = cursor.toISOString().slice(0, 10);
+          if (specials.has(iso)) {
+            continue;
+          }
+          const newStart = new Date(Date.UTC(cursor.getUTCFullYear(), cursor.getUTCMonth(), cursor.getUTCDate()));
+          newStart.setUTCMilliseconds(newStart.getUTCMilliseconds() + timeMs);
+          let newEnd: Date | null = null;
+          if (endMs !== null) {
+            newEnd = new Date(Date.UTC(cursor.getUTCFullYear(), cursor.getUTCMonth(), cursor.getUTCDate()));
+            newEnd.setUTCMilliseconds(newEnd.getUTCMilliseconds() + endMs);
+          }
+          reflected.push({
+            ...activity,
+            id: `${activity.id}@${iso}`,
+            start: newStart.toISOString(),
+            end: newEnd ? newEnd.toISOString() : null,
+          });
+        }
+      });
+    });
+    return reflected;
+  }
+
+  private alignToWeekday(date: Date, weekday: number): Date | null {
+    if (!Number.isFinite(date.getTime())) {
+      return null;
+    }
+    const result = new Date(date);
+    const diff = (weekday - result.getUTCDay() + 7) % 7;
+    result.setUTCDate(result.getUTCDate() + diff);
+    return result;
+  }
+
+  private defaultPeriods(): TemplatePeriod[] {
+    const year = this.timetableYear.defaultYearBounds();
+    if (!year) {
+      return [];
+    }
+    return [
+      {
+        id: 'default-year',
+        validFrom: year.startIso,
+        validTo: year.endIso,
+      },
+    ];
   }
 
   updateStageData(stage: PlanningStageId, updater: (data: PlanningStageData) => PlanningStageData) {
@@ -775,6 +1007,21 @@ function resourcesEqual(a: Resource, b: Resource): boolean {
   const normalizedA = normalizeResourceForComparison(a);
   const normalizedB = normalizeResourceForComparison(b);
   return JSON.stringify(normalizedA) === JSON.stringify(normalizedB);
+}
+
+function resourceListsEqual(a: Resource[], b: Resource[]): boolean {
+  if (a === b) {
+    return true;
+  }
+  if (a.length !== b.length) {
+    return false;
+  }
+  for (let i = 0; i < a.length; i += 1) {
+    if (!resourcesEqual(a[i], b[i])) {
+      return false;
+    }
+  }
+  return true;
 }
 
 function normalizeResourceForComparison(resource: Resource): Record<string, unknown> {

@@ -1,4 +1,4 @@
-export type PlanningStageId = 'base' | 'operations' | 'dispatch';
+export type PlanningStageId = 'base' | 'operations';
 
 export type PlanningResourceCategory =
   | 'vehicle-service'
@@ -54,25 +54,6 @@ export const PLANNING_STAGE_METAS: PlanningStageMeta[] = [
       'Neue Dienste entstehen weiterhin in den Pools',
       'Pooldienste mit Fahrzeugen und Personal verknüpfen',
       'Leistungen und Abwesenheiten werden im Jahreskontext gepflegt',
-    ],
-  },
-  {
-    id: 'dispatch',
-    label: 'Disposition',
-    shortLabel: 'Disposition',
-    description:
-      'Tagesaktuelle Steuerung: Dienste und Leistungen liegen direkt auf den Ressourcen und werden dort fortgeschrieben.',
-    focusHeadline: 'Im Fokus dieser Phase',
-    focusPoints: [
-      'Kurzfristige Anpassungen an Fahrzeug- und Personaleinsatz',
-      'Direkte Bearbeitung von Diensten auf Ressourcenebene',
-      'Abstimmung mit Leitstelle und Betriebsführung',
-    ],
-    contextHeadline: 'Rahmenbedingungen',
-    contextDetails: [
-      'Ressourcen stehen im Mittelpunkt, keine Pool-Arbeit mehr',
-      'Leistungen werden unmittelbar auf den Ressourcen gepflegt',
-      'Hohe Reaktionsgeschwindigkeit und Transparenz erforderlich',
     ],
   },
 ];

@@ -1,5 +1,4 @@
-import { Injectable, computed, inject, signal } from '@angular/core';
-import { catchError, EMPTY, Observable, of, take, tap } from 'rxjs';
+import { Injectable, computed, inject } from '@angular/core';
 import {
   PersonnelPool,
   PersonnelServicePool,
@@ -8,7 +7,8 @@ import {
   VehicleServicePool,
   VehicleType,
 } from '../../models/master-data';
-import { MasterDataApiService } from './master-data-api.service';
+import { PlanningDataService } from '../planning/planning-data.service';
+import { ResourceSnapshotDto } from '../../core/api/planning-resource-api.service';
 
 type CollectionKey =
   | 'personnelServicePools'
@@ -38,151 +38,50 @@ const INITIAL_STATE: MasterDataCollectionsState = {
 
 @Injectable({ providedIn: 'root' })
 export class MasterDataCollectionsStoreService {
-  private readonly api = inject(MasterDataApiService);
-  private readonly state = signal<MasterDataCollectionsState>({ ...INITIAL_STATE });
+  private readonly planning = inject(PlanningDataService);
+  private readonly snapshot = this.planning.resourceSnapshot();
 
-  readonly personnelServicePools = computed(() => this.state().personnelServicePools);
-  readonly personnelPools = computed(() => this.state().personnelPools);
-  readonly vehicleServicePools = computed(() => this.state().vehicleServicePools);
-  readonly vehiclePools = computed(() => this.state().vehiclePools);
-  readonly vehicleTypes = computed(() => this.state().vehicleTypes);
-  readonly vehicleCompositions = computed(() => this.state().vehicleCompositions);
-
-  constructor() {
-    this.refreshAll();
-  }
-
-  refreshAll(): void {
-    this.refreshPersonnelServicePools();
-    this.refreshPersonnelPools();
-    this.refreshVehicleServicePools();
-    this.refreshVehiclePools();
-    this.refreshVehicleTypes();
-    this.refreshVehicleCompositions();
-  }
-
-  refreshPersonnelServicePools(): void {
-    this.loadList('personnelServicePools', this.api.listPersonnelServicePools(), INITIAL_STATE.personnelServicePools);
-  }
-
-  refreshPersonnelPools(): void {
-    this.loadList('personnelPools', this.api.listPersonnelPools(), INITIAL_STATE.personnelPools);
-  }
-
-  refreshVehicleServicePools(): void {
-    this.loadList('vehicleServicePools', this.api.listVehicleServicePools(), INITIAL_STATE.vehicleServicePools);
-  }
-
-  refreshVehiclePools(): void {
-    this.loadList('vehiclePools', this.api.listVehiclePools(), INITIAL_STATE.vehiclePools);
-  }
-
-  refreshVehicleTypes(): void {
-    this.loadList('vehicleTypes', this.api.listVehicleTypes(), INITIAL_STATE.vehicleTypes);
-  }
-
-  refreshVehicleCompositions(): void {
-    this.loadList('vehicleCompositions', this.api.listVehicleCompositions(), INITIAL_STATE.vehicleCompositions);
-  }
+  readonly personnelServicePools = computed(() => this.snapshot()?.personnelServicePools ?? INITIAL_STATE.personnelServicePools);
+  readonly personnelPools = computed(() => this.snapshot()?.personnelPools ?? INITIAL_STATE.personnelPools);
+  readonly vehicleServicePools = computed(() => this.snapshot()?.vehicleServicePools ?? INITIAL_STATE.vehicleServicePools);
+  readonly vehiclePools = computed(() => this.snapshot()?.vehiclePools ?? INITIAL_STATE.vehiclePools);
+  readonly vehicleTypes = computed(() => this.snapshot()?.vehicleTypes ?? INITIAL_STATE.vehicleTypes);
+  readonly vehicleCompositions = computed(() => this.snapshot()?.vehicleCompositions ?? INITIAL_STATE.vehicleCompositions);
 
   syncPersonnelServicePools(entries: PersonnelServicePool[]): void {
-    this.saveList(
-      'personnelServicePools',
-      entries,
-      (payload) => this.api.savePersonnelServicePools(payload),
-      () => this.refreshPersonnelServicePools(),
-    );
+    this.persist('personnelServicePools', entries);
   }
 
   syncPersonnelPools(entries: PersonnelPool[]): void {
-    this.saveList(
-      'personnelPools',
-      entries,
-      (payload) => this.api.savePersonnelPools(payload),
-      () => this.refreshPersonnelPools(),
-    );
+    this.persist('personnelPools', entries);
   }
 
   syncVehicleServicePools(entries: VehicleServicePool[]): void {
-    this.saveList(
-      'vehicleServicePools',
-      entries,
-      (payload) => this.api.saveVehicleServicePools(payload),
-      () => this.refreshVehicleServicePools(),
-    );
+    this.persist('vehicleServicePools', entries);
   }
 
   syncVehiclePools(entries: VehiclePool[]): void {
-    this.saveList(
-      'vehiclePools',
-      entries,
-      (payload) => this.api.saveVehiclePools(payload),
-      () => this.refreshVehiclePools(),
-    );
+    this.persist('vehiclePools', entries);
   }
 
   syncVehicleTypes(entries: VehicleType[]): void {
-    this.saveList(
-      'vehicleTypes',
-      entries,
-      (payload) => this.api.saveVehicleTypes(payload),
-      () => this.refreshVehicleTypes(),
-    );
+    this.persist('vehicleTypes', entries);
   }
 
   syncVehicleCompositions(entries: VehicleComposition[]): void {
-    this.saveList(
-      'vehicleCompositions',
-      entries,
-      (payload) => this.api.saveVehicleCompositions(payload),
-      () => this.refreshVehicleCompositions(),
-    );
+    this.persist('vehicleCompositions', entries);
   }
 
-  private loadList<K extends CollectionKey>(
-    key: K,
-    request$: Observable<MasterDataCollectionsState[K]>,
-    fallback: MasterDataCollectionsState[K],
-  ): void {
-    request$
-      .pipe(
-        take(1),
-        tap((items) => this.patchState(key, items)),
-        catchError((error) => {
-          console.warn(`[MasterDataCollectionsStore] Failed to load ${key}`, error);
-          this.patchState(key, fallback);
-          return of(fallback);
-        }),
-      )
-      .subscribe();
-  }
-
-  private saveList<K extends CollectionKey>(
-    key: K,
-    entries: MasterDataCollectionsState[K],
-    requestFactory: (payload: MasterDataCollectionsState[K]) => Observable<MasterDataCollectionsState[K]>,
-    onError: () => void,
-  ): void {
-    const payload = this.clone(entries);
-    this.patchState(key, payload);
-    requestFactory(payload)
-      .pipe(
-        take(1),
-        tap((items) => this.patchState(key, items)),
-        catchError((error) => {
-          console.error(`[MasterDataCollectionsStore] Failed to save ${key}`, error);
-          onError();
-          return EMPTY;
-        }),
-      )
-      .subscribe();
-  }
-
-  private patchState<K extends CollectionKey>(key: K, items: MasterDataCollectionsState[K]): void {
-    this.state.update((current) => ({
-      ...current,
-      [key]: this.clone(items),
-    }));
+  private persist<K extends CollectionKey>(key: K, entries: MasterDataCollectionsState[K]): void {
+    const snapshot = this.snapshot();
+    if (!snapshot) {
+      return;
+    }
+    const next: ResourceSnapshotDto = {
+      ...snapshot,
+      [key]: this.clone(entries),
+    };
+    this.planning.updateResourceSnapshot(() => next);
   }
 
   private clone<T>(value: T): T {

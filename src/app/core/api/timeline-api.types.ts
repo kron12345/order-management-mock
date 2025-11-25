@@ -54,3 +54,21 @@ export interface TimelineResponseDto {
   activities?: TimelineActivityDto[];
   services?: TimelineServiceDto[];
 }
+
+export interface TemplateSetDto {
+  id: string;
+  name: string;
+  description?: string | null;
+  tableName?: string;
+  createdAt: string;
+  updatedAt: string;
+  periods?: TemplatePeriod[];
+  specialDays?: string[];
+  attributes?: Record<string, unknown>;
+}
+
+export interface TemplatePeriod {
+  id: string;
+  validFrom: string;
+  validTo: string | null;
+}

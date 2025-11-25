@@ -1,6 +1,6 @@
 import { Injectable, inject } from '@angular/core';
-import { Observable, Subject, timer } from 'rxjs';
-import { retry, share } from 'rxjs/operators';
+import { Observable, Subject } from 'rxjs';
+import { share } from 'rxjs/operators';
 import { API_CONFIG } from '../../core/config/api-config';
 import { PlanningStageId } from './planning-stage.model';
 import { PlanningTimelineRange } from './planning-data.service';
@@ -68,8 +68,9 @@ export class PlanningRealtimeService {
         }
       };
 
-      const handleError = (error: Event) => {
-        observer.error(error);
+      const handleError = (_error: Event) => {
+        eventSource.close();
+        observer.complete();
       };
 
       eventSource.addEventListener('message', handleMessage as EventListener);
@@ -81,9 +82,6 @@ export class PlanningRealtimeService {
         eventSource.close();
       };
     }).pipe(
-      retry({
-        delay: (_error, retryCount) => timer(Math.min(1000 * retryCount, 10000)),
-      }),
       share({
         connector: subjectFactory,
         resetOnError: true,

@@ -1,4 +1,4 @@
 export const environment = {
   production: true,
-  apiBaseUrl: 'https://qnamic.ortwein.chat/api/v1',
+  apiBaseUrl: 'https://qnamic.ortwein.chat/api',
 };

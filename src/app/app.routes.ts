@@ -83,6 +83,15 @@ export const routes: Routes = [
         title: 'Planung',
         data: { section: 'planning' },
       },
+      {
+        path: 'periods',
+        loadComponent: () =>
+          import('./features/planning/planning-periods.component').then(
+            (m) => m.PlanningPeriodsComponent,
+          ),
+        title: 'Planung · Zeiträume',
+        data: { section: 'planning' },
+      },
     ],
   },
   {

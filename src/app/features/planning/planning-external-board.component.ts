@@ -50,19 +50,16 @@ export class PlanningExternalBoardComponent {
   private readonly stageResourceSignals: Record<PlanningStageId, Signal<Resource[]>> = {
     base: this.data.stageResources('base'),
     operations: this.data.stageResources('operations'),
-    dispatch: this.data.stageResources('dispatch'),
   };
 
   private readonly stageActivitySignals: Record<PlanningStageId, Signal<Activity[]>> = {
     base: this.data.stageActivities('base'),
     operations: this.data.stageActivities('operations'),
-    dispatch: this.data.stageActivities('dispatch'),
   };
 
   private readonly stageTimelineSignals = {
     base: this.data.stageTimelineRange('base'),
     operations: this.data.stageTimelineRange('operations'),
-    dispatch: this.data.stageTimelineRange('dispatch'),
   } as const;
 
   readonly boardResources = computed<Resource[]>(() => {
@@ -99,7 +96,8 @@ export class PlanningExternalBoardComponent {
 
   constructor() {
     this.route.queryParamMap.subscribe((params) => {
-      const stage = (params.get('stage') as PlanningStageId) ?? 'base';
+      const rawStage = params.get('stage');
+      const stage = rawStage === 'operations' ? 'operations' : 'base';
       const resources = params.get('resources');
       const resourceIds = resources
         ? resources
